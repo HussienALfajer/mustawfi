@@ -1,6 +1,6 @@
-# 0024. Visual design: calm, precise, information-dense; a generated palette around Mustawfi ink blue; IBM Plex Sans Arabic; three densities; an explicit list of patterns to avoid
+# 0024. Visual design: "Ink and paper" — calm, precise, information-dense; ink-blue accent, paper neutrals, brass double rule; IBM Plex Sans Arabic; three densities; an explicit list of patterns to avoid
 
-- Status: Proposed — the user accepted ADR-0014 to ADR-0028 except this one on 2026-09-25 and reopened the visual identity for a follow-up discussion
+- Status: Accepted (reopened on 2026-09-25 after the A2 session, then accepted the same day after comparing identity previews)
 - Date: 2026-09-25
 
 ## Context
@@ -9,23 +9,49 @@ Cashiers, accountants, and owners look at this interface for whole shifts. It is
 
 The user's related project `D:\vertex-suite` has a mature design-system specification (`docs/design-system.md`, v1.17). It was reviewed as a **reference for method** only; by the user's decision, no code is copied from it. Its palette is a literal import of a third-party proprietary design system's published values, and its own §4.6 lists four sub-4.5:1 text pairs and a 1.57:1 field border that it accepts as exceptions. Mustawfi does not reuse those values.
 
+Before accepting, the user compared previews of the candidate identities on the same accounting screen, in light and dark, with contrast measured in the page:
+
+- "Ink and paper";
+- an identity built from the official Syrian state palette (July 2025);
+- vertex-suite's palette;
+- "Pine and sand";
+- three refinements of "Ink and paper" (indigo, Prussian blue with copper, bound ledger).
+
+The user chose **"Ink and paper" as proposed**.
+
 ## Decision
 
 **Direction:** calm, precise, information-dense. A warm neutral ground (never stark white, never cold grey), one accent reserved for action and focus, semantic colours used only for meaning, hierarchy made by space and type rather than borders and boxes. It should read as a professional instrument an accountant trusts.
 
 **Tokens:** four layers — primitive → alias → semantic → component. Screens may name semantic tokens only. CSS custom properties are prefixed `--mf-`, and Tailwind v4 consumes them through `@theme`. Switching axes: `data-theme` (light, dark, system) and `data-density`. Light and dark are equals: one token set, two value sets.
 
-**Palette:** generated, not copied. An OKLCH generator in `packages/ui` solves each colour for its contrast target.
-- Neutral ramp: warm (hue ≈ 95).
-- Accent: **Mustawfi ink blue**, a deep blue in the Vertex fjord family.
+**Palette: "Ink and paper".** An OKLCH generator in `packages/ui` builds the full ramps and tints from these anchors and checks every pair. Anchors (light theme):
+
+| Role | Value | Measured |
+|---|---|---|
+| Accent — **ink** (buttons, links, focus, selection) | `#2B4A66`, hover `#1F3850` | White on it 9.2:1 |
+| Page — **paper** | `#F7F7F5` | |
+| Surface | `#FFFFFF` | |
+| Sunken rows and panels — **ledger** | `#F0EBE3` family | |
+| Text | `#2C2F38` | 12.5:1 on paper |
+| Secondary text | `#5C6370` | 5.6:1 |
+| Muted text | `#6B717C` | 4.6:1 |
+| Field border | `#8A9099` | 3.2:1 on surface |
+| Signature — **brass** | `#C9A227` | Decorative only |
+| Positive | `#2F7A4D` on tint `#EAF5EE` | 4.7:1 (the preview's tint `#E3F1E8` measured 4.49 and is replaced) |
+| Negative | `#B3261E` | 6.5:1 |
+| Warning | `#8A5A00` | 5.2:1 on its tint |
+
+- Neutrals are warm and paper-like.
+- The dark theme is **designed, not inverted**. The generator derives it from the same anchors: ink becomes a light ink blue (around `#8DB3D9`) carrying dark text, and the paper becomes a deep blue-grey. The user approves the dark values on the preview page in slice 9 of the walking skeleton.
 - Semantic roles: success/positive (green), danger/negative (red), warning (amber), info (teal). Green and red keep their meaning in charts as well, and are never used for decoration.
 - **Brand signature:** a brass **double rule** under a document's final total — the accounting convention for "closed and balanced" — also used in the product mark. Brass is never used for text or for status.
 - **No contrast exceptions:** text at least 4.5:1 at every size (no large-text relaxation, because Arabic joins are thinner than Latin strokes); non-text elements and control boundaries, including field borders, at least 3:1. A CI test measures every pair and fails the build.
-- Final values come out of the generator in the walking skeleton and are approved by the user on a preview page (light, dark, all densities).
+- The generator reproduces the anchors above exactly. The user reviews the full ramps and the dark theme on a preview page in the walking skeleton.
 
 **Tenant brand:** a tenant's own colour appears only on the sign-in screen, printed document headers, and the POS idle screen. Its text colour is computed; a colour that cannot reach 4.5:1 with either white or near-black text is refused with an explanation. It never drives interaction.
 
-**Product mark:** the Arabic wordmark «مستوفي» with the double-rule signature, endorsed "من Vertex System". The final mark is a designer's job; a placeholder is used until then.
+**Product mark:** the Arabic wordmark «مستوفي» with the brass double-rule signature, endorsed "من Vertex System". The final mark is a designer's job; a placeholder is used until then.
 
 **Typography:** IBM Plex Sans Arabic for the interface, IBM Plex Sans for Latin runs, IBM Plex Mono for codes, IMEIs, and document numbers. All are SIL OFL and bundled with the app, never loaded from a CDN. Minimum size 12px (Arabic dots merge below it). Line heights 1–2px taller than a Latin scale. `tabular-nums` on every figure in a column. No italics. Weights: 400 body, 500 labels, 600 totals and headings, 700 page titles only. Tabular figures and legibility on a 203 dpi thermal raster are verified in the skeleton.
 
@@ -61,11 +87,14 @@ Corners nearly square (2–4px on controls). Shadows only on floating layers. Mo
 
 - The interface gets its own identity and a verifiable accessibility floor, not inherited exceptions.
 - Generated colours can be regenerated and re-verified whenever the accent changes.
-- The palette's final values wait for the user's review of the preview page in the skeleton.
+- The light anchors are fixed; the full ramps and the dark theme wait for the user's review of the preview page in the skeleton.
 
 ## Alternatives considered
 
 - **Vertex-suite's palette as is** — visual consistency with the other project, but copied from a third party, below its own contrast floor in five places, and with no product colour.
-- **"Ink and paper" as a full ledger look** (ruled lines, monospaced figures) — the user already rejected a ledger-style direction in vertex-suite on 2026-09-13; only its accent colour and the double-rule signature are kept here.
+- **Official Syrian identity palette** (pine `#126E70`, sand, mulberry, Qasioun gold `#B9A77A`, flag green and red) — distinctive and local. But the product would look like a government service, the palette is tied to a political moment, commercial use of state symbols may be restricted, and several official values fail text contrast.
+- **"Pine and sand"** (a Syrian-inspired teal `#0F6466` with sand neutrals) — scored highest in the comparison, but the user preferred ink blue.
+- **Refined ink variants** — indigo `#33408F` with ruled tables; Prussian blue `#1B4F72` with a copper ledger-margin rule; a navy "bound ledger" frame `#1E2B3C` with ivory pages. All passed contrast; the user chose the original.
+- **A full ledger look** (ruled lines everywhere, monospaced figures) — the user rejected a ledger-style direction in vertex-suite on 2026-09-13; only the double-rule signature is kept here.
 - **Friendly and colourful** — attractive in a demo, but colours lose their meaning and tire the eye over a shift.
 - **Dark, high-contrast POS style** — right for a till only; kept possible as the dark theme of the same tokens.

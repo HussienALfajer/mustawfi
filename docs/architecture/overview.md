@@ -162,7 +162,7 @@ Each module is one workspace package with three public entries: `shared` (runs o
 | Signing | Ed25519 JWS, separate license and bundle keys, rotation, monotonic device clock | 0021 |
 | Authentication | Opaque sessions, device credentials from registration codes, offline PIN verifiers, TOTP | 0022 |
 | Client stack | React + Vite, TanStack Router and Query over the local database, React Hook Form + Zod, i18next, own components on React Aria, Tailwind v4 | 0023 |
-| Visual design | **Proposed, reopened for discussion:** calm and dense, generated palette around Mustawfi ink blue, IBM Plex Sans Arabic, three densities, patterns to avoid | 0024 |
+| Visual design | "Ink and paper": calm and dense, ink-blue accent `#2B4A66`, paper neutrals, brass double rule, IBM Plex Sans Arabic, three densities, patterns to avoid | 0024 |
 | Printing and scanning | LiquidJS HTML templates rasterized to ESC/POS, native transports, HID scanners, ML Kit | 0025 |
 | Tests | Vitest, fast-check, Testcontainers PostgreSQL, sync simulation harness, Playwright | 0026 |
 | CI/CD and operations | GitHub Actions, pilot on the company VPS with isolation, off-site pgBackRest, Sentry EU | 0027 |
