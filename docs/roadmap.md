@@ -55,7 +55,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 
 | # | Spec unit | Modules covered | Status |
 |---|---|---|---|
-| 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit | Not started |
+| 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit (`docs/product/modules/core-foundation.md`; ADR-0030) | Spec ready |
 | 2 | `core-money` | core.currency, core.ledger | Not started |
 | 3 | `core-config` | core.config (registry, entitlements, settings, custom fields, templates) | Not started |
 | 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness, Android shell and its native SQLite adapter) | Not started |

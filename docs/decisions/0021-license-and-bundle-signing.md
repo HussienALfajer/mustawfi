@@ -28,3 +28,7 @@ Devices work offline with a signed license and a signed configuration bundle (AD
 - **HMAC-signed licenses** — the verification key would be on every device, and could be used to forge licenses.
 - **RSA** — larger keys and signatures for no benefit here.
 - **One key for everything** — a leak of the server's bundle key would also let someone forge licenses.
+
+## Amendments
+
+- 2026-09-25 (`core-foundation` spec, ADR-0030, accepted by the user on 2026-09-25): the license has no device claim — one license per tenant, device limits enforced by the tenant server at registration; license claims add read-only days. Until the control plane exists, a staff CLI (`tools/license`) issues licenses and the tenant server installs them after verification. The configuration bundle is built in `core-foundation` from parts that modules contribute (license, access, organization), assembled by the host; `core-config` adds its parts later.

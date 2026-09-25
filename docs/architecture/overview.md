@@ -168,5 +168,6 @@ Each module is one workspace package with three public entries: `shared` (runs o
 | CI/CD and operations | GitHub Actions, pilot on the company VPS with isolation, off-site pgBackRest, Sentry EU | 0027 |
 | Admin console and portal | Separate API processes and database roles; admin frontend on the client stack | 0028 |
 | Tenant at sign-in | Store code resolved through a sealed directory; tenant-routed bearer tokens | 0029 |
+| Licenses and bundle | One license per tenant from a staff CLI until the control plane; bundle assembled from module parts; departments stored in `core.tenancy`; lifecycle per business day; revoked-device documents accepted and flagged | 0030 |
 
 Deferred with a reason: chart library (`reports` spec — no chart before then), portal page rendering (`customer-portal` spec), Android printer transport plugin (`sales` unit, against certified printers), the SYP cash-rounding step (`core-money` spec with the advisor accountant), the off-site backup provider (`ops` unit).

@@ -3,6 +3,7 @@
 - Source decision: ADR-0024 (visual design direction), with ADR-0023 (client stack) and ADR-0018 (money).
 - Written in walking-skeleton slice 9 (2026-09-25). Palette, full ramps, dark theme, and the rules below approved by the user on the preview page the same day.
 - This document changes only by recorded decision (an ADR or a unit spec's deviation note).
+- How screens are laid out and behave — the frame, patterns, keyboard, tables, forms, components, code structure — is in `screen-patterns.md`.
 
 ## Where things live
 

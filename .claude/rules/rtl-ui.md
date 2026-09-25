@@ -15,7 +15,7 @@ paths:
 
 # RTL user interface rules
 
-Sources: ADR-0023 (client application stack), ADR-0024 (visual design direction), ADR-0018 (money), and `docs/design/design-system.md` (tokens, contrast pairs, and usage rules).
+Sources: ADR-0023 (client application stack), ADR-0024 (visual design direction), ADR-0018 (money), `docs/design/design-system.md` (tokens, contrast pairs, and usage rules), and `docs/design/screen-patterns.md` (frame, screen patterns, interaction rules, component and code structure).
 
 - `dir="rtl"` is the default, not a mode. Use logical CSS only (`ms-`, `me-`, `ps-`, `start-`, `text-start`); physical utilities (`ml-`, `mr-`, `left-`, `text-left`…) are a lint error.
 - No user-facing string literal in code: every text goes through i18n keys (i18next, ICU messages, one namespace per module). V1 text is Arabic.
@@ -26,3 +26,5 @@ Sources: ADR-0023 (client application stack), ADR-0024 (visual design direction)
 - `touch` density (POS, tablets): every target at least 48×48 px. Minimum font size 12px. No italics.
 - Avoid ADR-0024's listed patterns: colour as the only signal, a toast as the only report of a failure that matters (sync, print, posting), spinners that block on the network, disabled buttons without a reason, hover-only actions, icon-only destructive buttons, modal on modal.
 - The UI must work offline: read through the local database and TanStack Query; show whether the app is offline instead of waiting on the server.
+- Every screen follows one pattern of `docs/design/screen-patterns.md` (list with side panel, full document, settings form, summary, notice, touch panel); records open in a side panel, never a modal. A new pattern needs a recorded decision and a preview approved by the user first.
+- Build components when a screen needs them: in the module first, moved to `packages/ui` when a second module needs them (generic controls go there from the first use), each shown in the component gallery. Playwright journeys are keyboard-only and run an axe check.
