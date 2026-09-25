@@ -28,7 +28,7 @@ async function readPassword(stdin: CommandIo["stdin"]): Promise<string> {
 
 /**
  * `tenant:create`: creates a tenant with its hidden default branch, base currency, and owner.
- * Prints the new ids as JSON and returns the exit code: 0 done, 1 refused, 2 bad usage.
+ * Prints the new ids and the store code as JSON and returns the exit code: 0 done, 1 refused, 2 bad usage.
  */
 export async function createTenantCommand(io: CommandIo): Promise<number> {
   let values;
@@ -69,6 +69,7 @@ export async function createTenantCommand(io: CommandIo): Promise<number> {
   try {
     const created = await createTenantWithOwner(tenants, input.data, {
       clock: systemClock,
+      random: cryptoRandom,
       newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
     });
     io.stdout.write(`${JSON.stringify(created)}\n`);

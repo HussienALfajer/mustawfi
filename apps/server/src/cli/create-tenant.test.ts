@@ -1,11 +1,19 @@
 import { Readable } from "node:stream";
 import { verify } from "@node-rs/argon2";
 import { currentTenant, openTenantDatabase } from "@mustawfi/core-tenancy/server";
-import { createTestDatabase, type TestDatabase } from "@mustawfi/testing";
+import {
+  cryptoRandom,
+  type RandomSource,
+  systemClock,
+  UNAMBIGUOUS_ALPHABET,
+  uuidV7Generator,
+} from "@mustawfi/kernel";
+import { createTestDatabase, sqlState, type TestDatabase } from "@mustawfi/testing";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyMigrations } from "../db/migrate.ts";
 import { migrationSets } from "../db/migration-sets.ts";
+import { createTenantWithOwner } from "../tenants/create-tenant.ts";
 import { createTenantCommand } from "./create-tenant.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -47,7 +55,9 @@ async function countRows(): Promise<Record<string, number>> {
   const { rows } = await superuser.query<Record<string, number>>(`select
     (select count(*)::int from core_tenancy.tenants) as tenants,
     (select count(*)::int from core_tenancy.branches) as branches,
-    (select count(*)::int from core_access.users) as users`);
+    (select count(*)::int from core_access.users) as users,
+    (select count(*)::int from core_tenancy.store_codes) as store_codes,
+    (select count(*)::int from core_audit.entries) as audit_entries`);
   return rows[0] ?? {};
 }
 
@@ -59,10 +69,12 @@ describe("tenant:create", () => {
       tenantId: string;
       branchId: string;
       ownerId: string;
+      storeCode: string;
     };
+    expect(created.storeCode).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
 
     const tenant = await superuser.query(
-      "select id, tenant_id, branch_id, name, base_currency, created_by from core_tenancy.tenants where id = $1",
+      "select id, tenant_id, branch_id, name, base_currency, store_code, created_by from core_tenancy.tenants where id = $1",
       [created.tenantId],
     );
     expect(tenant.rows).toEqual([
@@ -72,9 +84,15 @@ describe("tenant:create", () => {
         branch_id: created.branchId,
         name: "متجر النور للموبايلات",
         base_currency: "SYP",
+        store_code: created.storeCode,
         created_by: created.ownerId,
       },
     ]);
+    const directory = await superuser.query(
+      "select code, tenant_id from core_tenancy.store_codes where tenant_id = $1",
+      [created.tenantId],
+    );
+    expect(directory.rows).toEqual([{ code: created.storeCode, tenant_id: created.tenantId }]);
 
     const branches = await superuser.query(
       "select id, branch_id, is_default from core_tenancy.branches where tenant_id = $1",
@@ -165,8 +183,8 @@ describe("tenant:create", () => {
     // The deferred FK fires at commit: a tenant pointing at a missing branch never commits.
     expect(
       await state(
-        `insert into core_tenancy.tenants (id, tenant_id, branch_id, created_at, created_by, name, base_currency)
-         select t, t, gen_random_uuid(), now(), t, 'orphan', 'SYP' from (select gen_random_uuid() as t) x`,
+        `insert into core_tenancy.tenants (id, tenant_id, branch_id, created_at, created_by, name, base_currency, store_code)
+         select t, t, gen_random_uuid(), now(), t, 'orphan', 'SYP', 'XRPHAN' from (select gen_random_uuid() as t) x`,
         [],
       ),
     ).toBe("23503");
@@ -181,5 +199,100 @@ describe("tenant:create", () => {
     await expect(
       run(args(), `${PASSWORD}\n`, { DATABASE_URL: database.url("owner") }),
     ).rejects.toThrow(/row-level security/);
+  });
+});
+
+describe("store codes", () => {
+  const newId = uuidV7Generator({ clock: systemClock, random: cryptoRandom });
+
+  /** Randomness whose first store-code draws spell `codes`; real randomness otherwise. */
+  function drawing(...codes: string[]): RandomSource {
+    const queue = [...codes];
+    return {
+      bytes: (length) => {
+        const code = length === 6 ? queue.shift() : undefined;
+        if (code === undefined) return cryptoRandom.bytes(length);
+        return Uint8Array.from(code, (symbol) => UNAMBIGUOUS_ALPHABET.indexOf(symbol));
+      },
+    };
+  }
+
+  async function create(random: RandomSource) {
+    const tenants = await openTenantDatabase({ connectionString: database.url("app") });
+    try {
+      return await createTenantWithOwner(
+        tenants,
+        {
+          name: "رمز",
+          baseCurrency: "USD",
+          ownerName: "مالك",
+          ownerLogin: "owner",
+          ownerPassword: PASSWORD,
+        },
+        { clock: systemClock, newId, random },
+      );
+    } finally {
+      await tenants.close();
+    }
+  }
+
+  it("resolve to their tenant as typed, and to nothing when unknown or malformed", async () => {
+    const created = await create(cryptoRandom);
+    const tenants = await openTenantDatabase({ connectionString: database.url("app") });
+    try {
+      const code = created.storeCode;
+      expect(await tenants.resolveStoreCode(code)).toBe(created.tenantId);
+      expect(
+        await tenants.resolveStoreCode(` ${code.slice(0, 2).toLowerCase()}-${code.slice(2)}`),
+      ).toBe(created.tenantId);
+      const unknown = code === "ZZZZZZ" ? "YYYYYY" : "ZZZZZZ";
+      expect(await tenants.resolveStoreCode(unknown)).toBeUndefined();
+      for (const malformed of ["", "ABCDE", "ABCDEFG", "ABCDE1", "' or 1=1 --"]) {
+        expect(await tenants.resolveStoreCode(malformed)).toBeUndefined();
+      }
+    } finally {
+      await tenants.close();
+    }
+  });
+
+  it("are drawn again when another tenant holds the code, up to five times", async () => {
+    const first = await create(cryptoRandom);
+    const second = await create(drawing(first.storeCode, first.storeCode));
+    expect(second.storeCode).not.toBe(first.storeCode);
+
+    const before = await countRows();
+    await expect(create(drawing(...Array<string>(5).fill(first.storeCode)))).rejects.toSatisfy(
+      (error: unknown) => sqlState(error) === "23505",
+    );
+    expect(await countRows()).toEqual(before);
+  });
+
+  it("keep the directory sealed from the app role and never change", async () => {
+    const created = await create(cryptoRandom);
+    const app = await database.connect("app");
+    try {
+      for (const statement of [
+        "select * from core_tenancy.store_codes",
+        "insert into core_tenancy.store_codes values ('ABCDEF', gen_random_uuid())",
+        "select core_tenancy.publish_store_code()",
+      ]) {
+        const outcome = await app.query(statement).then(
+          () => "allowed",
+          (error: unknown) => sqlState(error),
+        );
+        expect(outcome, statement).toBe("42501");
+      }
+    } finally {
+      await app.end();
+    }
+    const changed = await superuser
+      .query("update core_tenancy.tenants set store_code = 'ABCDEF' where id = $1", [
+        created.tenantId,
+      ])
+      .then(
+        () => "changed",
+        (error: { code?: string }) => error.code,
+      );
+    expect(changed).toBe("23514");
   });
 });

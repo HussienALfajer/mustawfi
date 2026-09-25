@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import { storeCodeSchema } from "../shared/index.ts";
 
 /** Who is acting: the tenant always, the user and device when known (ADR-0017). */
 export interface TenantContext {
@@ -19,6 +20,12 @@ export interface TenantDatabase {
    * through a pooled connection. `fn` throwing rolls the transaction back.
    */
   withTenant<T>(context: TenantContext, fn: (tx: TenantTransaction) => Promise<T>): Promise<T>;
+  /**
+   * The tenant a store code names, for a sign-in that has no tenant context yet (ADR-0029);
+   * `undefined` for a malformed or unknown code. The only read outside `withTenant`: it goes
+   * through `core_tenancy.tenant_for_store_code`, which answers one exact code.
+   */
+  resolveStoreCode(storeCode: string): Promise<string | undefined>;
   close(): Promise<void>;
 }
 
@@ -100,6 +107,15 @@ export async function openTenantDatabase(options: TenantDatabaseOptions): Promis
           set_config('app.device_id', ${deviceId}, true)`);
         return fn(tx);
       });
+    },
+    async resolveStoreCode(storeCode) {
+      const parsed = storeCodeSchema.safeParse(storeCode);
+      if (!parsed.success) return undefined;
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        "select core_tenancy.tenant_for_store_code($1) as tenant_id",
+        [parsed.data],
+      );
+      return rows[0]?.tenant_id ?? undefined;
     },
     close: () => pool.end(),
   };

@@ -167,5 +167,6 @@ Each module is one workspace package with three public entries: `shared` (runs o
 | Tests | Vitest, fast-check, Testcontainers PostgreSQL, sync simulation harness, Playwright | 0026 |
 | CI/CD and operations | GitHub Actions, pilot on the company VPS with isolation, off-site pgBackRest, Sentry EU | 0027 |
 | Admin console and portal | Separate API processes and database roles; admin frontend on the client stack | 0028 |
+| Tenant at sign-in (Proposed) | Store code resolved through a sealed directory; tenant-routed bearer tokens | 0029 |
 
 Deferred with a reason: chart library (`reports` spec — no chart before then), portal page rendering (`customer-portal` spec), Android printer transport plugin (`sales` unit, against certified printers), the receipt rasterizer library and the Tauri SQLite binding (spikes in the walking skeleton), the SYP cash-rounding step (`core-money` spec with the advisor accountant), the off-site backup provider (`ops` unit).

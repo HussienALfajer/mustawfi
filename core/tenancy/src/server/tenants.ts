@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { newTenantSchema, type NewTenantInput } from "../shared/index.ts";
+import { newTenantSchema, storeCodeSchema, type NewTenantInput } from "../shared/index.ts";
 import { branches, tenants } from "./schema.ts";
 import type { TenantTransaction } from "./tenant-database.ts";
 
@@ -8,6 +8,8 @@ export interface NewTenant extends NewTenantInput {
   readonly tenantId: string;
   /** The id of the hidden default branch created with the tenant. */
   readonly branchId: string;
+  /** A fresh store code (ADR-0029); a code another tenant holds fails the insert (`23505`). */
+  readonly storeCode: string;
   readonly createdAt: Date;
   readonly createdBy: string;
 }
@@ -16,6 +18,7 @@ export interface Tenant {
   readonly id: string;
   readonly name: string;
   readonly baseCurrency: string;
+  readonly storeCode: string;
   readonly defaultBranchId: string;
 }
 
@@ -27,6 +30,10 @@ export interface Tenant {
 export async function createTenant(tx: TenantTransaction, tenant: NewTenant): Promise<Tenant> {
   const { name, baseCurrency } = newTenantSchema.parse(tenant);
   const { tenantId, branchId, createdAt, createdBy } = tenant;
+  const storeCode = storeCodeSchema.parse(tenant.storeCode);
+  if (storeCode !== tenant.storeCode) {
+    throw new TypeError(`"${tenant.storeCode}" is not a store code in its stored form`);
+  }
   await tx.insert(tenants).values({
     id: tenantId,
     tenantId,
@@ -35,6 +42,7 @@ export async function createTenant(tx: TenantTransaction, tenant: NewTenant): Pr
     createdBy,
     name,
     baseCurrency,
+    storeCode,
   });
   await tx.insert(branches).values({
     id: branchId,
@@ -45,7 +53,7 @@ export async function createTenant(tx: TenantTransaction, tenant: NewTenant): Pr
     name,
     isDefault: true,
   });
-  return { id: tenantId, name, baseCurrency, defaultBranchId: branchId };
+  return { id: tenantId, name, baseCurrency, storeCode, defaultBranchId: branchId };
 }
 
 /** The tenant of the current `withTenant` context. */
@@ -55,6 +63,7 @@ export async function currentTenant(tx: TenantTransaction): Promise<Tenant | und
       id: tenants.id,
       name: tenants.name,
       baseCurrency: tenants.baseCurrency,
+      storeCode: tenants.storeCode,
       defaultBranchId: branches.id,
     })
     .from(tenants)

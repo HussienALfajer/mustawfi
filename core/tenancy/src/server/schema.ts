@@ -22,12 +22,32 @@ export const tenants = coreTenancy.table(
     name: text().notNull(),
     /** ISO 4217 code of the ledger's base currency; `core.currency` owns currency data. */
     baseCurrency: text().notNull(),
+    /**
+     * What people type to name their store at sign-in (ADR-0029); unique across tenants,
+     * never changed or reused. Published to `store_codes` by a trigger.
+     */
+    storeCode: text().notNull().unique(),
   },
   (t) => [
     check("tenants_tenant_id_is_id", sql`${t.tenantId} = ${t.id}`),
     check("tenants_base_currency_code", sql`${t.baseCurrency} ~ '^[A-Z]{3}$'`),
+    check("tenants_store_code_format", sql`${t.storeCode} ~ '^[A-HJ-NP-Z2-9]{6}$'`),
   ],
 );
+
+/**
+ * The store-code directory (ADR-0029): the one table that maps a code to its tenant before
+ * any tenant context exists. Not tenant-owned and without row-level security, so it is
+ * sealed instead: `mustawfi_app` holds no privilege on it and reaches it only through
+ * `core_tenancy.tenant_for_store_code(code)`, which answers one exact code.
+ */
+export const storeCodes = coreTenancy.table("store_codes", {
+  code: text().primaryKey(),
+  tenantId: uuid()
+    .notNull()
+    .unique()
+    .references(() => tenants.id),
+});
 
 export const branches = coreTenancy.table(
   "branches",
