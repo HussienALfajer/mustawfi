@@ -76,7 +76,7 @@ A **slice** is one verifiable outcome that fits in a single session without comp
 
 End every task that changes files or runs more than a few steps with a report to the user, in Arabic, under these headings (a quick question gets a direct answer instead):
 
-- **ينتظرك** — decisions or approvals needed from the user, or «لا شيء».
+- **ينتظرك** — decisions or approvals needed from the user, or «لا شيء». When the task leaves a local branch whose PR is not merged yet (auto-merge pending, or left for the user), this section always ends with the cleanup to run once GitHub shows the PR merged, as one line: `git switch main; git pull --ff-only; git branch -d <branch>`. It uses `;`, not `&&`, so it runs in both bash and Windows PowerShell 5.1. After a squash merge, `-d` works because the local `origin/<branch>` ref still exists (git warns that the branch is "not yet merged to HEAD"). If that ref has been pruned, `-d` refuses: confirm that the PR was merged, then use `-D`. If the agent sees the PR merged before it reports, it runs the cleanup itself and says so, instead of listing it.
 - **ما تغيّر** — what changed, briefly.
 - **الدليل** — checks run and their results.
 - **ما وجدته** — out-of-scope findings, risks, anything unconfirmed.
@@ -92,7 +92,7 @@ End every task that changes files or runs more than a few steps with a report to
 
 - CI exists: every change, docs included, goes through a branch and a PR to `main`. `main` is protected; the `verify` check must pass before merging, and only squash-merge is allowed.
 - Branches: `slice/<unit>-<n>-<short-name>` for slices, `docs/<short-name>` or `fix/<short-name>` otherwise.
-- Merging is done by GitHub, not by the agent: after opening the PR, enable auto-merge (squash). GitHub merges when `verify` passes and deletes the remote branch. Then update local `main` (`git switch main && git pull --ff-only`) and delete the local branch.
+- Merging is done by GitHub, not by the agent: after opening the PR, enable auto-merge (squash). GitHub merges when `verify` passes and deletes the remote branch. Then update local `main` and delete the local branch (`git switch main; git pull --ff-only; git branch -d <branch>`). While the merge is still pending, the report lists that command under **ينتظرك** (see Reporting).
 - A change that touches a non-negotiable or an accepted ADR is never auto-merged: leave the PR open for the user under **ينتظرك**.
 - When CI fails, the agent diagnoses and fixes it in code, at most three attempts per PR. Never weaken a test, a lint rule, a boundary rule, or a CI step to make CI pass. After three failed attempts, stop and report under **ينتظرك**: hypotheses, what was tried, the evidence, and a proposal.
 - Never force-push and never rewrite pushed history.
