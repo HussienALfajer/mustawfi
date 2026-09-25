@@ -35,6 +35,19 @@ function runCli(script: string, args: string[], env: Record<string, string>, std
   });
 }
 
+/**
+ * Stops a child and waits for it: SIGTERM for a graceful close, SIGKILL after five seconds.
+ * A child left running keeps its output pipes open, and the test run never ends.
+ */
+async function stopProcess(child: ChildProcess | undefined): Promise<void> {
+  if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise((done) => child.once("exit", done));
+  child.kill("SIGTERM");
+  const force = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  await exited;
+  clearTimeout(force);
+}
+
 async function waitForHealth(server: ChildProcess, output: () => string): Promise<void> {
   const deadline = performance.now() + 30_000;
   while (performance.now() < deadline) {
@@ -66,7 +79,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   };
   let server: ChildProcess | undefined;
   const teardown = async () => {
-    server?.kill();
+    await stopProcess(server);
     await container.stop();
   };
 

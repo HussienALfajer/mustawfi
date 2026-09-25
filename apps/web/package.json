@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
-    "test:e2e": "playwright test"
+    "test:e2e": "vite build && playwright test"
   },
   "devDependencies": {
     "@mustawfi/config": "workspace:*",

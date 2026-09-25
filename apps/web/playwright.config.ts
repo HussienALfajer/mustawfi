@@ -4,7 +4,7 @@ import { E2E_API_PORT } from "./e2e/environment.ts";
 const WEB_PORT = 4173;
 
 /**
- * End-to-end journeys (ADR-0026): the built web app on `vite preview`, proxying `/api` to a
+ * End-to-end journeys (ADR-0026): the web app built by `test:e2e`, on `vite preview`, proxying `/api` to a
  * real server on a real PostgreSQL 18 that `e2e/global-setup.ts` starts. `*.e2e.ts` keeps
  * these files out of Vitest.
  */
@@ -23,7 +23,9 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `pnpm exec vite build && pnpm exec vite preview --port ${String(WEB_PORT)} --strictPort`,
+    // Vite itself, not through pnpm: pnpm starts it outside the process group Playwright stops
+    // at the end, and the orphan kept the run waiting forever on Linux (CI). `test:e2e` builds first.
+    command: `node node_modules/vite/bin/vite.js preview --port ${String(WEB_PORT)} --strictPort`,
     url: `http://localhost:${String(WEB_PORT)}`,
     reuseExistingServer: false,
     timeout: 120_000,
