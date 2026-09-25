@@ -1,0 +1,35 @@
+{
+  "name": "@mustawfi/core-sync",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./shared": "./src/shared/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "mustawfi": {
+    "dependsOn": [
+      "core.access",
+      "core.config",
+      "core.tenancy"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mustawfi/core-access": "workspace:*",
+    "@mustawfi/core-config": "workspace:*",
+    "@mustawfi/core-tenancy": "workspace:*",
+    "@mustawfi/kernel": "workspace:*",
+    "drizzle-orm": "0.45.3",
+    "fastify": "5.12.5",
+    "fastify-type-provider-zod": "7.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@mustawfi/config": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

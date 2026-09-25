@@ -90,6 +90,7 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | مستوى السعر | Price level | `priceLevel` |
 | التكلفة بالمتوسط المرجّح | Weighted average cost | `weightedAverageCost` |
 | حركة مخزون | Stock movement | `stockMovement` |
+| الرصيد المتوفر | Stock on hand (a product's stock level) | `onHand` / `stockLevel` |
 | موقع مخزون | Stock location | `stockLocation` |
 | تسوية مخزون | Stock adjustment | `stockAdjustment` |
 | جرد | Stocktake | `stocktake` |

@@ -35,6 +35,9 @@ export const productSchema = z.object({
 
 export type ProductView = z.infer<typeof productSchema>;
 
+/** Products flow down to every device (ADR-0020); a change carries the full `ProductView`. */
+export const PRODUCT_ENTITY = "inventory.product";
+
 export const PRODUCT_PAGE_LIMIT = 100;
 
 /** `GET /api/v1/inventory/products?limit=&after=`: pages in creation order. */

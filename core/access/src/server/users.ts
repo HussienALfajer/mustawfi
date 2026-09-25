@@ -1,4 +1,5 @@
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
+import { eq } from "drizzle-orm";
 import { newOwnerSchema, type NewOwnerInput } from "../shared/index.ts";
 import { users } from "./schema.ts";
 
@@ -29,4 +30,13 @@ export async function createOwner(tx: TenantTransaction, owner: NewOwner): Promi
     passwordHash: owner.passwordHash,
     isOwner: true,
   });
+}
+
+/**
+ * Whether `userId` is a user of the current `withTenant` context's tenant. Sync checks the
+ * user each operation names before recording it (ADR-0022).
+ */
+export async function isTenantUser(tx: TenantTransaction, userId: string): Promise<boolean> {
+  const rows = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId));
+  return rows.length > 0;
 }

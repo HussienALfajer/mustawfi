@@ -2,7 +2,7 @@ import { openTenantDatabase } from "@mustawfi/core-tenancy/server";
 import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import { buildServer } from "./app.ts";
 import { loadServerConfig } from "./config.ts";
-import { createServerRegistry } from "./modules.ts";
+import { createServerRegistry, hostSyncOperations } from "./modules.ts";
 
 /** Starts the tenant API: `node src/main.ts` with the environment of `config.ts`. */
 const config = loadServerConfig(process.env);
@@ -14,6 +14,7 @@ const app = await buildServer({
     tenants,
     clock: systemClock,
     random: cryptoRandom,
+    syncOperations: hostSyncOperations(registry),
     newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
   },
   logger: true,

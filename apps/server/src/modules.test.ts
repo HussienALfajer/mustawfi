@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ModuleRegistryError } from "@mustawfi/core-config/server";
 import { describe, expect, it } from "vitest";
-import { createServerRegistry, serverModules } from "./modules.ts";
+import {
+  createServerRegistry,
+  hostSyncOperations,
+  moduleSyncOperations,
+  serverModules,
+} from "./modules.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -44,11 +49,27 @@ describe("server modules", () => {
       "core.audit",
       "core.access",
       "core.ledger",
+      "core.sync",
       "inventory",
+      "sales",
     ]);
   });
 
   it("refuse to start with a module disabled that an enabled one depends on", () => {
     expect(() => createServerRegistry(["core.tenancy"])).toThrow(ModuleRegistryError);
+  });
+
+  it("dispatch each module's sync operations only while the module is enabled", () => {
+    expect(hostSyncOperations(createServerRegistry()).types).toEqual(["sales.invoice.post"]);
+    expect(hostSyncOperations(createServerRegistry(["sales"])).types).toEqual([]);
+  });
+
+  it("name each sync operation under its own module", () => {
+    for (const [moduleId, operations] of Object.entries(moduleSyncOperations)) {
+      expect(serverModules.map((m) => m.id)).toContain(moduleId);
+      for (const { type } of operations) {
+        expect(type.startsWith(`${moduleId.replace(/^core\./, "")}.`)).toBe(true);
+      }
+    }
   });
 });
