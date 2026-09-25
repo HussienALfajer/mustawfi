@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, expectAccessible, test } from "./test.ts";
 import { e2eStore } from "./environment.ts";
 import { signIn } from "./steps.ts";
 
@@ -19,7 +20,7 @@ async function addProduct(page: Page, name: string, barcode: string, price: stri
 
 /** Flow 4: the owner issues a registration code and registers this browser, as a companion. */
 async function registerDevice(page: Page): Promise<string> {
-  await page.getByRole("link", { name: "هذا الجهاز" }).click();
+  await page.getByRole("link", { name: "تسجيل الجهاز" }).click();
   await page.getByRole("button", { name: "إصدار رمز تسجيل" }).click();
   const code = page.getByTestId("registration-code");
   await expect(code).toHaveText(/^\S+$/);
@@ -31,6 +32,7 @@ async function registerDevice(page: Page): Promise<string> {
   await expect(prefix).toHaveText(/^[A-HJ-NP-Z2-9]{2}$/);
   // The browser is never the main POS (ADR-0019); the Windows app is.
   await expect(page.getByTestId("device-type")).toHaveText("جهاز مساعد");
+  await expectAccessible(page);
   return (await prefix.textContent()) ?? "";
 }
 
@@ -92,7 +94,7 @@ test("flows 1–7: register, pull, sell offline, push, and see the sale with its
   await expect(recent).toContainText("وصلت إلى الخادم");
 
   // Flow 7: the owner sees the sale and its balanced journal entry on the server.
-  await page.getByRole("link", { name: "المبيعات" }).click();
+  await page.getByRole("link", { name: "الفواتير" }).click();
   const invoice = page.getByRole("article", { name: number });
   await expect(invoice).toContainText("12.50");
   // No stock-receiving route yet, so every end-to-end sale goes below zero and is flagged.
@@ -104,6 +106,7 @@ test("flows 1–7: register, pull, sell offline, push, and see the sale with its
   await expect(debit.getByRole("gridcell").nth(1)).toHaveText("");
   await expect(credit.getByRole("gridcell").nth(0)).toHaveText("");
   await expect(credit.getByRole("gridcell").nth(1)).toHaveText("12.50ل.س");
+  await expectAccessible(page);
 
   expect(warnings).toEqual([]);
 });

@@ -57,7 +57,7 @@ export function hasSessionCredential(): boolean {
 }
 
 export interface ApiRequest<T> {
-  readonly method?: "GET" | "POST";
+  readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Sent as JSON. */
   readonly body?: unknown;
   /** Validates the answer: a response that does not match is a bug, not data. */
@@ -75,15 +75,11 @@ export interface ApiRequest<T> {
   readonly fetch?: typeof fetch;
 }
 
-/**
- * Calls the tenant API at the configured endpoint (`configureApi`), with the session (ADR-0022).
- * A problem-details answer throws `ApiProblem`; no answer throws `ApiUnreachable`.
- */
-export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promise<T> {
+/** Sends a request with the session (or `bearer`); no answer throws `ApiUnreachable`. */
+async function send(path: string, request: Omit<ApiRequest<unknown>, "schema">): Promise<Response> {
   const bearer = request.bearer ?? (endpoint.session === "bearer" ? sessionBearer : undefined);
-  let response: Response;
   try {
-    response = await (request.fetch ?? fetch)(`${endpoint.origin}${path}`, {
+    return await (request.fetch ?? fetch)(`${endpoint.origin}${path}`, {
       method: request.method ?? "GET",
       // Another origin never receives the browser's cookies.
       credentials: endpoint.origin === "" ? "same-origin" : "omit",
@@ -98,18 +94,43 @@ export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promi
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new ApiUnreachable("the API did not answer", { cause: error });
   }
-  if (response.status === 204) return request.schema.parse(null);
+}
+
+/** Throws what an answer that is not OK means: its problem, or no answer from the API. */
+async function refuse(response: Response): Promise<never> {
   const json: unknown = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    const problem = problemDetailsSchema.safeParse(json);
-    // A gateway answering for a server that is down is no answer from the API.
-    if (!problem.success && response.status >= 502) {
-      throw new ApiUnreachable(`the gateway answered ${String(response.status)}`);
-    }
-    throw new ApiProblem(
-      problem.success ? problem.data.code : hostProblemCodes.internal,
-      response.status,
-    );
+  const problem = problemDetailsSchema.safeParse(json);
+  // A gateway answering for a server that is down is no answer from the API.
+  if (!problem.success && response.status >= 502) {
+    throw new ApiUnreachable(`the gateway answered ${String(response.status)}`);
   }
+  throw new ApiProblem(
+    problem.success ? problem.data.code : hostProblemCodes.internal,
+    response.status,
+  );
+}
+
+/**
+ * Calls the tenant API at the configured endpoint (`configureApi`), with the session (ADR-0022).
+ * A problem-details answer throws `ApiProblem`; no answer throws `ApiUnreachable`.
+ */
+export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promise<T> {
+  const response = await send(path, request);
+  if (response.status === 204) return request.schema.parse(null);
+  if (!response.ok) return refuse(response);
+  const json: unknown = await response.json().catch(() => undefined);
   return request.schema.parse(json);
+}
+
+/**
+ * Fetches a binary resource (an image) from the tenant API with the session, as a `Blob`: an
+ * `<img>` cannot carry the Windows app's bearer token. Refusals throw like `apiRequest`'s.
+ */
+export async function apiBlob(
+  path: string,
+  request: Pick<ApiRequest<Blob>, "signal" | "fetch"> = {},
+): Promise<Blob> {
+  const response = await send(path, request);
+  if (!response.ok) return refuse(response);
+  return response.blob();
 }

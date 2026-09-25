@@ -1,7 +1,7 @@
 # Mustawfi screen patterns
 
 - Agreed with the user on 2026-09-25 (`core-foundation` spec session). Builds on ADR-0023 (client stack), ADR-0024 (visual direction), and `design-system.md` (tokens, contrast, densities, patterns to avoid).
-- The rules below are decided. The visual details marked *after the preview* are completed in `core-foundation` slice 3, once the user has approved the preview of the frame and the list-with-side-panel pattern.
+- The rules below are decided. The frame and the list-with-side-panel pattern were approved by the user on a preview on 2026-09-25 and built in `core-foundation` slice 3; their measures below come from that preview.
 - Like `design-system.md`, this document changes only by recorded decision (an ADR or a unit spec's deviation note).
 
 ## Who the screens are for
@@ -10,8 +10,9 @@ Accountants, owners, and cashiers who spend whole shifts in the app, mostly on a
 
 ## The frame
 
-- **Side navigation** on the start side (right in Arabic), in groups — Sales, Inventory, Accounting, Treasury, Reports, Administration, This device — collapsible to icons with labels on focus. An entry appears only when the signed-in user may open it. *After the preview:* widths, group order, the collapsed state's behaviour.
-- **Top bar:** the page title, the sync status indicator, the license warning (owners), and the user menu (My account, sign out, switch user).
+- **Side navigation** on the start side (right in Arabic), 232 px wide, in groups in this order — Sales, Inventory, Accounting, Treasury, Reports, Administration, This device — each under a small muted heading. An entry appears only when the signed-in user may open it, and a group with no entry is not shown. The current page has the `selected` background, accent text, and a 3 px accent bar on its start edge.
+- **Collapsed** to 56 px: icons only; the group headings become dividers; each label stays the link's accessible name and appears beside the icon on hover or keyboard focus. The toggle sits at the foot of the navigation with its shortcut, `Ctrl+B` toggles from anywhere, and the choice is remembered on the device (browser storage; a refusal only means it is not remembered).
+- **Top bar**, 56 px: the page title (the page's one `h1`) at the start; at the end the license warning (owners), the sync status indicator, the user (name and role), and the user menu (My account, sign out, switch user).
 - **Content** fills the rest; no fixed maximum width on list screens (tables use the space), a readable maximum on forms.
 
 ## Patterns
@@ -20,7 +21,7 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 
 | Pattern | Used for | Shape |
 |---|---|---|
-| **List with side panel** | Master data and records: users, roles, departments, devices, audit entries, products, customers | A compact table with a filter bar; selecting a row opens its details in a side panel beside the table, never a modal. The arrow keys move between rows while the panel follows. «New» opens an empty panel. |
+| **List with side panel** | Master data and records: users, roles, departments, devices, audit entries, products, customers | A compact table under a filter bar (search, status choice, count, and «New» at the end); selecting a row opens its details in a 400 px side panel on the end side, never a modal, and the table narrows beside it. The arrow keys move the selection and the panel follows; «New» (`N`) opens an empty panel. The panel has its title and close button (`Esc`) on top, and a footer with Save (`Ctrl+S`) at the start and a destructive action at the end. The selection and the filters live in the URL. |
 | **Full document** | Invoices, journal entries, vouchers, statements | A full page with the document's header, lines, totals with the double rule, and its actions; opened from a list, back to the same list position. |
 | **Settings form** | Store profile, My account, printer | Sections with headings on one page; a sticky footer with Save and Cancel; unsaved changes guarded on leave. |
 | **Summary** | License and plan, device status | Read-only facts with their state; actions link to where they are done. |
@@ -31,8 +32,8 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 
 **Keyboard**
 - Every journey works without a mouse; Playwright journeys are keyboard-only.
-- `Enter` moves to the next field (and submits on the last), `Esc` closes the side panel or dialog, `/` focuses the list's search, arrow keys move in tables, `Ctrl+S` saves a form or panel. Shortcuts are shown next to their buttons.
-- Focus never gets lost: closing a panel returns focus to its row; saving keeps the row selected.
+- `Enter` moves to the next field (and submits on the last), `Esc` closes the side panel or dialog, `/` focuses the list's search, arrow keys move in tables, `Ctrl+S` saves a form or panel, `N` opens a new record in a list (when no field has focus), `Ctrl+B` collapses the side navigation. Shortcuts are shown next to their buttons (`Kbd`, fed with the button's own `aria-keyshortcuts`).
+- Focus never gets lost: closing a panel returns focus to its row (or to «New» for a new record); saving keeps the row selected.
 
 **Tables**
 - `compact` density; sticky header; numeric columns end-aligned with tabular figures and their currency; a totals row where totals mean something.
@@ -58,7 +59,7 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 
 - **Built when a screen needs them.** A component starts in the module whose screen needs it; it moves to `packages/ui` when a second module needs it. Generic controls with no domain meaning (select, checkbox, switch, dialog, side panel, tabs, badge, page header, filter bar) go to `packages/ui` from their first use.
 - Built on React Aria Components for behaviour, styled only with semantic and component tokens (ADR-0023, ADR-0024). No third-party component kit.
-- Every `packages/ui` component has behaviour tests and appears in the **component gallery** — the former token preview page — in light and dark and in all three densities. The user can review the gallery at any time.
+- Every `packages/ui` component has behaviour tests and appears in the **component gallery** — the former token preview page — in light and dark and in all three densities, after the palette, semantic tokens, contrast pairs, and type scale. It is the web app's `/gallery` page, open without signing in, so the user can review it at any time. A test fails when the package exports a component the gallery does not show.
 
 ## Code structure
 
@@ -81,7 +82,7 @@ Rules: a screen does not fetch data itself (queries do); validation is written o
 
 ## Checks
 
-- An **axe** accessibility check in every Playwright journey fails the build on a violation.
+- An **axe** accessibility check (WCAG 2.1 A and AA rules) in every Playwright journey fails the build on a violation: journeys import `test` from `apps/web/e2e/test.ts`, which checks the screen each journey ends on, and they call `expectAccessible` on each screen they pass through. React Aria's off-screen live region is excluded: a button that stops being pending announces itself there by id, and that node outlives the button for 7 seconds when the page changes.
 - The touch-size check (48 px) in `touch` density (existing).
 - Keyboard-only journeys per screen.
 - Screenshots of each new screen, light and dark, in the slice report for the user.

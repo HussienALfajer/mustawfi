@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { generatePreviewHtml } from "../preview/preview.ts";
 import { contrastRatio, hexToOklch, oklchToHex } from "./color.ts";
 import { checkContrast, CONTRAST_PAIRS, DECORATIVE_TOKENS, MIN_TEXT } from "./contrast.ts";
 import { generateTailwindThemeCss, generateTokenCss, themeDeclarations } from "./css.ts";
@@ -195,34 +194,5 @@ describe("token stylesheet", () => {
     expect(css).toContain('[data-density="compact"] {');
     expect(css).toContain('[data-density="touch"] {');
     for (const name of Object.keys(COMPONENT_TOKENS)) expect(css).toContain(`--mf-${name}:`);
-  });
-});
-
-describe("preview page", () => {
-  const html = generatePreviewHtml({ palette, fontStylesheets: ["fonts.css"] });
-
-  it("shows palette, tokens, contrast, type, densities, money, and the double-rule total", () => {
-    for (const id of [
-      "palette",
-      "semantic",
-      "contrast",
-      "type",
-      "density",
-      "money",
-      "total",
-      "status",
-    ]) {
-      expect(html).toContain(`<section id="${id}">`);
-    }
-    for (const token of SEMANTIC_TOKENS) expect(html).toContain(`--mf-color-${token}`);
-    expect(html).toContain('data-density="touch"');
-    expect(html).toContain("border-block-end:4px double var(--mf-total-rule)");
-    expect(html).toContain('<bdi class="machine">K7-INV-000123</bdi>');
-  });
-
-  it("builds a fragment for a host page that follows the OS theme", () => {
-    const hosted = generatePreviewHtml({ palette, fontStylesheets: [], hosted: true });
-    expect(hosted).not.toContain("<html");
-    expect(hosted).toContain(":root:not([data-theme]) {");
   });
 });

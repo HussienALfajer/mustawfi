@@ -19,6 +19,7 @@ import { loadReceiptFonts } from "@mustawfi/printing";
 import { LocalDbProvider } from "@mustawfi/local-db";
 import { SALES_NAMESPACE, salesMessages } from "@mustawfi/sales/client";
 import { LocaleProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { GALLERY_NAMESPACE, galleryMessages } from "@mustawfi/ui/gallery";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -41,6 +42,7 @@ configureApi(platform.api);
 const i18n = createI18n({
   [SHELL_NAMESPACE]: shellMessages,
   [UI_NAMESPACE]: uiMessages,
+  [GALLERY_NAMESPACE]: galleryMessages,
   [ACCESS_NAMESPACE]: accessMessages,
   [TENANCY_NAMESPACE]: tenancyMessages,
   [ORGANIZATION_NAMESPACE]: organizationMessages,

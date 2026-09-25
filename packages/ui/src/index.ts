@@ -45,7 +45,12 @@ export {
 } from "./tokens/themes.ts";
 export { Button, type ButtonProps, type ButtonVariant } from "./components/button.tsx";
 export { cx } from "./components/cx.ts";
-export { type DataColumn, DataTable, type DataTableProps } from "./components/data-table.tsx";
+export {
+  type DataColumn,
+  DataTable,
+  type DataTableProps,
+  focusDataTableRow,
+} from "./components/data-table.tsx";
 export { LocaleProvider } from "./components/locale-provider.tsx";
 export { UI_NAMESPACE, uiMessages } from "./components/messages.ts";
 export {
@@ -58,3 +63,30 @@ export {
 } from "./components/money-input.tsx";
 export { Money, type MoneyProps, useCurrencyLabel } from "./components/money.tsx";
 export { TextInput, type TextInputProps } from "./components/text-input.tsx";
+export { Badge, type BadgeTone } from "./components/badge.tsx";
+export { ConfirmDialog, type ConfirmDialogProps } from "./components/confirm-dialog.tsx";
+export { Kbd, shortcutLabel } from "./components/kbd.tsx";
+export {
+  enterMovesToNextField,
+  isTypingTarget,
+  type Shortcut,
+  useShortcut,
+} from "./components/keyboard.ts";
+export { SearchField, type SearchFieldProps } from "./components/search-field.tsx";
+export {
+  type SegmentedOption,
+  SegmentedControl,
+  type SegmentedControlProps,
+} from "./components/segmented-control.tsx";
+export { FormFooter, FormSection } from "./components/settings-form.tsx";
+export {
+  NAV_LINK_CLASS,
+  type NavGroup,
+  type NavItem,
+  SIDE_NAVIGATION_WIDTH,
+  SideNavigation,
+  type SideNavigationProps,
+  useNavigationCollapsed,
+} from "./components/side-navigation.tsx";
+export { SidePanel, type SidePanelProps } from "./components/side-panel.tsx";
+export { TextArea, type TextAreaProps } from "./components/text-area.tsx";

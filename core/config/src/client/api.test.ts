@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { apiRequest, configureApi, hasSessionCredential, holdSessionToken } from "./index.ts";
+import {
+  apiBlob,
+  ApiProblem,
+  apiRequest,
+  configureApi,
+  hasSessionCredential,
+  holdSessionToken,
+} from "./index.ts";
 
 interface Sent {
   readonly url: string;
@@ -68,5 +75,36 @@ describe("apiRequest endpoints (ADR-0022)", () => {
     holdSessionToken("s1.session");
     configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
     expect(hasSessionCredential()).toBe(false);
+  });
+});
+
+describe("apiBlob", () => {
+  it("fetches bytes with the held bearer token, which an <img> could not send", async () => {
+    configureApi({ origin: "https://store.example", session: "bearer" });
+    holdSessionToken("s1.token");
+    const sent: Sent[] = [];
+    const fake = (url: string, init: RequestInit = {}) => {
+      sent.push({ url, init });
+      return Promise.resolve(new Response(new Uint8Array([0x89, 0x50]), { status: 200 }));
+    };
+    const blob = await apiBlob("/api/v1/organization/profile/logo", {
+      fetch: fake as unknown as typeof fetch,
+    });
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(new Uint8Array([0x89, 0x50]));
+    expect(sent[0]?.url).toBe("https://store.example/api/v1/organization/profile/logo");
+    expect(authorization(sent[0])).toBe("Bearer s1.token");
+  });
+
+  it("throws the problem of a refusal", async () => {
+    const fake = () =>
+      Promise.resolve(
+        Response.json(
+          { type: "about:blank", title: "none", status: 404, code: "organization.logo.notFound" },
+          { status: 404 },
+        ),
+      );
+    await expect(
+      apiBlob("/api/v1/organization/profile/logo", { fetch: fake as unknown as typeof fetch }),
+    ).rejects.toEqual(new ApiProblem("organization.logo.notFound", 404));
   });
 });

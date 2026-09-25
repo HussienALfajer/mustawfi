@@ -1,4 +1,6 @@
 import type { Messages } from "@mustawfi/i18n";
+import { departmentsMessages } from "./departments/messages.ts";
+import { storeProfileMessages } from "./store-profile/messages.ts";
 
 /** The `organization` namespace (ADR-0023: one namespace per module, shipped in its client entry). */
 export const ORGANIZATION_NAMESPACE = "organization";
@@ -16,4 +18,6 @@ export const organizationMessages = {
       changed: "تعديل ملف المتجر",
     },
   },
+  departments: departmentsMessages,
+  profile: storeProfileMessages,
 } satisfies Messages;

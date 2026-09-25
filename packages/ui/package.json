@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/styles/tokens.css",
-    "./theme.css": "./src/styles/theme.css"
+    "./theme.css": "./src/styles/theme.css",
+    "./gallery": "./src/gallery/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -17,6 +18,7 @@
     "@fontsource/ibm-plex-sans-arabic": "5.3.0",
     "@mustawfi/i18n": "workspace:*",
     "@mustawfi/kernel": "workspace:*",
+    "lucide-react": "1.48.0",
     "react": "19.3.0",
     "react-aria-components": "1.21.1",
     "react-dom": "19.3.0",
