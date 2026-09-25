@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import type { ModuleRegistry } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
@@ -18,6 +19,12 @@ export interface ServerOptions<Context> {
   readonly registry: ModuleRegistry<Context>;
   readonly context: Context;
   readonly logger?: FastifyServerOptions["logger"];
+  /**
+   * Origins of the native shells' web views (the Windows app is `http://tauri.localhost`),
+   * allowed to call the API from another origin (CORS). They authenticate with bearer tokens
+   * only (ADR-0022): credentials are not allowed, so the browser's cookie never crosses.
+   */
+  readonly clientOrigins?: readonly string[];
 }
 
 /**
@@ -33,6 +40,17 @@ export async function buildServer<Context>(
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(problemErrorHandler);
   app.setNotFoundHandler(problemNotFoundHandler);
+
+  const clientOrigins = new Set(options.clientOrigins ?? []);
+  await app.register(cors, {
+    origin: (origin, callback) => {
+      callback(null, origin !== undefined && clientOrigins.has(origin));
+    },
+    methods: ["GET", "POST"],
+    allowedHeaders: ["authorization", "content-type"],
+    credentials: false,
+    maxAge: 600,
+  });
 
   await app.register(swagger, {
     openapi: {

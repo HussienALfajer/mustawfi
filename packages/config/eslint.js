@@ -105,7 +105,17 @@ export const domainRules = [
  */
 export function mustawfi({ tsconfigRootDir }) {
   return defineConfig(
-    { ignores: ["**/node_modules/", "**/dist/", "**/coverage/", "**/.turbo/"] },
+    {
+      ignores: [
+        "**/node_modules/",
+        "**/dist/",
+        "**/dist-desktop/",
+        "**/coverage/",
+        "**/.turbo/",
+        "target/",
+        "**/src-tauri/gen/",
+      ],
+    },
     js.configs.recommended,
     tseslint.configs.recommendedTypeChecked,
     {

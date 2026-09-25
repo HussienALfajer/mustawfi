@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { accessProblemCodes, deviceNameSchema } from "../shared/index.ts";
+import { accessProblemCodes, deviceNameSchema, type DeviceType } from "../shared/index.ts";
 import {
   DeviceAlreadyRegistered,
   issueRegistrationCode,
@@ -84,7 +84,7 @@ function IssueCodeSection(props: { readonly onIssued: (storeCode: string) => voi
   );
 }
 
-function RegisterSection() {
+function RegisterSection(props: { readonly deviceType: DeviceType }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const db = useLocalDb();
   const { clock } = useClientRuntime();
@@ -98,6 +98,7 @@ function RegisterSection() {
       registerThisDevice(
         db,
         {
+          type: props.deviceType,
           storeCode: values.storeCode.trim(),
           registrationCode: values.registrationCode.trim(),
           name: values.name.trim(),
@@ -203,11 +204,16 @@ function RegisterSection() {
   );
 }
 
+export interface DeviceScreenProps {
+  /** What this client registers as: the app shell decides (ADR-0022). */
+  readonly deviceType: DeviceType;
+}
+
 /**
  * This client as a device (flow 4): its registration, or the form that registers it with a
  * registration code the owner issues.
  */
-export function DeviceScreen() {
+export function DeviceScreen(props: DeviceScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const db = useLocalDb();
   const device = useQuery(localDeviceQueryOptions(db));
@@ -222,7 +228,7 @@ export function DeviceScreen() {
       ) : device.data === undefined ? (
         <p className="text-text-secondary">{t("device.loading")}</p>
       ) : device.data === null ? (
-        <RegisterSection />
+        <RegisterSection deviceType={props.deviceType} />
       ) : (
         <dl className="grid max-w-md grid-cols-2 gap-2 rounded-md bg-surface p-4">
           <dt className="text-text-secondary">{t("device.registered.name")}</dt>
@@ -236,6 +242,10 @@ export function DeviceScreen() {
             >
               {device.data.prefix}
             </bdi>
+          </dd>
+          <dt className="text-text-secondary">{t("device.registered.type")}</dt>
+          <dd className="text-text" data-testid="device-type">
+            {t(`device.types.${device.data.type}`)}
           </dd>
           <dt className="text-text-secondary">{t("device.registered.state")}</dt>
           <dd className="text-text-positive">{t("device.registered.ready")}</dd>

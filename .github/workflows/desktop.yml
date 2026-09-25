@@ -1,0 +1,55 @@
+name: Desktop
+
+# The Windows app (ADR-0027): on main, nightly, by hand, and on pull requests that touch it.
+# Not a required check; `verify` (ci.yml) is.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - apps/web/**
+      - packages/local-db/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/desktop.yml
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.2
+      - run: pnpm install --frozen-lockfile
+      # The shell embeds the web build, so it must exist before the Rust crates compile.
+      - run: pnpm --filter @mustawfi/web build:desktop
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+      # The LocalDb contract suite on the native core, on Windows.
+      - run: pnpm exec vitest run --project @mustawfi/local-db
+      - run: pnpm --filter @mustawfi/desktop build:installer
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: mustawfi-windows-installer
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14

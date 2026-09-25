@@ -20,6 +20,7 @@ export const verifySteps: readonly VerifyStep[] = [
   { script: "lint", command: "pnpm run lint" },
   { script: "typecheck", command: "pnpm run typecheck" },
   { script: "check:boundaries", command: "pnpm run check:boundaries" },
+  { script: "check:rust", command: "pnpm run check:rust" },
   // Same run as `pnpm test`; the minimal reporter prints only failures and the summary.
   { script: "test", command: "pnpm exec vitest run --reporter=minimal" },
   { script: "test:e2e", command: "pnpm run test:e2e" },

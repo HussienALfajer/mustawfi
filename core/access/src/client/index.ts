@@ -10,7 +10,7 @@ export {
   registerThisDevice,
   type RegisterThisDeviceInput,
 } from "./device.ts";
-export { DeviceScreen } from "./device-screen.tsx";
+export { DeviceScreen, type DeviceScreenProps } from "./device-screen.tsx";
 export { LoginScreen, type LoginScreenProps } from "./login-screen.tsx";
 export { ACCESS_NAMESPACE, accessMessages } from "./messages.ts";
 export {

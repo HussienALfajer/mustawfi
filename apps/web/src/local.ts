@@ -4,8 +4,8 @@ import { inventoryLocalMigrations, inventoryPullAppliers } from "@mustawfi/inven
 import { systemClock } from "@mustawfi/kernel";
 import { salesLocalMigrations } from "@mustawfi/sales/client";
 import { type LocalDb, migrateLocalDb, touchesLocalTables } from "@mustawfi/local-db";
-import { openWorkerLocalDb } from "@mustawfi/local-db/browser";
 import type { QueryClient } from "@tanstack/react-query";
+import type { ClientPlatform } from "./platform.ts";
 
 /** Every module's local schema, in dependency order (ADR-0019). */
 const LOCAL_MIGRATIONS = [
@@ -15,6 +15,9 @@ const LOCAL_MIGRATIONS = [
   ...salesLocalMigrations,
 ];
 
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+
 export interface LocalRuntime {
   readonly db: LocalDb;
   readonly sync: SyncEngine;
@@ -23,14 +26,36 @@ export interface LocalRuntime {
 /**
  * Opens the device's local database, migrates it before the outbox is used, and starts the
  * sync loop. Commits invalidate the queries that read the changed tables (ADR-0023).
+ *
+ * Where the platform can copy the database (the Windows app), it does so before migrating a
+ * database that has data, and once a day (ADR-0019): at start-up, then checked every hour.
  */
-export async function startLocalRuntime(queryClient: QueryClient): Promise<LocalRuntime> {
-  const worker = new Worker(new URL("./local-db.worker.ts", import.meta.url), { type: "module" });
-  const { db, durability } = await openWorkerLocalDb(worker, "mustawfi");
-  if (durability.journalMode !== "wal" || durability.synchronous !== "2") {
-    console.warn("the local database is not in WAL with synchronous = FULL", durability);
+export async function startLocalRuntime(
+  queryClient: QueryClient,
+  platform: ClientPlatform,
+): Promise<LocalRuntime> {
+  const { db, backup } = await platform.openLocalDb();
+  await migrateLocalDb(db, LOCAL_MIGRATIONS, {
+    ...(backup === undefined
+      ? {}
+      : {
+          beforeApplying: async () => {
+            if ((await backup()) === undefined) {
+              throw new Error("the local database could not be copied before migrating");
+            }
+          },
+        }),
+  });
+  if (backup !== undefined) {
+    const daily = () => {
+      // A missed daily copy must not stop the till; the next check tries again.
+      backup({ minAgeMs: DAY_MS }).catch((error: unknown) => {
+        console.error("the daily copy of the local database failed", error);
+      });
+    };
+    daily();
+    setInterval(daily, HOUR_MS);
   }
-  await migrateLocalDb(db, LOCAL_MIGRATIONS);
   db.subscribe((tables) => {
     void queryClient.invalidateQueries({
       predicate: (query) => touchesLocalTables(query.meta, tables),

@@ -1,0 +1,22 @@
+# Rust crates of the clients (ADR-0019): the native LocalDb core and the Windows shell.
+[workspace]
+resolver = "3"
+members = ["packages/local-db/native", "apps/desktop/src-tauri"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.90"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+
+[profile.release]
+# Old shop PCs (ADR-0010): a smaller binary.
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true

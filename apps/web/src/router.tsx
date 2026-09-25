@@ -1,3 +1,4 @@
+import type { DeviceType } from "@mustawfi/core-access/shared";
 import {
   DeviceScreen,
   LoginScreen,
@@ -22,6 +23,8 @@ import { SHELL_NAMESPACE } from "./messages.ts";
 
 export interface RouterContext {
   readonly queryClient: QueryClient;
+  /** What this client registers as: the Windows app is the main POS (ADR-0022). */
+  readonly deviceType: DeviceType;
 }
 
 function ProductMark() {
@@ -196,10 +199,15 @@ const invoicesRoute = createRoute({
   component: InvoicesScreen,
 });
 
+function DevicePage() {
+  const { deviceType } = deviceRoute.useRouteContext();
+  return <DeviceScreen deviceType={deviceType} />;
+}
+
 const deviceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/device",
-  component: DeviceScreen,
+  component: DevicePage,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -207,8 +215,12 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([indexRoute, posRoute, productsRoute, invoicesRoute, deviceRoute]),
 ]);
 
-export function createAppRouter(queryClient: QueryClient) {
-  return createRouter({ routeTree, context: { queryClient }, defaultPreload: "intent" });
+export function createAppRouter(queryClient: QueryClient, deviceType: DeviceType) {
+  return createRouter({
+    routeTree,
+    context: { queryClient, deviceType },
+    defaultPreload: "intent",
+  });
 }
 
 declare module "@tanstack/react-router" {

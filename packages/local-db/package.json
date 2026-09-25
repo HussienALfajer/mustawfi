@@ -8,7 +8,9 @@
     "./wasm": "./src/wasm.ts",
     "./worker": "./src/worker.ts",
     "./browser": "./src/browser.ts",
-    "./contract": "./src/contract.ts"
+    "./contract": "./src/contract.ts",
+    "./native": "./src/native.ts",
+    "./tauri": "./src/tauri.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
@@ -22,6 +24,7 @@
   },
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "3.53.4-build1",
+    "@tauri-apps/api": "2.11.1",
     "drizzle-orm": "0.45.3",
     "react": "19.3.0"
   }

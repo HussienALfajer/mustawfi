@@ -9,8 +9,10 @@ out/
 coverage/
 *.tsbuildinfo
 
-# Native shells (Tauri / Capacitor)
-src-tauri/target/
+# Native shells (Tauri / Capacitor) and Cargo
+/target/
+apps/desktop/src-tauri/gen/
+apps/web/dist-desktop/
 android/.gradle/
 android/app/build/
 ios/App/Pods/

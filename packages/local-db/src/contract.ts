@@ -291,6 +291,40 @@ export function localDbContract(name: string, adapter: ContractAdapter): void {
       });
     });
 
+    it("calls beforeApplying once, only before migrating a database that has data", async () => {
+      await withDb(adapter, async (db) => {
+        const first = { id: "a.0001_items", statements: [ITEMS] };
+        const second = {
+          id: "a.0002_index",
+          statements: ["CREATE INDEX items_qty ON items (qty)"],
+        };
+        const third = { id: "a.0003_other", statements: ["CREATE TABLE other (id TEXT)"] };
+        const calls: (readonly string[])[] = [];
+        const beforeApplying = async (pending: readonly string[]) => {
+          calls.push(pending);
+          // The hook sees the database as it was: nothing of the pending migrations yet.
+          expect(await db.query("SELECT count(*) AS n FROM local_migrations")).toEqual([{ n: 1n }]);
+        };
+        // A new database has nothing to protect.
+        await migrateLocalDb(db, [first], { beforeApplying });
+        expect(calls).toEqual([]);
+        await migrateLocalDb(db, [first, second, third], { beforeApplying });
+        expect(calls).toEqual([["a.0002_index", "a.0003_other"]]);
+        // Nothing pending, no call.
+        await migrateLocalDb(db, [first, second, third], { beforeApplying });
+        expect(calls).toHaveLength(1);
+        // A failing hook stops the migration.
+        const fourth = { id: "a.0004_more", statements: ["CREATE TABLE more (id TEXT)"] };
+        const refused = new Error("no backup, no migration");
+        await expect(
+          migrateLocalDb(db, [first, second, third, fourth], {
+            beforeApplying: () => Promise.reject(refused),
+          }),
+        ).rejects.toBe(refused);
+        expect(await db.query("SELECT count(*) AS n FROM local_migrations")).toEqual([{ n: 3n }]);
+      });
+    });
+
     it("carries Drizzle queries, with int64 and safeInteger columns", async () => {
       await withDb(adapter, async (db) => {
         await db.run(

@@ -49,8 +49,13 @@ export const accessMessages = {
     registered: {
       name: "اسم الجهاز",
       prefix: "بادئة أرقام الفواتير",
+      type: "نوع الجهاز",
       state: "الحالة",
       ready: "مسجّل وجاهز للبيع",
+    },
+    types: {
+      mainPos: "جهاز رئيسي (كاشير)",
+      companion: "جهاز مساعد",
     },
   },
 } satisfies Messages;

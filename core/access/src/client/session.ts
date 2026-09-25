@@ -1,4 +1,10 @@
-import { ApiProblem, apiRequest } from "@mustawfi/core-config/client";
+import {
+  ApiProblem,
+  apiRequest,
+  hasSessionCredential,
+  holdSessionToken,
+  sessionTransport,
+} from "@mustawfi/core-config/client";
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import { accessProblemCodes, currentSessionSchema, loginResponseSchema } from "../shared/index.ts";
@@ -7,8 +13,9 @@ export type CurrentSession = z.infer<typeof currentSessionSchema>;
 
 export const sessionQueryKey = ["access", "session"] as const;
 
-/** The signed-in session, or `null` when there is none (a 401). */
+/** The signed-in session, or `null` when there is none (a 401, or no token held). */
 export async function fetchSession(signal?: AbortSignal): Promise<CurrentSession | null> {
+  if (!hasSessionCredential()) return null;
   try {
     return await apiRequest("/api/v1/access/session", {
       schema: currentSessionSchema,
@@ -16,6 +23,7 @@ export async function fetchSession(signal?: AbortSignal): Promise<CurrentSession
     });
   } catch (error) {
     if (error instanceof ApiProblem && error.code === accessProblemCodes.sessionRequired) {
+      holdSessionToken(undefined);
       return null;
     }
     throw error;
@@ -38,23 +46,35 @@ export interface SignInInput {
   readonly password: string;
 }
 
-/** Signs in with the browser transport: the server sets an `HttpOnly` cookie (ADR-0022). */
+/**
+ * Signs in with this client's session transport (ADR-0022): in the browser the server sets an
+ * `HttpOnly` cookie; the Windows app receives the token and holds it.
+ */
 export async function signIn(input: SignInInput): Promise<CurrentSession> {
+  const transport = sessionTransport();
   const answer = await apiRequest("/api/v1/access/login", {
     method: "POST",
-    body: { ...input, transport: "cookie" },
+    body: { ...input, transport },
     schema: loginResponseSchema,
   });
+  if (transport === "bearer") {
+    if (answer.token === undefined) throw new Error("the bearer sign-in returned no token");
+    holdSessionToken(answer.token);
+  }
   return { tenantId: answer.tenantId, expiresAt: answer.expiresAt, user: answer.user };
 }
 
-/** Ends the session on the server, which also clears the cookie. */
+/** Ends the session on the server, which also clears the cookie, and forgets a held token. */
 export async function signOut(): Promise<void> {
   try {
     await apiRequest("/api/v1/access/logout", { method: "POST", schema: z.null() });
   } catch (error) {
     // Already signed out (expired or revoked elsewhere): the goal is reached.
-    if (error instanceof ApiProblem && error.code === accessProblemCodes.sessionRequired) return;
+    if (error instanceof ApiProblem && error.code === accessProblemCodes.sessionRequired) {
+      holdSessionToken(undefined);
+      return;
+    }
     throw error;
   }
+  holdSessionToken(undefined);
 }

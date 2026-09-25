@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p sync-sim/tsconfig.json"
   },
   "dependencies": {
+    "@fastify/cors": "11.3.0",
     "@fastify/swagger": "9.9.0",
     "@mustawfi/core-access": "workspace:*",
     "@mustawfi/core-audit": "workspace:*",

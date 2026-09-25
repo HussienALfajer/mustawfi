@@ -1,0 +1,24 @@
+[package]
+name = "mustawfi-local-db"
+description = "The native LocalDb core (ADR-0019): one SQLite connection behind a request/response protocol."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+# The contract suite's host: the same protocol over stdin/stdout, so Vitest runs the native core.
+name = "local-db-stdio"
+path = "src/bin/local-db-stdio.rs"
+
+[dependencies]
+base64 = "0.23.1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-local-db"
+description = "Enables the local_db command without any pre-configured scope."
+commands.allow = ["local_db"]
+
+[[permission]]
+identifier = "deny-local-db"
+description = "Denies the local_db command without any pre-configured scope."
+commands.deny = ["local_db"]
