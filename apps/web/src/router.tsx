@@ -5,19 +5,43 @@ import {
   sessionQueryOptions,
   SignOutButton,
 } from "@mustawfi/core-access/client";
+import {
+  departmentFiltersSchema,
+  DepartmentsScreen,
+  StoreProfileScreen,
+} from "@mustawfi/core-organization/client";
 import { SyncStatusIndicator } from "@mustawfi/core-sync/client";
 import { ProductsScreen } from "@mustawfi/inventory/client";
 import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
+import {
+  type NavGroup,
+  SIDE_NAVIGATION_WIDTH,
+  SideNavigation,
+  useNavigationCollapsed,
+} from "@mustawfi/ui";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
   Link,
+  lazyRouteComponent,
   Outlet,
   redirect,
+  useBlocker,
+  useMatches,
   useNavigate,
 } from "@tanstack/react-router";
+import {
+  Layers,
+  MonitorSmartphone,
+  Package,
+  Printer,
+  ReceiptText,
+  ShoppingCart,
+  Store,
+} from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SHELL_NAMESPACE } from "./messages.ts";
 import { PrinterScreen, ReceiptActions } from "./printing.tsx";
@@ -28,6 +52,20 @@ export interface RouterContext {
   readonly deviceType: DeviceType;
 }
 
+/** A page's place in the frame: its title (a `shell` key), and whether it fills the content area. */
+declare module "@tanstack/react-router" {
+  interface StaticDataRouteOption {
+    readonly title?: `pages.${string}`;
+    /** List and settings screens fill the content area; older screens sit in a padded column. */
+    readonly fill?: boolean;
+  }
+}
+
+/** Where the side navigation's collapsed state is remembered on this device. */
+const NAVIGATION_STORAGE_KEY = "mustawfi.navigation";
+
+const ICON_PROPS = { size: 20, strokeWidth: 1.75 } as const;
+
 function ProductMark() {
   const { t } = useTranslation(SHELL_NAMESPACE);
   return (
@@ -35,7 +73,7 @@ function ProductMark() {
       <span className="border-b-4 border-double border-signature text-xl font-bold text-text">
         {t("mark")}
       </span>
-      <span className="text-xs text-text-secondary">{t("vendor")}</span>
+      <span className="text-xs whitespace-nowrap text-text-secondary">{t("vendor")}</span>
     </div>
   );
 }
@@ -91,60 +129,161 @@ const loginRoute = createRoute({
   component: LoginPage,
 });
 
-function NavLink(props: {
-  readonly to: "/pos" | "/products" | "/invoices" | "/device" | "/printer";
-  readonly children: string;
-}) {
-  return (
-    <Link
-      to={props.to}
-      className="text-text-secondary data-[status=active]:font-semibold data-[status=active]:text-text-accent"
-    >
-      {props.children}
-    </Link>
-  );
+/** The component gallery: a review tool, open without a session (`screen-patterns.md`). */
+const galleryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/gallery",
+  component: lazyRouteComponent(() => import("./gallery.tsx"), "GalleryPage"),
+});
+
+type NavPath =
+  | "/pos"
+  | "/invoices"
+  | "/products"
+  | "/admin/profile"
+  | "/admin/departments"
+  | "/device"
+  | "/printer";
+
+function navLink(to: NavPath) {
+  return function NavLink({
+    className,
+    children,
+  }: {
+    readonly className: string;
+    readonly children: ReactNode;
+  }) {
+    return (
+      <Link to={to} className={className}>
+        {children}
+      </Link>
+    );
+  };
 }
 
+/**
+ * The side navigation's groups. An entry appears only when the user may open it: until
+ * roles and permissions (slice 5), administration is the owner's.
+ */
+function useNavigationGroups(isOwner: boolean): NavGroup[] {
+  const { t } = useTranslation(SHELL_NAMESPACE);
+  const item = (id: string, to: NavPath, icon: ReactNode) => ({
+    id,
+    label: t(`nav.${id}`),
+    icon,
+    link: navLink(to),
+  });
+  return [
+    {
+      id: "sales",
+      label: t("nav.group.sales"),
+      items: [
+        item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />),
+        item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />),
+      ],
+    },
+    {
+      id: "inventory",
+      label: t("nav.group.inventory"),
+      items: [item("products", "/products", <Package {...ICON_PROPS} />)],
+    },
+    {
+      id: "administration",
+      label: t("nav.group.administration"),
+      items: isOwner
+        ? [
+            item("profile", "/admin/profile", <Store {...ICON_PROPS} />),
+            item("departments", "/admin/departments", <Layers {...ICON_PROPS} />),
+          ]
+        : [],
+    },
+    {
+      id: "device",
+      label: t("nav.group.device"),
+      items: [
+        item("device", "/device", <MonitorSmartphone {...ICON_PROPS} />),
+        item("printer", "/printer", <Printer {...ICON_PROPS} />),
+      ],
+    },
+  ];
+}
+
+/** The page title and layout of the deepest matched route. */
+function usePage() {
+  const matches = useMatches();
+  const page = [...matches].reverse().find((match) => match.staticData.title !== undefined);
+  return { title: page?.staticData.title, fill: page?.staticData.fill === true };
+}
+
+/**
+ * The frame (`screen-patterns.md`, approved on the preview 2026-09-25): the grouped side
+ * navigation on the start side, collapsible with `Ctrl+B`; a top bar with the page title, the
+ * sync status, and the user; the page fills the rest.
+ */
 function AppShell() {
   const { t } = useTranslation(SHELL_NAMESPACE);
   const navigate = useNavigate();
   const session = useQuery(sessionQueryOptions()).data;
+  const [collapsed, setCollapsed] = useNavigationCollapsed(NAVIGATION_STORAGE_KEY);
+  const groups = useNavigationGroups(session?.user.isOwner === true);
+  const page = usePage();
   return (
-    <div className="flex min-h-screen flex-col bg-page">
+    <div
+      className="grid h-screen bg-page text-text transition-[grid-template-columns]"
+      style={{
+        gridTemplateColumns: `${collapsed ? SIDE_NAVIGATION_WIDTH.collapsed : SIDE_NAVIGATION_WIDTH.expanded} minmax(0, 1fr)`,
+      }}
+    >
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:start-2 focus:top-2 focus:bg-surface focus:p-2 focus:text-text-accent"
+        className="sr-only focus:not-sr-only focus:absolute focus:start-2 focus:top-2 focus:z-50 focus:bg-surface focus:p-2 focus:text-text-accent"
       >
         {t("skipToContent")}
       </a>
-      <header className="flex items-center justify-between gap-4 border-b border-divider bg-surface px-6 py-3">
-        <div className="flex items-center gap-8">
-          <ProductMark />
-          <nav aria-label={t("nav.label")} className="flex items-center gap-6">
-            <NavLink to="/pos">{t("nav.pos")}</NavLink>
-            <NavLink to="/products">{t("nav.products")}</NavLink>
-            <NavLink to="/invoices">{t("nav.invoices")}</NavLink>
-            <NavLink to="/device">{t("nav.device")}</NavLink>
-            <NavLink to="/printer">{t("nav.printer")}</NavLink>
-          </nav>
-        </div>
-        <div className="flex items-center gap-3">
-          <SyncStatusIndicator />
-          {session ? (
-            <span className="text-sm text-text-secondary">
-              {t("signedInAs", { name: session.user.name })}
-            </span>
-          ) : null}
-          <SignOutButton
-            onSignedOut={() => {
-              void navigate({ to: "/login" });
-            }}
-          />
-        </div>
-      </header>
-      <main id="main" className="mx-auto w-full max-w-6xl flex-1 p-6">
-        <Outlet />
-      </main>
+      <SideNavigation
+        label={t("nav.label")}
+        brand={<ProductMark />}
+        collapsedBrand={
+          <span className="border-b-4 border-double border-signature text-xl font-bold">
+            {t("markInitial")}
+          </span>
+        }
+        groups={groups}
+        collapsed={collapsed}
+        onCollapsedChange={setCollapsed}
+        collapseLabel={t("nav.collapse")}
+        expandLabel={t("nav.expand")}
+      />
+      <div className="flex min-h-0 min-w-0 flex-col">
+        <header className="flex min-h-14 items-center gap-4 border-b border-divider bg-surface px-6">
+          <h1 className="text-xl font-bold">{page.title === undefined ? null : t(page.title)}</h1>
+          <div className="ms-auto flex items-center gap-3">
+            <SyncStatusIndicator />
+            {session ? (
+              <span className="flex flex-col text-sm leading-tight">
+                <span className="text-text">{session.user.name}</span>
+                <span className="text-xs text-text-secondary">
+                  {t(session.user.isOwner ? "role.owner" : "role.user")}
+                </span>
+              </span>
+            ) : null}
+            <SignOutButton
+              onSignedOut={() => {
+                void navigate({ to: "/login" });
+              }}
+            />
+          </div>
+        </header>
+        <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto">
+          {page.fill ? (
+            <Outlet />
+          ) : (
+            <div className="w-full max-w-6xl p-6">
+              <Outlet />
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
@@ -170,6 +309,7 @@ const indexRoute = createRoute({
 const productsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/products",
+  staticData: { title: "pages.products" },
   component: ProductsScreen,
 });
 
@@ -193,13 +333,60 @@ function PosPage() {
 const posRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/pos",
+  staticData: { title: "pages.pos" },
   component: PosPage,
 });
 
 const invoicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/invoices",
+  staticData: { title: "pages.invoices" },
   component: InvoicesScreen,
+});
+
+function DepartmentsPage() {
+  const filters = departmentsRoute.useSearch();
+  const navigate = departmentsRoute.useNavigate();
+  return (
+    <DepartmentsScreen
+      filters={filters}
+      onFiltersChange={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  );
+}
+
+const departmentsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/departments",
+  staticData: { title: "pages.departments", fill: true },
+  validateSearch: departmentFiltersSchema,
+  component: DepartmentsPage,
+});
+
+function StoreProfilePage() {
+  const [dirty, setDirty] = useState(false);
+  const blocker = useBlocker({
+    shouldBlockFn: () => dirty,
+    enableBeforeUnload: () => dirty,
+    withResolver: true,
+  });
+  return (
+    <StoreProfileScreen
+      onDirtyChange={setDirty}
+      leave={
+        blocker.status === "blocked" ? { proceed: blocker.proceed, stay: blocker.reset } : undefined
+      }
+    />
+  );
+}
+
+const storeProfileRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/profile",
+  staticData: { title: "pages.profile", fill: true },
+  component: StoreProfilePage,
 });
 
 function DevicePage() {
@@ -210,22 +397,27 @@ function DevicePage() {
 const deviceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/device",
+  staticData: { title: "pages.device" },
   component: DevicePage,
 });
 
 const printerRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/printer",
+  staticData: { title: "pages.printer" },
   component: PrinterScreen,
 });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  galleryRoute,
   appRoute.addChildren([
     indexRoute,
     posRoute,
     productsRoute,
     invoicesRoute,
+    departmentsRoute,
+    storeProfileRoute,
     deviceRoute,
     printerRoute,
   ]),

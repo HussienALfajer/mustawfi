@@ -15,10 +15,10 @@
 | Contrast pairs and the checker | `packages/ui/src/tokens/contrast.ts` |
 | Type, density, radii, motion | `packages/ui/src/tokens/scale.ts` |
 | Generated stylesheet (committed, never edited by hand) | `packages/ui/src/styles/tokens.css`, exported as `@mustawfi/ui/tokens.css` |
-| Preview page (generated, not committed) | `pnpm --filter @mustawfi/ui tokens:generate` → `packages/ui/preview/index.html` |
+| Component gallery (palette, tokens, contrast pairs, type, every component) | `packages/ui/src/gallery/`, served at `/gallery` by the web app (`screen-patterns.md`; it replaced the generated preview page in `core-foundation` slice 3) |
 | Tests | `packages/ui/src/tokens/tokens.test.ts` |
 
-To change a colour: edit the anchor, map, or pair in TypeScript, run `tokens:generate`, run the tests, and review the preview. The test fails while `tokens.css` differs from the generator's output.
+To change a colour: edit the anchor, map, or pair in TypeScript, run `tokens:generate`, run the tests, and review the gallery. The test fails while `tokens.css` differs from the generator's output.
 
 ## Direction
 
@@ -79,7 +79,7 @@ Each step has a default OKLCH lightness (50 = 0.985 … 950 = 0.24). A ramp's an
 
 In dark, `sunken` equals `page`: alternate and sunken rows show only inside a `surface` container, which is where tables sit.
 
-The dark theme is designed from the same anchors, not inverted: a deep blue-grey page, and a light ink blue accent (ink 400, near the ADR's `#8DB3D9`) that carries dark text. The preview page lists the resolved hex values.
+The dark theme is designed from the same anchors, not inverted: a deep blue-grey page, and a light ink blue accent (ink 400, near the ADR's `#8DB3D9`) that carries dark text. The component gallery lists the resolved hex values.
 
 ## Contrast — no exceptions
 

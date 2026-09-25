@@ -1,13 +1,14 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
 import { cx, FOCUS_RING } from "./cx.ts";
 
-export type ButtonVariant = "primary" | "secondary" | "quiet";
+export type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
 
 export interface ButtonProps extends Omit<AriaButtonProps, "className" | "children" | "style"> {
   readonly variant?: ButtonVariant;
   readonly className?: string;
   readonly children: ReactNode;
+  readonly ref?: Ref<HTMLButtonElement>;
 }
 
 const VARIANTS: Record<ButtonVariant, string> = {
@@ -15,6 +16,9 @@ const VARIANTS: Record<ButtonVariant, string> = {
     "bg-button-primary-bg text-button-primary-text data-[hovered]:bg-button-primary-bg-hover data-[pressed]:bg-button-primary-bg-hover",
   secondary:
     "border border-field-border bg-surface text-text data-[hovered]:bg-sunken data-[pressed]:bg-selected",
+  /** A destructive action: always labelled in words, never an icon alone (ADR-0024). */
+  danger:
+    "border border-field-border bg-surface text-text-negative data-[hovered]:bg-negative-tint data-[pressed]:bg-negative-tint",
   quiet: "bg-transparent text-text-accent data-[hovered]:bg-selected data-[pressed]:bg-selected",
 };
 

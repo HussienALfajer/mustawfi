@@ -1,0 +1,88 @@
+import type { Messages } from "@mustawfi/i18n";
+
+/**
+ * The `gallery` namespace: the component gallery's own copy. The gallery is a developer and
+ * review tool, not product UI; its sample data is written here like any other text.
+ */
+export const GALLERY_NAMESPACE = "gallery";
+
+export const galleryMessages = {
+  title: "معرض مكوّنات مستوفي",
+  intro:
+    "كل مكوّن في packages/ui بالثيمين الفاتح والداكن وبالكثافات الثلاث، مع الرموز والتباين. يُحدَّث مع الكود.",
+  nav: "أقسام المعرض",
+  themes: { light: "الفاتح", dark: "الداكن" },
+  densities: {
+    compact: "مضغوط — الجداول والتقارير",
+    comfortable: "مريح — النماذج والإعدادات",
+    touch: "لمس — نقطة البيع",
+  },
+  sections: {
+    palette: "السلالم اللونية",
+    semantic: "الرموز الدلالية",
+    contrast: "التباين",
+    type: "الخطوط والأحجام",
+    components: "المكوّنات",
+  },
+  semantic: { token: "الرمز", light: "الفاتح", dark: "الداكن" },
+  contrast: {
+    summary:
+      "الثيم {theme}: {count} زوجًا، {failing, plural, zero {لا زوج راسب} one {زوج راسب} two {زوجان راسبان} few {# أزواج راسبة} many {# زوجًا راسبًا} other {# زوج راسب}}",
+    foreground: "المقدّمة",
+    background: "الخلفية",
+    ratio: "النسبة",
+    minimum: "الحد الأدنى",
+    result: "النتيجة",
+    passes: "ناجح",
+    fails: "راسب",
+  },
+  typeSample: "مستوفي — فاتورة مبيعات {size}",
+  sample: {
+    save: "حفظ",
+    cancel: "إلغاء",
+    more: "المزيد",
+    archive: "أرشفة",
+    saving: "جارٍ الحفظ",
+    active: "نشط",
+    archived: "مؤرشف",
+    default: "الافتراضي",
+    expiring: "تنتهي قريبًا",
+    revoked: "مُبطَل",
+    storeName: "اسم المتجر",
+    storeNameValue: "موبايلات الحلبي",
+    required: "هذا الحقل مطلوب",
+    help: "يظهر على الإيصالات",
+    address: "العنوان",
+    addressValue: "دمشق، الحلبوني",
+    price: "السعر",
+    total: "الإجمالي",
+    search: "ابحث في الأقسام",
+    status: "الحالة",
+    statusAll: "الكل",
+    table: "الأقسام",
+    name: "الاسم",
+    users: "المستخدمون",
+    rows: {
+      store: "المتجر",
+      repairs: "الصيانة",
+      accessories: "الإكسسوارات",
+    },
+    panelTitle: "الصيانة",
+    close: "إغلاق",
+    panelBody: "تفاصيل السجل المحدد تظهر هنا بجانب القائمة.",
+    sectionTitle: "هوية المتجر",
+    sectionDescription: "تظهر على الإيصالات والمستندات المطبوعة.",
+    navigation: "التنقل الرئيسي",
+    navSales: "المبيعات",
+    navPos: "البيع",
+    navInvoices: "الفواتير",
+    navAdmin: "الإدارة",
+    navDepartments: "الأقسام",
+    collapse: "طيّ القائمة",
+    expand: "توسيع القائمة",
+    confirmOpen: "أرشفة القسم…",
+    confirmTitle: "أرشفة قسم الصيانة؟",
+    confirmBody: "لن يظهر القسم في البيع بعد الآن، وتبقى مستنداته كما هي.",
+    documentNumber: "رقم المستند",
+  },
+} satisfies Messages;

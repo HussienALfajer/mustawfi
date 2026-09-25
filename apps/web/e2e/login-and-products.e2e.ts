@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, expectAccessible, test } from "./test.ts";
 import { signIn, tabTo } from "./steps.ts";
 
 test("renders right to left in Arabic", async ({ page }) => {
@@ -7,6 +7,7 @@ test("renders right to left in Arabic", async ({ page }) => {
   await expect(html).toHaveAttribute("dir", "rtl");
   await expect(html).toHaveAttribute("lang", "ar");
   await expect(page.getByRole("heading", { name: "تسجيل الدخول" })).toBeVisible();
+  await expectAccessible(page);
   const form = await page.getByRole("form").evaluate((element) => getComputedStyle(element));
   expect(form.direction).toBe("rtl");
   // The screen's classes live in a module package: Tailwind must scan it (`@source`).
@@ -25,6 +26,7 @@ test("keyboard only: sign in, add a product, see it listed, sign out", async ({ 
   await signIn(page);
   await expect(page).toHaveURL(/\/products$/);
   await expect(page.getByRole("heading", { name: "المنتجات", level: 2 })).toBeVisible();
+  await expectAccessible(page);
 
   const barcode = `629${String(Date.now()).slice(-10)}`;
   await tabTo(page, page.getByLabel("اسم المنتج"));

@@ -5,15 +5,41 @@ export const SHELL_NAMESPACE = "shell";
 
 export const shellMessages = {
   mark: "مستوفي",
+  /** The mark in the collapsed side navigation. */
+  markInitial: "م",
   vendor: "من Vertex System",
   skipToContent: "انتقل إلى المحتوى",
   nav: {
-    label: "الأقسام",
+    label: "التنقل الرئيسي",
+    collapse: "طيّ القائمة",
+    expand: "توسيع القائمة",
+    group: {
+      sales: "المبيعات",
+      inventory: "المخزون",
+      administration: "الإدارة",
+      device: "هذا الجهاز",
+    },
     pos: "البيع",
+    invoices: "الفواتير",
     products: "المنتجات",
-    invoices: "المبيعات",
+    profile: "بيانات المتجر",
+    departments: "الأقسام",
+    device: "تسجيل الجهاز",
+    printer: "الطابعة",
+  },
+  /** Page titles in the top bar. */
+  pages: {
+    pos: "البيع",
+    invoices: "الفواتير",
+    products: "المنتجات",
+    profile: "بيانات المتجر",
+    departments: "الأقسام",
     device: "هذا الجهاز",
     printer: "الطابعة",
+  },
+  role: {
+    owner: "المالك",
+    user: "مستخدم",
   },
   registerDevice: "تسجيل هذا الجهاز",
   localDbUnavailable:
