@@ -1,6 +1,6 @@
 # Architecture overview
 
-Status: Accepted principles; concrete technology choices pending Phase A2 · Last reviewed: 2026-09-25
+Status: Accepted · Technology choices recorded in ADR-0014 to ADR-0028 · Last reviewed: 2026-09-25
 
 This document explains *how* the non-negotiables in `AGENTS.md` are realized. Each section links the ADR that holds the reasoning.
 
@@ -29,7 +29,7 @@ One deployable application, divided into modules with enforced boundaries.
 **A module owns** its tables, its API endpoints, its screens, its permissions, its typed settings schema, its print templates, and the domain events it publishes and consumes. It declares all of this in a **manifest**:
 
 ```ts
-// illustrative shape — final API decided in Phase A2
+// illustrative shape — the final API is built in the walking skeleton
 export const repairsModule = defineModule({
   id: "repairs",
   dependsOn: ["core", "inventory", "customers", "sales"],
@@ -46,7 +46,7 @@ export const repairsModule = defineModule({
 - No module reads another module's tables or internal files. It calls the other module's public interface or reacts to its events.
 - Domain events are handled **inside the same database transaction** as the change that raised them (e.g. `InvoicePosted` → ledger entry + stock movement + cash box update, all or nothing).
 - The module registry validates dependencies at startup; a module can't be disabled while an enabled module depends on it.
-- Boundaries are enforced by tooling (lint/dependency rules), chosen in Phase A2.
+- Boundaries are enforced by tooling: package `exports`, dependency-cruiser rules, and a manifest check (ADR-0015).
 - Every module's tables exist for every tenant; disabling a module hides it, it never drops data.
 
 ## 3. Tenancy (ADR-0002, ADR-0004)
@@ -55,6 +55,7 @@ export const repairsModule = defineModule({
 - V1 tenants have one hidden default branch; multi-branch later is activation, not migration.
 - A large customer can later move to a dedicated database or server running **the same code**.
 - An automated test proves one tenant cannot reach another's data.
+- Every database access runs in a transaction that sets the tenant context with `set_config(..., true)`, as a role without `BYPASSRLS`; a missing context returns nothing (ADR-0017).
 
 ## 4. Ledger (ADR-0006)
 
@@ -71,13 +72,14 @@ export const repairsModule = defineModule({
   - Documents (invoices, vouchers, shifts, tickets) are append-only: they can't conflict.
   - Master data (products, prices, permissions, settings) is server-authoritative and flows down.
   - Stock can go negative because of offline sales; that is flagged for the accountant, never blocks the sale.
-- Document numbers carry a device prefix.
+- Document numbers carry a device prefix: `{prefix}-{docCode}-{seq}`, the prefix unique per tenant and never reused (ADR-0020).
+- Devices send complete documents; the server posts the journal entry, stock movements, and document in one transaction. A completed sale is never refused for a business rule — it is accepted and flagged (ADR-0020).
 - The device receives a **signed configuration bundle** (license, entitlements, settings, custom-field definitions, templates, permissions; form-layout overrides join it after V1) and works fully offline with it until the license's maximum offline days.
 - Each device shows its sync state; the owner dashboard shows each device's last sync.
 
 ## 6. Currency (ADR-0007)
 
-Base currency fixed at tenant creation; owner-set daily rate with history; items priced in USD or SYP; per-document currency and rate; per-account currency for customers and suppliers; multi-currency payment on one invoice; rounding to the smallest denomination; realized FX differences computed; legacy import ÷100.
+Base currency fixed at tenant creation; owner-set daily rate with history; items priced in USD or SYP; per-document currency and rate; per-account currency for customers and suppliers; multi-currency payment on one invoice; rounding to the smallest denomination; realized FX differences computed; legacy import ÷100. Amounts are exact decimals everywhere, ledger amounts sit at the currency's minor unit, and every rounding difference is an explicit line (ADR-0018).
 
 ## 7. Licensing (ADR-0008)
 
@@ -122,22 +124,48 @@ The customer portal uses a separate read-only public API: unguessable signed tok
 
 The admin console is a separate application with mandatory 2FA, staff roles, and an immutable audit log. It manages tenants, plans, licenses, payments, entitlements, and read-only support impersonation that tenants can see.
 
-## 11. Proposed repository layout (to be confirmed in Phase A2)
+## 11. Repository layout (ADR-0015)
 
 ```
-src/
-├── core/            # always on: tenancy, access, organization, currency, ledger,
-│                    # audit, sync, notifications, data, events, and config
-│                    # (module registry, entitlements, settings, custom fields,
-│                    # templates)
-└── modules/         # inventory, treasury, customers, sales, purchases, reports,
-                     # serials, repairs, recharge, weighted, customer-portal
+apps/
+  server/       tenant API, sync endpoints, jobs (Fastify host)
+  admin-api/    admin console API, separate process (ADR-0028)
+  portal-api/   customer-portal read-only API, separate process (ADR-0028)
+  web/          the tenant client — the single UI codebase (React + Vite)
+  desktop/      Tauri 2 shell around web (Windows)
+  android/      Capacitor shell around web
+  admin/        admin console frontend
+  portal/       customer-portal pages
+core/<name>/    tenancy, access, organization, currency, ledger, audit, sync,
+                config (module registry, entitlements, settings, custom fields,
+                templates), notifications, data
+modules/<name>/ inventory, treasury, customers, sales, purchases, reports,
+                serials, repairs, recharge, weighted, customer-portal
+packages/       kernel (Decimal, Money, ids, Clock), ui, i18n, local-db,
+                testing, config
+tools/          boundary checks and generators
 ```
 
-The module registry (loads manifests, validates dependencies) lives in `core/config`.
+Each module is one workspace package with three public entries: `shared` (runs on server and client — contracts, validation, pure domain rules), `server`, and `client`. Its tables live in its own PostgreSQL schema (ADR-0016). The module registry lives in `core/config`.
 
-Apps (Windows/Android/web client, server, admin console) and shared packages are arranged in a monorepo whose tooling is decided in Phase A2.
+## 12. Technology decisions
 
-## 12. Open technical decisions
+| Area | Decision | ADR |
+|---|---|---|
+| Server runtime, framework, API | Node.js LTS, Fastify, REST + OpenAPI from shared Zod contracts, pg-boss jobs | 0014 |
+| Monorepo and boundaries | pnpm + Turborepo, package per module, `exports` + dependency-cruiser, ESLint + Prettier | 0015 |
+| Database conventions | PostgreSQL 18, UUIDv7, schema per module, Drizzle, reviewed forward-only SQL migrations, business vs accounting date | 0016 |
+| Tenant context | `set_config(..., true)` in a per-request transaction, non-owner role, forced RLS, fail closed | 0017 |
+| Money | Exact decimal (`numeric`, kernel `Decimal`, strings on the wire, scaled integers in SQLite), minor-unit ledger amounts, half away from zero at named points, explicit rounding lines | 0018 |
+| Client local database | Native SQLite (Tauri, Capacitor), SQLite WASM on OPFS (browser), one `LocalDb` interface | 0019 |
+| Sync and posting | Custom push/pull, idempotent outbox, per-tenant change log, server-side posting, device-prefixed numbering, late documents | 0020 |
+| Signing | Ed25519 JWS, separate license and bundle keys, rotation, monotonic device clock | 0021 |
+| Authentication | Opaque sessions, device credentials from registration codes, offline PIN verifiers, TOTP | 0022 |
+| Client stack | React + Vite, TanStack Router and Query over the local database, React Hook Form + Zod, i18next, own components on React Aria, Tailwind v4 | 0023 |
+| Visual design | "Ink and paper": calm and dense, ink-blue accent `#2B4A66`, paper neutrals, brass double rule, IBM Plex Sans Arabic, three densities, patterns to avoid | 0024 |
+| Printing and scanning | LiquidJS HTML templates rasterized to ESC/POS, native transports, HID scanners, ML Kit | 0025 |
+| Tests | Vitest, fast-check, Testcontainers PostgreSQL, sync simulation harness, Playwright | 0026 |
+| CI/CD and operations | GitHub Actions, pilot on the company VPS with isolation, off-site pgBackRest, Sentry EU | 0027 |
+| Admin console and portal | Separate API processes and database roles; admin frontend on the client stack | 0028 |
 
-Decided in Phase A2 (see `docs/roadmap.md`): server runtime and framework, API style, monorepo tooling, ORM/query layer and migrations, money representation and rounding precision, local database and sync protocol details, license and bundle signing, authentication details, client state/data layer and RTL UI kit, printing and scanning libraries, test stack, CI/CD, hosting and environments, observability and backups, admin console stack.
+Deferred with a reason: chart library (`reports` spec — no chart before then), portal page rendering (`customer-portal` spec), Android printer transport plugin (`sales` unit, against certified printers), the receipt rasterizer library and the Tauri SQLite binding (spikes in the walking skeleton), the SYP cash-rounding step (`core-money` spec with the advisor accountant), the off-site backup provider (`ops` unit).

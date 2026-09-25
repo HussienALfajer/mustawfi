@@ -29,7 +29,7 @@ These hold in every change. A change that needs to break one stops and asks the 
 6. **Posted documents are immutable.** Corrections are reversals. Nothing financial is ever deleted.
 7. **Every document records** its currency, exchange rate, department, user, shift, device, and the print-template version used.
 8. **Document numbers are unique per device** (device prefix), so offline devices never collide.
-9. **Closed periods are locked.** No document may be dated inside a locked period.
+9. **Closed periods are locked.** No journal entry may carry an accounting date inside a locked period; a document keeps the business date it happened on.
 10. **Everything is audited.** Create, cancel, return, discount, price change, permission change, login, drawer open without sale, support impersonation — with who, what, when, which device, before/after values.
 
 ## Domain gotchas
@@ -95,4 +95,17 @@ End every task that changes files or runs more than a few steps with a report to
 
 ## Commands
 
-Not defined yet — set during Phase A3 (walking skeleton). Until then there is no code to build or test.
+Node.js 24 (`.nvmrc`) and pnpm (version pinned in `package.json` → `packageManager`). Run from the repository root:
+
+| Command | What it does |
+|---|---|
+| `pnpm install` | Install dependencies (CI uses `--frozen-lockfile`) |
+| `pnpm build` | Build every package that has a build step (Turborepo) |
+| `pnpm format` / `pnpm format:check` | Format with Prettier / check formatting (Markdown is excluded) |
+| `pnpm lint` | ESLint, zero warnings allowed |
+| `pnpm typecheck` | TypeScript for root config and every package (Turborepo) |
+| `pnpm check:boundaries` | ADR-0015 boundary rules: package exports, module `dependsOn`, entry and layer rules |
+| `pnpm test` | Vitest across all workspace projects |
+| `pnpm verify` | All of the above in order — the gate before any commit; CI runs the same |
+
+A module declares its dependencies in its `package.json` as `"mustawfi": { "dependsOn": ["core.ledger", …] }` (module ids, not package names).

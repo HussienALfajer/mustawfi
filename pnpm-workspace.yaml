@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - core/*
+  - modules/*
+  - packages/*
+  - tools/*
+
+saveExact: true

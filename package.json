@@ -1,0 +1,29 @@
+{
+  "name": "mustawfi",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=24.11.0 <25"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint --max-warnings=0 .",
+    "typecheck": "tsc -p tsconfig.json && turbo run typecheck",
+    "test": "vitest run",
+    "check:boundaries": "node tools/boundaries/src/cli.ts",
+    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:boundaries && pnpm test"
+  },
+  "prettier": "@mustawfi/config/prettier",
+  "devDependencies": {
+    "@mustawfi/config": "workspace:*",
+    "@types/node": "24.13.6",
+    "eslint": "10.11.0",
+    "prettier": "3.9.9",
+    "turbo": "2.11.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

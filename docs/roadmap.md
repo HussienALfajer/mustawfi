@@ -13,8 +13,8 @@ Work is organized in **spec units**. A unit is one module, or a few tightly coup
 | Step | What | Status |
 |---|---|---|
 | A1 | Foundation documents and agent setup (this repository's current contents) | Done (2026-09-25) |
-| A2 | Architecture session | Not started — **next** |
-| A3 | Walking skeleton | Not started |
+| A2 | Architecture session | Done (2026-09-25) — ADR-0014 to ADR-0028 accepted (ADR-0024 after a follow-up identity comparison) |
+| A3 | Walking skeleton (`docs/product/modules/walking-skeleton.md`) | In progress |
 
 ### A2 — Architecture session
 
@@ -58,7 +58,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit | Not started |
 | 2 | `core-money` | core.currency, core.ledger | Not started |
 | 3 | `core-config` | core.config (registry, entitlements, settings, custom fields, templates) | Not started |
-| 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness) | Not started |
+| 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness, Android shell and its native SQLite adapter) | Not started |
 | 5 | `inventory` | inventory | Not started |
 | 6 | `treasury` | treasury | Not started |
 | 7 | `customers` | customers | Not started |
@@ -71,6 +71,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | 14 | `repairs` | repairs | Not started |
 | 15 | `recharge` | recharge | Not started |
 | 16 | `customer-portal` | customer-portal | Not started |
+| 17 | `ops` | Production deployment, off-site backups and restore drill, monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
 
 ## Phase C — Closed beta
 
@@ -80,7 +81,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 
 | # | Spec unit | Modules covered | Status |
 |---|---|---|---|
-| 17 | `weighted` | weighted (supermarket pack) | Not started |
-| 18 | `admin-lifecycle` | admin console completion: lifecycle automation, dashboard, staff roles | Not started |
+| 18 | `weighted` | weighted (supermarket pack) | Not started |
+| 19 | `admin-lifecycle` | admin console completion: lifecycle automation, dashboard, staff roles | Not started |
 
 After the last unit: work through the launch gates in `docs/product/v1-scope.md` §10. They are a checklist, not a spec unit.

@@ -44,6 +44,10 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | سعر الصرف | Exchange rate | `exchangeRate` |
 | فروق الصرف | Exchange differences | `fxDifference` |
 | تقريب | Rounding | `rounding` |
+| تقريب نقدي | Cash rounding | `cashRounding` |
+| حساب فروق التقريب | Rounding differences account | `roundingDifferences` |
+| تاريخ العمل | Business date | `businessDate` |
+| التاريخ المحاسبي | Accounting date | `accountingDate` |
 | صرافة (داخل الصندوق) | Currency exchange | `currencyExchange` |
 | الليرة السورية الجديدة | New Syrian pound | `SYP` |
 | الليرة القديمة | Old Syrian pound (legacy, ÷100) | `legacySyp` |
@@ -167,3 +171,13 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | حزمة الإعدادات الموقّعة | Signed configuration bundle | `configBundle` |
 | سجل التدقيق | Audit log | `auditLog` |
 | صفحات الزبون | Customer portal | `customerPortal` |
+| بادئة الجهاز | Device prefix | `devicePrefix` |
+| رمز تسجيل الجهاز | Device registration code | `registrationCode` |
+| اعتماد الجهاز | Device credential | `deviceCredential` |
+| رمز PIN | PIN | `pin` |
+| جلسة | Session | `session` |
+| عملية مزامنة | Sync operation | `syncOp` |
+| سجل التغييرات | Change log | `changeLog` |
+| مؤشر المزامنة | Sync cursor | `syncCursor` |
+| بحاجة لمراجعة | Needs review | `needsReview` |
+| تنبيه للمحاسب | Accountant flag | `flag` |
