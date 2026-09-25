@@ -13,6 +13,7 @@ import { SYNC_NAMESPACE, SyncEngineProvider, syncMessages } from "@mustawfi/core
 import { createI18n, DIRECTION, LANGUAGE } from "@mustawfi/i18n";
 import { INVENTORY_NAMESPACE, inventoryMessages } from "@mustawfi/inventory/client";
 import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
+import { loadReceiptFonts } from "@mustawfi/printing";
 import { LocalDbProvider } from "@mustawfi/local-db";
 import { SALES_NAMESPACE, salesMessages } from "@mustawfi/sales/client";
 import { LocaleProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
@@ -24,6 +25,8 @@ import { I18nextProvider } from "react-i18next";
 import { startLocalRuntime } from "./local.ts";
 import { SHELL_NAMESPACE, shellMessages } from "./messages.ts";
 import { detectPlatform } from "./platform.ts";
+import { PrintingProvider } from "./printing.tsx";
+import { RECEIPT_FONT_SOURCES } from "./receipt-fonts.ts";
 import { createAppRouter } from "./router.tsx";
 
 /**
@@ -72,6 +75,15 @@ const runtime = {
   newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
 };
 
+/**
+ * The receipt font loads while the app starts, so a receipt printed later (offline too)
+ * fetches nothing. It does not hold the app back: a receipt waits for it, or reports it failed.
+ */
+const receiptFonts = loadReceiptFonts(RECEIPT_FONT_SOURCES);
+receiptFonts.catch((error: unknown) => {
+  console.error("the receipt font did not load", error);
+});
+
 const element = document.getElementById("root");
 if (element === null) throw new Error("index.html has no #root");
 const root = createRoot(element);
@@ -80,8 +92,14 @@ const root = createRoot(element);
  * The local database opens before anything renders (ADR-0019): screens read it, and the POS
  * cannot sell without it. If it cannot open, the app says so instead of selling into nothing.
  */
-startLocalRuntime(queryClient, platform).then(
-  ({ db, sync }) => {
+const printerTransport = platform.openPrinter?.().catch((error: unknown) => {
+  // Printing is optional: without its transport the app still sells, and only previews.
+  console.error("the printer transport did not load", error);
+  return undefined;
+});
+
+Promise.all([startLocalRuntime(queryClient, platform), printerTransport]).then(
+  ([{ db, sync }, printer]) => {
     root.render(
       <StrictMode>
         <I18nextProvider i18n={i18n}>
@@ -89,9 +107,11 @@ startLocalRuntime(queryClient, platform).then(
             <ClientRuntimeProvider runtime={runtime}>
               <LocalDbProvider db={db}>
                 <SyncEngineProvider engine={sync}>
-                  <QueryClientProvider client={queryClient}>
-                    <RouterProvider router={router} />
-                  </QueryClientProvider>
+                  <PrintingProvider printing={{ fonts: receiptFonts, transport: printer }}>
+                    <QueryClientProvider client={queryClient}>
+                      <RouterProvider router={router} />
+                    </QueryClientProvider>
+                  </PrintingProvider>
                 </SyncEngineProvider>
               </LocalDbProvider>
             </ClientRuntimeProvider>

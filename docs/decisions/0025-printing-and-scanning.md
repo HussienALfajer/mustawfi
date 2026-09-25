@@ -45,6 +45,14 @@ The certified hardware list is kept in `docs/product/hardware.md` (business trac
 - Native code is limited to byte transports, not layout.
 - Printer quirks are handled once, in the encoder library and our transport layer, and tested on every certified model before launch (launch gate).
 
+### Spike result (walking-skeleton slice 14, 2026-09-25)
+
+- **Rasterizer: `modern-screenshot` 4.7** (DOM → SVG `foreignObject` → canvas), one CSS pixel per dot, in a hidden, sandboxed (`allow-same-origin`, no scripts), standards-mode `iframe` that holds only the receipt font. The Canvas 2D fallback was not needed and was not built. Code: `packages/printing` (`@mustawfi/printing`).
+- **The receipt font belongs to the pipeline:** IBM Plex Sans Arabic 400/700, Arabic and Latin subsets, bundled with the app, loaded once at start-up and inlined as `@font-face` data URLs under the family `Mustawfi Receipt`. Left to collect the page's fonts, the library dropped the Latin subset (spaces and digits), so the drawing used another font than the layout and lines broke apart. In the app's own document, app CSS leaked into receipts and copying computed styles was slow; the isolated frame fixes both, and its sandbox keeps a tenant template's event attributes from running.
+- **Encoder:** `@point-of-sale/receipt-printer-encoder` 4.0.1, raster mode (`GS v 0`, chunks of at most 255 rows), threshold at luminance 128 applied once before encoding, so the preview is the printed bits.
+- **Windows transport:** our own crate `mustawfi-printing` over `windows-sys` (winspool: `OpenPrinterW`, `StartDocPrinterW` with datatype `RAW`, `WritePrinter` until every byte is taken, `AbortPrinter` on any failure). The `printers` crate was rejected: it ignores `WritePrinter`'s result and byte count, so a failed write reports success. This crate is the only one allowed `unsafe` (denied instead of forbidden, and allowed in `winspool.rs` only).
+- **Measured** (template → HTML → raster → 1-bit → ESC/POS, 80 mm, short receipt): development PC (i9-14900HX), release Windows app (WebView2 153): 48–154 ms, about 95 ms warm; browser app: 52–107 ms. Under DevTools 6× CPU throttling: the pipeline alone 0.5–0.6 s, inside the running POS 0.8–4.4 s (main-thread contention from the app itself). **Not yet measured on reference low-end hardware, nor with a real printer's send time** — left to walking-skeleton slice 15, which confirms or revisits this choice.
+
 ## Alternatives considered
 
 - **ESC/POS text mode with Arabic code pages** — unreliable shaping and joining across printer models.

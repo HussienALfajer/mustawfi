@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window: the local database command only.",
+  "description": "The main window: the local database and the printer transport.",
   "windows": ["main"],
-  "permissions": ["allow-local-db"]
+  "permissions": ["allow-local-db", "allow-printers", "allow-print-raw"]
 }

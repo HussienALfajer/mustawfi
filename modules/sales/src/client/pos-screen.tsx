@@ -11,7 +11,7 @@ import { Money as KernelMoney } from "@mustawfi/kernel";
 import { useLocalDb } from "@mustawfi/local-db";
 import { Button, type DataColumn, DataTable, Money, TextInput } from "@mustawfi/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { type ReactNode, useRef, useState } from "react";
+import { Fragment, type ReactNode, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addToCart,
@@ -29,6 +29,21 @@ export interface PosScreenProps {
   readonly seller: { readonly userId: string; readonly tenantId: string };
   /** Where to register this device when it is not registered yet. */
   readonly registerDeviceLink: ReactNode;
+  /**
+   * What the platform offers for a recorded invoice — its receipt (ADR-0025). The POS does
+   * not print by itself: printing is the platform's, and the browser is no printing client.
+   */
+  readonly receiptAction?: ((invoice: RecordedInvoiceRef) => ReactNode) | undefined;
+}
+
+/** An invoice this device recorded, as the receipt action receives it. */
+export interface RecordedInvoiceRef {
+  readonly id: string;
+  readonly number: string;
+  /** The device that recorded it, as its receipt names it. */
+  readonly deviceName: string;
+  /** Offered with the sale just completed, not from the list of earlier invoices. */
+  readonly justSold: boolean;
 }
 
 function ScanForm() {
@@ -149,13 +164,17 @@ function ProductPicker() {
   );
 }
 
-function CartSection(props: { readonly device: LocalDevice; readonly userId: string }) {
+function CartSection(props: {
+  readonly device: LocalDevice;
+  readonly userId: string;
+  readonly receiptAction: PosScreenProps["receiptAction"];
+}) {
   const { t } = useTranslation(SALES_NAMESPACE);
   const db = useLocalDb();
   const { clock, newId } = useClientRuntime();
   const digits = useDigitShape();
   const cart = useQuery(cartQueryOptions(db, props.device.baseCurrency));
-  const [recorded, setRecorded] = useState<string | undefined>();
+  const [recorded, setRecorded] = useState<{ id: string; number: string } | undefined>();
   const remove = useMutation({
     mutationFn: (productId: string) => removeFromCart(db, productId),
     networkMode: "always",
@@ -165,7 +184,7 @@ function CartSection(props: { readonly device: LocalDevice; readonly userId: str
       completeCashSale(db, { device: props.device, userId: props.userId, clock, newId }),
     networkMode: "always",
     onSuccess: (done) => {
-      setRecorded(done.number);
+      setRecorded({ id: done.invoiceId, number: done.number });
     },
   });
   const columns: DataColumn<CartLine>[] = [
@@ -285,16 +304,25 @@ function CartSection(props: { readonly device: LocalDevice; readonly userId: str
           <>
             {t("pos.recorded")}{" "}
             <bdi dir="ltr" data-testid="recorded-number" className="font-mono font-semibold">
-              {recorded}
+              {recorded.number}
             </bdi>
           </>
         )}
       </p>
+      {recorded === undefined || props.receiptAction === undefined ? null : (
+        // A new sale gets a fresh receipt action, never the previous sale's state.
+        <Fragment key={recorded.id}>
+          {props.receiptAction({ ...recorded, deviceName: props.device.name, justSold: true })}
+        </Fragment>
+      )}
     </section>
   );
 }
 
-function RecentInvoices() {
+function RecentInvoices(props: {
+  readonly device: LocalDevice;
+  readonly receiptAction: PosScreenProps["receiptAction"];
+}) {
   const { t } = useTranslation(SALES_NAMESPACE);
   const db = useLocalDb();
   const invoices = useQuery(localInvoicesQueryOptions(db));
@@ -334,6 +362,20 @@ function RecentInvoices() {
         ),
     },
   ];
+  const { receiptAction } = props;
+  if (receiptAction !== undefined) {
+    columns.push({
+      id: "receipt",
+      header: t("pos.recent.column.receipt"),
+      cell: (invoice) =>
+        receiptAction({
+          id: invoice.id,
+          number: invoice.number,
+          deviceName: props.device.name,
+          justSold: false,
+        }),
+    });
+  }
   return (
     <section aria-labelledby="pos-recent-title" className="flex flex-col gap-density-gap">
       <h2 id="pos-recent-title" className="text-lg font-semibold text-text">
@@ -354,7 +396,7 @@ function RecentInvoices() {
  * The minimal POS (flow 5): sells the products this device holds, for cash, from the local
  * database only — it works the same offline. Keyboard first: the barcode field has focus.
  */
-export function PosScreen({ seller, registerDeviceLink }: PosScreenProps) {
+export function PosScreen({ seller, registerDeviceLink, receiptAction }: PosScreenProps) {
   const { t } = useTranslation(SALES_NAMESPACE);
   const db = useLocalDb();
   const device = useQuery(localDeviceQueryOptions(db));
@@ -389,8 +431,8 @@ export function PosScreen({ seller, registerDeviceLink }: PosScreenProps) {
           <ProductPicker />
         </div>
         <div className="flex flex-col gap-8">
-          <CartSection device={device.data} userId={seller.userId} />
-          <RecentInvoices />
+          <CartSection device={device.data} userId={seller.userId} receiptAction={receiptAction} />
+          <RecentInvoices device={device.data} receiptAction={receiptAction} />
         </div>
       </div>
     );

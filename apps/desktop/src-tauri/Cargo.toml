@@ -11,6 +11,8 @@ tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 mustawfi-local-db = { path = "../../../packages/local-db/native" }
+mustawfi-printing = { path = "../../../packages/printing/native" }
+base64 = "0.23.1"
 tauri = { version = "2.11.6", features = [] }
 
 [lints]

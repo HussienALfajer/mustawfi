@@ -48,7 +48,7 @@ const cartLines = sqliteTable("sales_cart_lines", {
 });
 
 /** The invoices this device made, as it recorded and pushed them. */
-const localInvoices = sqliteTable("sales_invoices", {
+export const localInvoices = sqliteTable("sales_invoices", {
   id: text().primaryKey(),
   number: text().notNull(),
   docSeq: safeInteger("doc_seq").notNull(),
@@ -64,7 +64,7 @@ const localInvoices = sqliteTable("sales_invoices", {
   totalScaled: int64("total_scaled").notNull(),
 });
 
-const localInvoiceLines = sqliteTable("sales_invoice_lines", {
+export const localInvoiceLines = sqliteTable("sales_invoice_lines", {
   id: text().primaryKey(),
   invoiceId: text("invoice_id").notNull(),
   lineNo: safeInteger("line_no").notNull(),

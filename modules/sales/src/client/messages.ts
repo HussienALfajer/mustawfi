@@ -58,6 +58,7 @@ export const salesMessages = {
         number: "رقم الفاتورة",
         total: "الإجمالي",
         state: "المزامنة",
+        receipt: "الإيصال",
       },
       state: {
         pending: "بانتظار الإرسال",
@@ -66,6 +67,19 @@ export const salesMessages = {
         rejected: "رُفضت، وتحتاج مراجعة",
       },
     },
+  },
+  /** The printed receipt: labels the receipt template shows. */
+  receipt: {
+    title: "فاتورة مبيع نقدي",
+    number: "رقم الفاتورة",
+    date: "التاريخ",
+    device: "الجهاز",
+    item: "الصنف",
+    quantity: "الكمية",
+    price: "السعر",
+    amount: "المبلغ",
+    total: "الإجمالي",
+    thanks: "شكرًا لزيارتكم",
   },
   invoices: {
     title: "المبيعات المسجّلة على الخادم",

@@ -26,4 +26,13 @@ export {
   serverInvoicesQueryOptions,
 } from "./invoices-screen.tsx";
 export { SALES_NAMESPACE, salesMessages } from "./messages.ts";
-export { PosScreen, type PosScreenProps } from "./pos-screen.tsx";
+export { PosScreen, type PosScreenProps, type RecordedInvoiceRef } from "./pos-screen.tsx";
+export {
+  CASH_RECEIPT_TEMPLATE,
+  type ReceiptDocument,
+  type ReceiptFormat,
+  type ReceiptInvoice,
+  readReceiptInvoice,
+  receiptDocument,
+  useReceiptDocument,
+} from "./receipt.ts";

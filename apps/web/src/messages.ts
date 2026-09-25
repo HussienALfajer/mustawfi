@@ -13,6 +13,7 @@ export const shellMessages = {
     products: "المنتجات",
     invoices: "المبيعات",
     device: "هذا الجهاز",
+    printer: "الطابعة",
   },
   registerDevice: "تسجيل هذا الجهاز",
   localDbUnavailable:
@@ -21,4 +22,34 @@ export const shellMessages = {
   sessionFailed: "تعذّر التحقق من الجلسة. تحقّق من الاتصال ثم أعد تحميل الصفحة",
   notFound: "الصفحة غير موجودة",
   home: "العودة إلى المنتجات",
+  printing: {
+    title: "طابعة الإيصالات",
+    browserOnly:
+      "الطباعة من تطبيق Windows فقط. في المتصفح يمكنك معاينة الإيصال من صفحة البيع دون طباعته",
+    loading: "جارٍ قراءة الطابعات المثبّتة…",
+    listFailed: "تعذّرت قراءة الطابعات المثبّتة على هذا الجهاز",
+    printer: "الطابعة",
+    noneChosen: "لم تُختر طابعة",
+    defaultPrinter: "{name} (الافتراضية)",
+    missing: "الطابعة «{name}» لم تعد مثبّتة على هذا الجهاز. اختر غيرها",
+    paper: "عرض الورق",
+    paper80: "80 مم (576 نقطة)",
+    paper58: "58 مم (384 نقطة)",
+    cut: "قصّ الورق بعد الإيصال",
+    openDrawer: "فتح درج النقود مع كل إيصال",
+    raw: "يُرسل الإيصال صورةً بأوامر ESC/POS مباشرة إلى الطابعة (وضع RAW)، فلا تغيّره إعدادات برنامج التعريف",
+    preview: "معاينة الإيصال",
+    previewNamed: "معاينة إيصال الفاتورة {number}",
+    previewAlt: "إيصال الفاتورة {number}",
+    print: "اطبع الإيصال",
+    printNamed: "اطبع إيصال الفاتورة {number}",
+    prepared:
+      "جُهّز الإيصال في {total} م.ث (القالب {render}، الرسم {rasterize}، الترميز {encode})، {bytes} بايت",
+    printed:
+      "أُرسل الإيصال إلى الطابعة في {total} م.ث (القالب {render}، الرسم {rasterize}، الترميز {encode}، الإرسال {send})، {bytes} بايت",
+    noPrinter: "لم تُختر طابعة لهذا الجهاز.",
+    choosePrinter: "اختر الطابعة",
+    prepareFailed: "تعذّر تجهيز الإيصال. حاول مجددًا",
+    printFailed: "تعذّر إرسال الإيصال إلى الطابعة. تحقّق من أنها موصولة وتعمل ثم حاول مجددًا",
+  },
 } satisfies Messages;
