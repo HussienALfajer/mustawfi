@@ -6,7 +6,9 @@ import {
   type ModuleManifest,
   type ModuleRegistry,
 } from "@mustawfi/core-config/server";
+import { ledgerModule } from "@mustawfi/core-ledger/server";
 import { tenancyModule, type TenantDatabase } from "@mustawfi/core-tenancy/server";
+import { inventoryModule } from "@mustawfi/inventory/server";
 import type { Clock, IdGenerator, RandomSource } from "@mustawfi/kernel";
 
 /** What the host hands every module's routes. */
@@ -24,6 +26,8 @@ export const serverModules: readonly ModuleManifest<HostContext>[] = [
   tenancyModule,
   auditModule,
   accessModule,
+  ledgerModule,
+  inventoryModule,
 ];
 
 export function createServerRegistry(

@@ -43,6 +43,8 @@ describe("server modules", () => {
       "core.tenancy",
       "core.audit",
       "core.access",
+      "core.ledger",
+      "inventory",
     ]);
   });
 

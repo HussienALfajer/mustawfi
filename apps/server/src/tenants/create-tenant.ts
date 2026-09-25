@@ -1,6 +1,7 @@
 import { loginSchema, passwordSchema, userNameSchema } from "@mustawfi/core-access/shared";
 import { createOwner, hashPassword } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
+import { seedAccounts } from "@mustawfi/core-ledger/server";
 import {
   currencyCodeSchema,
   STORE_CODE_LENGTH,
@@ -54,10 +55,10 @@ function isStoreCodeTaken(error: unknown): boolean {
 
 /**
  * Flow 1 of the walking skeleton: a tenant, its hidden default branch, its base currency, its
- * store code, and its owner, in one `withTenant` transaction for the new tenant — all or
+ * store code, its owner, and its seeded accounts, in one `withTenant` transaction for the new tenant — all or
  * nothing, and audited in the same transaction. Runs as `mustawfi_app` under RLS like every
- * other write. A store code another tenant already holds is drawn again. Seeded accounts join
- * in slice 7.
+ * other write. A store code another tenant already holds is drawn again. The ledger's seeded
+ * accounts are written in the same transaction.
  */
 export async function createTenantWithOwner(
   tenants: TenantDatabase,
@@ -131,6 +132,20 @@ export async function createTenantWithOwner(
       action: "access.user.created",
       entity: { type: "access.user", id: created.ownerId },
       after: { name: parsed.ownerName, login: parsed.ownerLogin, isOwner: true },
+    });
+    const accounts = await seedAccounts(
+      tx,
+      { tenantId: created.tenantId, branchId: created.branchId, createdAt, createdBy },
+      dependencies.newId,
+    );
+    await recordAudit(tx, {
+      ...audit,
+      id: dependencies.newId(),
+      userId: createdBy,
+      action: "ledger.accounts.seeded",
+      after: {
+        accounts: accounts.map((a) => ({ id: a.id, code: a.code, name: a.name, kind: a.kind })),
+      },
     });
   }
 }

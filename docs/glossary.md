@@ -27,6 +27,7 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | دفتر الأستاذ | General ledger | `ledger` |
 | دليل الحسابات | Chart of accounts | `chartOfAccounts` |
 | حساب | Account | `account` |
+| حساب نظامي | System account (found by role: cash, sales revenue, rounding differences) | `systemAccount` (`cash`, `salesRevenue`, `roundingDifferences`) |
 | ميزان المراجعة | Trial balance | `trialBalance` |
 | ترحيل | Posting | `post` / `posting` |
 | قيد عكسي | Reversal | `reversal` |

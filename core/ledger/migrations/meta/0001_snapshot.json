@@ -1,0 +1,353 @@
+{
+  "id": "d2758434-785f-48fa-91bc-38c9b2e7e2d0",
+  "prevId": "e9de6168-9b82-4762-af89-24d9f1f326b5",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core_ledger.accounts": {
+      "name": "accounts",
+      "schema": "core_ledger",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "system_key": {
+          "name": "system_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "accounts_code_per_tenant": {
+          "name": "accounts_code_per_tenant",
+          "columns": [
+            "tenant_id",
+            "code"
+          ],
+          "nullsNotDistinct": false
+        },
+        "accounts_system_key_per_tenant": {
+          "name": "accounts_system_key_per_tenant",
+          "columns": [
+            "tenant_id",
+            "system_key"
+          ],
+          "nullsNotDistinct": false
+        },
+        "accounts_id_per_tenant": {
+          "name": "accounts_id_per_tenant",
+          "columns": [
+            "tenant_id",
+            "id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "accounts_kind": {
+          "name": "accounts_kind",
+          "value": "\"core_ledger\".\"accounts\".\"kind\" in ('asset', 'liability', 'equity', 'revenue', 'expense')"
+        },
+        "accounts_system_key": {
+          "name": "accounts_system_key",
+          "value": "\"core_ledger\".\"accounts\".\"system_key\" in ('cash', 'salesRevenue', 'roundingDifferences')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_ledger.journal_entries": {
+      "name": "journal_entries",
+      "schema": "core_ledger",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accounting_date": {
+          "name": "accounting_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "memo": {
+          "name": "memo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "journal_entries_id_per_tenant": {
+          "name": "journal_entries_id_per_tenant",
+          "columns": [
+            "tenant_id",
+            "id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "journal_entries_currency": {
+          "name": "journal_entries_currency",
+          "value": "\"core_ledger\".\"journal_entries\".\"currency\" ~ '^[A-Z]{3}$'"
+        },
+        "journal_entries_source_type": {
+          "name": "journal_entries_source_type",
+          "value": "\"core_ledger\".\"journal_entries\".\"source_type\" ~ '^[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9]*)+$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_ledger.journal_lines": {
+      "name": "journal_lines",
+      "schema": "core_ledger",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "journal_entry_id": {
+          "name": "journal_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "line_no": {
+          "name": "line_no",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department_id": {
+          "name": "department_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "debit": {
+          "name": "debit",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credit": {
+          "name": "credit",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "journal_lines_entry_fk": {
+          "name": "journal_lines_entry_fk",
+          "tableFrom": "journal_lines",
+          "columnsFrom": [
+            "tenant_id",
+            "journal_entry_id"
+          ],
+          "tableTo": "journal_entries",
+          "schemaTo": "core_ledger",
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "journal_lines_account_fk": {
+          "name": "journal_lines_account_fk",
+          "tableFrom": "journal_lines",
+          "columnsFrom": [
+            "tenant_id",
+            "account_id"
+          ],
+          "tableTo": "accounts",
+          "schemaTo": "core_ledger",
+          "columnsTo": [
+            "tenant_id",
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "journal_lines_line_no": {
+          "name": "journal_lines_line_no",
+          "columns": [
+            "journal_entry_id",
+            "line_no"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "journal_lines_line_no_positive": {
+          "name": "journal_lines_line_no_positive",
+          "value": "\"core_ledger\".\"journal_lines\".\"line_no\" > 0"
+        },
+        "journal_lines_currency": {
+          "name": "journal_lines_currency",
+          "value": "\"core_ledger\".\"journal_lines\".\"currency\" ~ '^[A-Z]{3}$'"
+        },
+        "journal_lines_one_side": {
+          "name": "journal_lines_one_side",
+          "value": "(\"core_ledger\".\"journal_lines\".\"debit\" > 0 and \"core_ledger\".\"journal_lines\".\"credit\" = 0) or (\"core_ledger\".\"journal_lines\".\"credit\" > 0 and \"core_ledger\".\"journal_lines\".\"debit\" = 0)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core_ledger": "core_ledger"
+  },
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
