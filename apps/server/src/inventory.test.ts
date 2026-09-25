@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildServer } from "./app.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
-import { createServerRegistry } from "./modules.ts";
+import { createServerRegistry, hostSyncOperations } from "./modules.ts";
 import { createTenantWithOwner, type CreatedTenant } from "./tenants/create-tenant.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -42,9 +42,16 @@ beforeAll(async () => {
   await applyMigrations(database.url("owner"), migrationSets);
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   superuser = await database.connect("superuser");
+  const registry = createServerRegistry();
   server = await buildServer({
-    registry: createServerRegistry(),
-    context: { tenants, clock, newId, random: cryptoRandom },
+    registry,
+    context: {
+      tenants,
+      clock,
+      newId,
+      random: cryptoRandom,
+      syncOperations: hostSyncOperations(registry),
+    },
   });
   const input = {
     baseCurrency: "SYP",

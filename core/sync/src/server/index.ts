@@ -1,0 +1,13 @@
+export { type ChangeInput, readChanges, recordChange } from "./changes.ts";
+export type { SyncContext } from "./dependencies.ts";
+export { syncModule } from "./manifest.ts";
+export {
+  createSyncOperationTable,
+  OperationRejected,
+  type ReceivedOperation,
+  type SyncHandlerDependencies,
+  type SyncOperationDefinition,
+  type SyncOperationHandler,
+  type SyncOperationTable,
+} from "./operations.ts";
+export { type PushDependencies, pushOperations } from "./push.ts";

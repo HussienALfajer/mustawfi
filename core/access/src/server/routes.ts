@@ -16,13 +16,13 @@ import {
 } from "../shared/index.ts";
 import type { AccessContext } from "./dependencies.ts";
 import {
-  authenticateDevice,
   issueRegistrationCode,
   registerDevice,
   registrationFailed,
+  requireDevice,
 } from "./devices.ts";
 import { logIn } from "./login.ts";
-import { bearerToken, requireSession, revokeSession } from "./sessions.ts";
+import { requireSession, revokeSession } from "./sessions.ts";
 
 const tags = ["access"];
 
@@ -132,16 +132,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     "/devices/current",
     { schema: { tags, response: { 200: currentDeviceSchema, 401: problemDetailsSchema } } },
     async (request) => {
-      const credential = bearerToken(request.headers.authorization);
-      const device =
-        credential === undefined
-          ? undefined
-          : await authenticateDevice(context.tenants, credential);
-      if (device === undefined) {
-        throw new ProblemError(accessProblemCodes.deviceRequired, 401, {
-          title: "This device is not registered",
-        });
-      }
+      const device = await requireDevice(request, context);
       return {
         deviceId: device.deviceId,
         tenantId: device.tenantId,

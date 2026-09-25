@@ -205,6 +205,9 @@ importers:
       '@mustawfi/core-ledger':
         specifier: workspace:*
         version: link:../../core/ledger
+      '@mustawfi/core-sync':
+        specifier: workspace:*
+        version: link:../../core/sync
       '@mustawfi/core-tenancy':
         specifier: workspace:*
         version: link:../../core/tenancy
@@ -214,6 +217,9 @@ importers:
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@mustawfi/sales':
+        specifier: workspace:*
+        version: link:../../modules/sales
       drizzle-orm:
         specifier: 0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
@@ -391,6 +397,46 @@ importers:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
 
+  core/sync:
+    dependencies:
+      '@mustawfi/core-access':
+        specifier: workspace:*
+        version: link:../access
+      '@mustawfi/core-config':
+        specifier: workspace:*
+        version: link:../config
+      '@mustawfi/core-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@mustawfi/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      drizzle-orm:
+        specifier: 0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
+      fastify:
+        specifier: 5.12.5
+        version: 5.12.5
+      fastify-type-provider-zod:
+        specifier: 7.0.0
+        version: 7.0.0(@fastify/swagger@9.9.0(supports-color@7.2.0))(fastify@5.12.5)(openapi-types@12.1.3)(zod@4.6.5)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@mustawfi/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
   core/tenancy:
     dependencies:
       '@mustawfi/core-config':
@@ -439,6 +485,9 @@ importers:
       '@mustawfi/core-config':
         specifier: workspace:*
         version: link:../../core/config
+      '@mustawfi/core-sync':
+        specifier: workspace:*
+        version: link:../../core/sync
       '@mustawfi/core-tenancy':
         specifier: workspace:*
         version: link:../../core/tenancy
@@ -464,6 +513,58 @@ importers:
       '@types/node':
         specifier: 24.13.6
         version: 24.13.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
+
+  modules/sales:
+    dependencies:
+      '@mustawfi/core-access':
+        specifier: workspace:*
+        version: link:../../core/access
+      '@mustawfi/core-audit':
+        specifier: workspace:*
+        version: link:../../core/audit
+      '@mustawfi/core-config':
+        specifier: workspace:*
+        version: link:../../core/config
+      '@mustawfi/core-ledger':
+        specifier: workspace:*
+        version: link:../../core/ledger
+      '@mustawfi/core-sync':
+        specifier: workspace:*
+        version: link:../../core/sync
+      '@mustawfi/core-tenancy':
+        specifier: workspace:*
+        version: link:../../core/tenancy
+      '@mustawfi/inventory':
+        specifier: workspace:*
+        version: link:../inventory
+      '@mustawfi/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      drizzle-orm:
+        specifier: 0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@fast-check/vitest':
+        specifier: 0.5.0
+        version: 0.5.0(vitest@5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)))
+      '@mustawfi/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       typescript:
         specifier: 6.0.3
         version: 6.0.3

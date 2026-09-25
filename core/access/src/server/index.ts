@@ -9,6 +9,7 @@ export {
   REGISTRATION_CODE_LIFETIME_MS,
   registerDevice,
   type RegisteredDevice,
+  requireDevice,
 } from "./devices.ts";
 export { type LoggedIn, logIn, type LoginInput } from "./login.ts";
 export { accessModule } from "./manifest.ts";
@@ -23,4 +24,4 @@ export {
   SESSION_LIFETIME_MS,
   type SessionUser,
 } from "./sessions.ts";
-export { createOwner, type NewOwner } from "./users.ts";
+export { createOwner, isTenantUser, type NewOwner } from "./users.ts";

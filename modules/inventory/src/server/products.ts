@@ -1,11 +1,13 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
+import { recordChange } from "@mustawfi/core-sync/server";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import { Decimal, type IdGenerator } from "@mustawfi/kernel";
 import { asc, gt } from "drizzle-orm";
 import {
   inventoryProblemCodes,
   newProductSchema,
+  PRODUCT_ENTITY,
   PRODUCT_PAGE_LIMIT,
   type NewProductInput,
   type ProductView,
@@ -45,8 +47,9 @@ function violates(error: unknown, constraint: string): boolean {
 }
 
 /**
- * Creates a product in `tx` and audits it in the same transaction. A barcode another of the
- * tenant's products has is refused with a 409 `inventory.product.barcodeTaken`.
+ * Creates a product in `tx`, audits it, and appends it to the change log devices pull from
+ * (ADR-0020), all in the same transaction. A barcode another of the tenant's products has is
+ * refused with a 409 `inventory.product.barcodeTaken`.
  */
 export async function createProduct(
   tx: TenantTransaction,
@@ -88,6 +91,19 @@ export async function createProduct(
     entity: { type: "inventory.product", id: view.id },
     after: { name: view.name, barcode: view.barcode, price: view.price },
   });
+  await recordChange(
+    tx,
+    {
+      tenantId: product.tenantId,
+      branchId: product.branchId,
+      createdAt: product.createdAt,
+      createdBy: product.createdBy,
+      entity: PRODUCT_ENTITY,
+      entityId: view.id,
+      row: view,
+    },
+    dependencies,
+  );
   return view;
 }
 

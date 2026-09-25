@@ -11,6 +11,7 @@ import {
 } from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { devices, registrationCodes } from "./schema.ts";
+import { bearerToken } from "./sessions.ts";
 import {
   issueBearer,
   issueRegistrationSecret,
@@ -199,4 +200,24 @@ export async function authenticateDevice(
       .where(eq(devices.credentialHash, bearer.hash)),
   );
   return row === undefined ? undefined : { ...row, type: deviceTypeSchema.parse(row.type) };
+}
+
+/**
+ * The device of a request's `Authorization: Bearer` device credential, or a 401
+ * `access.device.required` — the same refusal whatever was wrong with it. Sync calls this:
+ * a device syncs as itself, and each operation names the user who performed it (ADR-0022).
+ */
+export async function requireDevice(
+  request: { readonly headers: { readonly authorization?: string | undefined } },
+  context: { readonly tenants: TenantDatabase },
+): Promise<Device> {
+  const credential = bearerToken(request.headers.authorization);
+  const device =
+    credential === undefined ? undefined : await authenticateDevice(context.tenants, credential);
+  if (device === undefined) {
+    throw new ProblemError(accessProblemCodes.deviceRequired, 401, {
+      title: "This device is not registered",
+    });
+  }
+  return device;
 }
