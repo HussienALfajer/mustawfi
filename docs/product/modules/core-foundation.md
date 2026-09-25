@@ -85,14 +85,24 @@ Every table has `tenant_id` and `branch_id` with forced RLS, except as noted.
 - `recovery_codes`: user, code hash, `used_at`.
 - `reset_codes`: user, code hash, `expires_at`, `used_at`, `issued_by_support` (the support reset of the owner's password).
 - `sessions` gains a non-null `device_id` when opened on a registered device, and `method` (`password` | `pin`).
-- `devices` gains `revoked_at`, `revoked_by`, `wiped_at` (reported by the device).
-- `login_attempts`: per store and login and per source address, for rate limiting (pruned by age; not audit data).
+- `devices` gains `revoked_at`, `revoked_by`, `revoke_reason`, `wiped_at` (reported by the device), and `last_sync_at` (the server's time of the device's last push or pull, for the devices screen and the owner dashboard).
+- `login_attempts`: failed attempts per login (password and online PIN), for rate limiting (pruned by age; not audit data). The per-source-address limit is **not** a table: an address may name no tenant (an unknown store code), and every table in a module schema is tenant-owned (ADR-0017). It is counted in the server process's memory, which is enough for V1's single server process; it resets on restart, and the per-login limit still holds.
 
 **`core_sync`**
 - `operation_flags`: (`op_id`, `code`) — operation-level flags that apply to any document type: `deviceRevoked`, `licenseReadOnly`, `permissionMissing`, `overrideNotAuthorized`, `numberGap`. Append-only.
 
 **`core_audit`**
 - `entries` gains `recorded_at` (server receipt time; `created_at` stays the time of the event, device time for device events) and `source` (`server` | `device`).
+
+**Plans until the admin console** (in `tools/license`; the license carries the resolved values, so the tenant server never reads this table). Limits from `v1-scope.md` §6; every active user counts, owners included.
+
+| Plan (`plan`) | Entitled modules | `users` | `departments` | `mainPosDevices` | `companionDevices` |
+|---|---|---|---|---|---|
+| `basic` | core, base modules, customer portal | 3 | 2 | 1 | 2 |
+| `phonesPro` | + `serials`, `repairs`, `recharge` | 6 | 4 | 3 | 2 |
+| `supermarketPro` | + `weighted` | 6 | 3 | 3 | 2 |
+
+The CLI overrides any limit per tenant (`--limit users=8`). Entitlements are recorded in the license now and enforced by `core-config`; this unit enforces only the four limits.
 
 **Configuration bundle** (not a table): a JWS manifest `{ version, issuedAt, deviceId, licenseRef, parts: { name → sha256 } }` and the parts. Parts in this unit: `license` (the JWS), `access` (users allowed on the device — every active user of the tenant in V1 — with name, role, department scope, and PIN verifier; roles with permissions and limits; lockout state reset marker), `organization` (departments and the store profile without the logo; the logo is fetched separately and checked against its hash).
 
@@ -103,12 +113,12 @@ Every table has `tenant_id` and `branch_id` with forced RLS, except as noted.
 Rules marked **[I]** are invariants that tests must protect.
 
 **License**
-1. **[I]** The tenant server never holds a license private key; it accepts a license only if its signature verifies against a configured public key for its `kid`, its tenant claim is this tenant, and its `issuedAt` is later than the installed license's.
+1. **[I]** The tenant server never holds a license private key; it accepts a license only if its signature verifies against a configured public key for its `kid`, its tenant claim is this tenant, and its `issuedAt` is later than the installed license's. The test key pair lives with the tests and is never in a production key list: the server reads its public keys from configuration, with no built-in default.
 2. **[I]** No tenant exists without an installed license: `tenant:create` takes the tenant id from the license's claim and creates both in one transaction.
-3. The lifecycle state is a pure function of the claims and a time: before `expiresAt − 14 days` active; until `expiresAt` expiring; for `graceDays` more grace; for `readOnlyDays` more read-only; then suspended. A license whose `notBefore` is in the future is not installed.
+3. The lifecycle state is a pure function of the claims and an instant: before `expiresAt − 14 days` active; until `expiresAt` expiring; for `graceDays` more grace; for `readOnlyDays` more read-only; then suspended. Days are 24-hour periods counted from `expiresAt`; each boundary instant belongs to the later state. A license whose `notBefore` is in the future is not installed.
 4. **[I]** Limits: an active user, an active department, a main POS device, or a companion device beyond the license's limit is refused at creation (409 with a code naming the limit). Deactivated users, archived departments, and revoked devices do not count. A lower limit after a downgrade deactivates nothing; it only refuses new ones, and owners see the overage.
-5. **[I]** Read-only (server): every write route answers 403 `tenancy.license.readOnly`, except sign-in, sign-out, the user's own PIN, password, and 2FA, and routes marked `allowedWhenReadOnly` (export, from `core-data`). Suspended: only owners' sessions are accepted, with the same exemptions; others get 403 `tenancy.license.suspended`. Sync push is always accepted (rule 23).
-6. **[I]** Devices evaluate the state and the offline days at the first sign-in of each business day and keep that state until the business day ends; a new license that improves the state applies at once (ADR-0030).
+5. **[I]** Read-only (server): every write route answers 403 `tenancy.license.readOnly`, except sign-in, sign-out, the user's own PIN, password, and 2FA, and routes marked `allowedWhenReadOnly` (export, from `core-data`). Suspended: only owners' sessions are accepted, with the same exemptions; others get 403 `tenancy.license.suspended`. Sync push is always accepted; documents dated on a business day after the tenant became read-only are flagged `licenseReadOnly` (ADR-0030).
+6. **[I]** Devices evaluate the state and the offline days at the first sign-in or unlock of each business day (Asia/Damascus) and keep that state until the next sign-in or unlock on a later business day; a session that runs past midnight keeps its state, and auto-lock (rule 24) bounds how long. A new license that improves the state applies at once (ADR-0030).
 7. **[I]** A device whose last server contact is more than the license's maximum offline days ago, counted against its monotonic mark, is read-only until it syncs.
 8. **[I]** The device's high-water mark is the maximum of every trusted server time and every local time observed. A local time more than 5 minutes behind the mark puts the device in read-only at once, until it reaches the server; the event is audited (device path).
 9. Read-only on a device: no new document of any kind; viewing and export stay; an open cart stays for later. Suspended on a device: only owners can sign in, and they see the reason, how to renew, and export.
@@ -123,13 +133,13 @@ Rules marked **[I]** are invariants that tests must protect.
 14. **[I]** The owner role holds every permission, no department restriction, and no limits; it cannot be edited or archived. At least one active user has the owner role at all times; only owners grant or remove the owner role.
 15. A user has exactly one role. A scoped permission holds only in the user's departments (`all` or the listed ones); an unscoped permission (for example `access.users.manage`) ignores the scope.
 16. A limit's value is a percent, an amount in the base currency, or a count, as the declaring module says. A missing value means the action is not allowed beyond zero; the owner is unlimited.
-17. **[I]** Every route and every sync operation type names the permission it needs. The server checks it for routes (403 `access.permission.denied`). For sync operations the document is accepted and flagged `permissionMissing` when the user lacked the permission on the server at ingest.
+17. **[I]** Every route and every sync operation type names the permission it needs, or says explicitly that it is `public` (sign-in, health, OpenAPI) or needs only an authenticated session or device (own session, own account, device audit events). The server checks it for routes (403 `access.permission.denied`). For sync operations the document is accepted and flagged `permissionMissing` when the user lacked the permission on the server at ingest.
 18. Supervisor override: when an action needs a permission or exceeds a limit, a supervisor picks their name and enters their PIN on the same device; the override holds if the supervisor's role covers the action and the value, in the department. The document carries the approver and the override id; the override is audited (device path). The server re-checks and flags `overrideNotAuthorized` when the supervisor lacked it.
 
 **Users, PIN, sessions**
-19. Every user has a PIN of 4–6 digits (not all the same digit, not a straight run such as `1234`); the owner or a user with `access.users.manage` sets the first one, and the user may change it with the current PIN. A password is optional; a user without one signs in only by PIN on a registered device.
-20. **[I]** Five wrong PINs for one user on one device lock that user on that device until a supervisor with `access.users.unlock` unlocks them there, or the device reaches the server and the server has not seen the lockout repeated. The count survives restarts.
-21. **[I]** Sign-in rate limiting: after 5 failures for one store and login within 15 minutes, further attempts for that login wait 15 minutes; after 30 failures from one source address within 15 minutes, that address waits 15 minutes. The answer is 429 `access.login.throttled`; throttling is audited once per window. Online PIN sign-in counts the same way per user and device.
+19. Every user has a PIN of 4–6 digits (not all the same digit, not a straight run up or down such as `1234` or `4321`); the owner or a user with `access.users.manage` sets the first one, and the user may change it with the current PIN. A password is optional; a user without one signs in only by PIN on a registered device.
+20. **[I]** Five wrong PINs for one user on one device lock that user on that device. Offline, only a supervisor with `access.users.unlock` unlocks them there. When the device reaches the server, the PIN screen checks PINs online and the server's rate limit (rule 21) governs that user instead of the local count (ADR-0022). The count survives restarts.
+21. **[I]** Sign-in rate limiting: after 5 failures for one store and login within 15 minutes, further attempts for that login wait 15 minutes; after 30 failures from one source address within 15 minutes, that address waits 15 minutes (counted in memory, see `login_attempts`). The answer is 429 `access.login.throttled`; throttling is audited once per window. Online PIN sign-in counts the same way per user and device.
 22. **[I]** A session opened on a registered device is bound to it: requests with that session must also carry the device credential, and revoking the device revokes its sessions. A session opened without a device (an unregistered browser) cannot push, pull, fetch a bundle, or create documents.
 23. **[I]** A revoked device: its credential is refused everywhere except push; everything it pushes is accepted and flagged `deviceRevoked` (ADR-0030); the push answer tells it that it is revoked; when every operation has an answer the device wipes its local data and reports the wipe if it can. The prefix is never reused.
 24. Auto-lock: after 5 minutes without input the device returns to the PIN screen; the open cart and any unsaved form stay in the local database.
@@ -139,14 +149,14 @@ Rules marked **[I]** are invariants that tests must protect.
 
 **Organization**
 28. **[I]** A tenant has exactly one default department, created with the tenant («المتجر»); the default department can be renamed but not archived. The last active department cannot be archived. Departments are archived, never deleted; archived departments keep their history and leave users' scopes.
-29. While a tenant has one active department, no screen asks for or shows a department.
+29. While a tenant has one active department, no screen other than the departments screen asks for or shows a department (no column, picker, or filter).
 30. **[I]** Document codes are declared by modules (three upper-case letters, unique across modules). Numbers are `{prefix}-{docCode}-{seq:6}`, formatted and parsed only by `core.organization/shared`.
 31. **[I]** On ingest, a document number whose sequence is not the device's last one for that code plus one is accepted; a jump is flagged `numberGap` and audited `organization.numbering.gap` with the missing range; a repeat is already refused as a duplicate (ADR-0020).
 32. Interim department rule for documents, until `sales` refines it: a user whose scope lists exactly one department sells under it; otherwise the device's documents use the tenant's default department.
 
 **Audit**
 33. **[I]** Audit entries are append-only for every role (walking skeleton); device events carry the device time as `created_at` and the server's receipt time as `recorded_at`.
-34. **[I]** Every action code written anywhere has an Arabic label and appears in the audit catalogue test, which also lists the events of non-negotiable 10 this unit produces (below) and fails if one has no writer.
+34. **[I]** Every action code written anywhere has an Arabic label and appears in the audit catalogue test, which also lists the events of non-negotiable 10 this unit produces (below) and fails if one has no writer. Every slice that adds an action code adds its Arabic label in its module's messages at the same time; slice 14 adds the catalogue test over all of them.
 35. The audit log is readable by owners and by users with `audit.view`; it is never editable or deletable from any screen or API.
 
 Events this unit audits: sign-in by password or PIN (success, failure, throttled), sign-out, lockout and unlock, auto-lock (not audited — too frequent; the next sign-in is), session revoked, user created, edited, deactivated, reactivated, role changed, scope changed, PIN set or changed, password set, changed, or reset (support or owner), 2FA enabled, disabled, cleared, recovery code used, role created, edited, archived, device registered, revoked, wiped, registration code issued, store profile changed (before/after), department created, renamed, archived, license installed, license state reached on a device (read-only, suspended), maximum offline days reached, clock moved backwards, supervisor override granted or refused, number gap.
@@ -199,7 +209,7 @@ The whole client once this unit is done (desktop; the PIN screen and override al
 | Sales | Invoices | list | unchanged |
 | Inventory | Products | list | unchanged |
 | Administration | Store profile | settings form | new |
-| Administration | Departments (hidden while one is active) | list + side panel | new |
+| Administration | Departments (always here; department columns and pickers elsewhere stay hidden while one is active) | list + side panel | new |
 | Administration | Users | list + side panel | new |
 | Administration | Roles and permissions (permission matrix, limits) | list + side panel | new |
 | Administration | Devices (registration codes, last sync, revoke) | list + side panel | new; replaces the device screen's owner part |
@@ -235,6 +245,15 @@ Declared by this unit (unscoped unless noted). Template grants: **A** accountant
 | `organization.departments.manage` | Create, rename, archive departments | — |
 | `audit.view` | Read the audit log | A |
 
+The walking skeleton's routes and operations get their permissions in slice 5, declared by their own modules:
+
+| Permission | Module | Guards | Default grants |
+|---|---|---|---|
+| `inventory.products.view` | `inventory` | `GET /inventory/products` | A, S, R, T |
+| `inventory.products.manage` | `inventory` | `POST /inventory/products` | A |
+| `sales.invoices.view` | `sales` | `GET /sales/invoices` | A |
+| `sales.invoice.create` (scoped) | `sales` | sync operation `sales.invoice.post` | S |
+
 Limits declared by this unit: none (sales, customers, and treasury declare theirs). Every template also receives the permissions later modules declare for it (for example `sales.invoice.create` for S, `repairs.*` for R) through those modules' manifests.
 
 ## Offline and sync behavior
@@ -251,7 +270,7 @@ Limits declared by this unit: none (sales, customers, and treasury declare their
 - No typed settings yet (`core-config`). Fixed defaults to become settings there: idle time 5 minutes; PIN length 4–6; lockout after 5 attempts; rate-limit windows; session lifetime 7 days.
 - Roles and permissions are customization layer 5 (overview §8): tenant admins copy templates and edit them.
 - Entitlements used: the license's limits `users`, `departments`, `mainPosDevices`, `companionDevices`.
-- Templates: the receipt gains the store name from the profile (same template version bump in `sales`).
+- Templates: the receipt gains the store name from the profile — a new template version in `sales`; the skeleton version stays for reprints of the invoices recorded with it (non-negotiable 7).
 - No custom fields in this unit.
 
 ## Edge cases
@@ -280,7 +299,7 @@ Limits declared by this unit: none (sales, customers, and treasury declare their
 1. A tenant cannot be created or renewed without a license signed by a configured license key; the tenant server holds no license private key (test with a wrong key, a wrong tenant, an older license).
 2. User, department, and device limits from the license are enforced at creation, and a downgrade deactivates nothing (integration tests).
 3. Every route and sync operation type declares a permission; `is_owner` checks are gone; a user without a permission gets 403 on every protected route (a test walks the route table), and sync operations are accepted and flagged instead.
-4. A cashier opens the Windows app with no network, signs in by PIN, sells, is locked out after five wrong PINs by another user, and a supervisor unlocks and overrides — all offline (end-to-end journey plus a recorded manual check on the Windows app).
+4. A cashier starts the Windows app with no network, signs in by PIN, and sells; five wrong PINs lock a user out; a supervisor unlocks them and approves an override — all offline (end-to-end journey plus a recorded manual check on the Windows app).
 5. A device revoked while offline pushes its sales at first contact; they are accepted and flagged `deviceRevoked`; the device wipes its data; pull, bundle, and API refuse it (integration test and a sync-simulation case).
 6. The lifecycle state machine and the per-day freeze hold under property tests; a device with its clock moved back, or past its maximum offline days, cannot create documents (tests).
 7. A bundle with a bad signature or hash is not used (tests over each part).
@@ -314,10 +333,10 @@ Screens ship with the feature they serve, so every milestone ends with something
 | # | Slice | Done when (3–5 checks) | Effort | Depends on | Status |
 |---|---|---|---|---|---|
 | 1 | License: issue, install, lifecycle function | `tools/license` generates Ed25519 key pairs and issues license JWS with ADR-0030's claims; `license:install` and `tenant:create` refuse a bad signature, an unknown `kid`, another tenant, an older license, a future `notBefore`, and a tenant without a license (integration tests); the pure lifecycle function passes property tests (state order, boundaries at each day count); `core_tenancy.licenses` is append-only and in the RLS tests; e2e and test setups create tenants with test-key licenses | high | — | Not started |
-| 2 | Departments and store profile (server) | `core_tenancy.departments` and `core.organization` (store profile) exist with their migrations and RLS seeds; creating a tenant seeds the default department «المتجر» and a store profile named after the tenant (integration test); create, rename, archive departments with the default and last-active rules and the license's department limit (tests); store profile edit with logo size and type checks, before/after audited; departments and profile flow down through pull and the receipt shows the store name | medium | 1 | Not started |
-| 3 | Application frame, screen patterns, first screens | The user approved a preview of the frame and the list-with-side-panel pattern before code (recorded), and `docs/design/screen-patterns.md` is completed from it; the collapsible grouped side navigation replaces the top bar and carries the existing screens; the departments screen (list with side panel; hidden from navigation while one department is active) and the store profile screen (settings form with logo) work against the API; the preview page becomes the component gallery (every `packages/ui` component, light and dark, three densities); an axe check runs in every Playwright journey, and a keyboard-only journey edits the profile and adds a department | medium | 2 | Not started |
-| 4 | Document codes, numbering, and real departments on documents | Modules declare document codes and the registry refuses duplicates (test); `formatDocumentNumber`/`parseDocumentNumber` in `core.organization/shared` replace `sales`' own format; ingest tracks the last sequence per device and code, flags `numberGap` in `core_sync.operation_flags` and audits the missing range (test); `SKELETON_DOCUMENT_DEFAULTS.departmentId` is gone and invoices carry the tenant's default department (rule 32 minus the scope part) | medium | 2 | Not started |
-| 5 | Roles, permissions, and route authorization | Manifests declare permissions and limits with template grants, and the registry refuses duplicates and unknown templates (tests); tenant creation seeds the owner role and the four templates; `authorize`/`limitFor` replace every `is_owner` check; a test walks every route and fails on one without a declared permission, and a user lacking it gets 403; sync operation types declare permissions and ingest flags `permissionMissing` instead of refusing | high | 2 | Not started |
+| 2 | Departments and store profile (server) | `core_tenancy.departments` and `core.organization` (store profile) exist with their migrations and RLS seeds; creating a tenant seeds the default department «المتجر» and a store profile named after the tenant (integration test); create, rename, archive departments with the default and last-active rules and the license's department limit (tests); store profile edit with logo size and type checks, before/after audited; departments and profile flow down through pull into local tables | medium | 1 | Not started |
+| 3 | Application frame, screen patterns, first screens | The user approved a preview of the frame and the list-with-side-panel pattern before code (recorded), and `docs/design/screen-patterns.md` is completed from it; the collapsible grouped side navigation replaces the top bar and carries the existing screens; the departments screen (list with side panel; always reachable under Administration, while department columns and pickers elsewhere stay hidden until a second active department exists) and the store profile screen (settings form with logo) work against the API; a component gallery replaces the token preview page and shows every `packages/ui` component in light and dark and the three densities; an axe check runs in every Playwright journey, the existing ones included, and a keyboard-only journey edits the profile and adds a department | medium | 2 | Not started |
+| 4 | Document codes, numbering, and real departments on documents | Modules declare document codes and the registry refuses duplicates (test); `formatDocumentNumber`/`parseDocumentNumber` in `core.organization/shared` replace `sales`' own format; `core_sync.operation_flags` exists (append-only, RLS), and ingest tracks the last sequence per device and code, flags `numberGap`, and audits the missing range (test); `SKELETON_DOCUMENT_DEFAULTS.departmentId` is gone, invoices carry the tenant's default department (rule 32 minus the scope part), and invoices and journal lines reference `core_tenancy.departments` by foreign key; the receipt template gets a new version that prints the store name, and invoices recorded with the skeleton version still reprint with it (non-negotiable 7) | high | 2 | Not started |
+| 5 | Roles, permissions, and route authorization | Manifests declare permissions and limits with template grants, and the registry refuses duplicates and unknown templates (tests); tenant creation seeds the owner role and the four templates, and existing routes get the permissions listed under *Permissions*; `authorize`/`limitFor` replace every `is_owner` check, and the session answer carries the user's role, scope, and effective permissions; a test walks every route and fails on one without a declared permission, and a user lacking it gets 403; sync operation types declare permissions and ingest flags `permissionMissing` instead of refusing | high | 2 | Not started |
 | 6 | User and role management (server) | Routes to create, edit, deactivate, and reactivate users (role, scope, optional password, first PIN) and to copy, edit, and archive roles, each audited with before/after; the at-least-one-active-owner and only-owners-grant-owner rules hold (tests); the user limit is enforced and a downgrade deactivates nothing; PIN rules (length, no repeats or runs) and Argon2id verifiers; own PIN and password change | high | 5 | Not started |
 | 7 | Users and roles screens | The users screen (list, filters by role, department, and status in the URL, side panel to create and edit, deactivate with a reason) and the roles screen (templates and copies, a permission matrix grouped by module with limits, archive) work against the API; the navigation shows only what the signed-in user may open; a limit reached is explained on the action, not hidden; a keyboard-only journey creates a section cashier scoped to a new department; axe passes | medium | 3, 6 | Not started |
 | 8 | Sign-in hardening and device limits | Rate limits per store and login and per source address answer 429 and are audited once per window (tests with an injected clock); password and online PIN sign-in on a registered device bind the session to it and a request without the matching device credential is refused; registration enforces main POS and companion limits; an unregistered-browser session cannot push, pull, or create documents; the support reset code CLI works once, expires in 30 minutes, and is audited as support | high | 6 | Not started |
@@ -327,7 +346,7 @@ Screens ship with the feature they serve, so every milestone ends with something
 | 12 | License enforcement on the server, license screen | Write routes answer 403 `tenancy.license.readOnly` in read-only and suspended states, except the exempt routes (a test walks the route table); suspended accepts only owners' sessions; push stays open and a document dated after the read-only business day is flagged `licenseReadOnly` (test); state transitions are computed with the server clock (tests at each boundary); the owners' «License and plan» screen shows plan, state, expiry, and each limit as used of allowed | high | 1, 3, 5 | Not started |
 | 13 | License enforcement on the device | The client evaluates the state and offline days at the day's first sign-in and holds it for the business day, and a renewal lifts it at once (tests with a manual clock); the clock guard keeps the high-water mark from server and local times and goes read-only on a 5-minute step back; read-only blocks every new document (the POS says why) and the «store suspended» screen lets only owners in; owners see expiring and grace warnings, others do not (component and e2e tests) | high | 11, 12 | Not started |
 | 14 | Device audit path | An `AuditSink` port in `core.config/client` (wired by `apps/web` to the outbox, so `core.access/client` can audit without depending on `core.sync`) writes a device event in the caller's local transaction as an `audit.entry.record` operation, handled in `core.sync` through `recordAudit`; the server records it once with device time and receipt time (`source = device`), idempotent under duplicate pushes (test and sync-simulation check); clock-guard and license-state events use it; the audit catalogue test lists every action code with a label and a writer | high | 13 | Not started |
-| 15 | PIN sign-in, lockout, and auto-lock | The PIN screen (name tiles, pad, keyboard digits) verifies against the bundle's verifiers offline and opens a device-bound server session online; five wrong PINs lock the user on the device across restarts until a supervisor with `access.users.unlock` unlocks (tests); 5 idle minutes return to the PIN screen with the cart kept; PIN-only users sign in; the Playwright journey opens the app offline after a first load, signs in by PIN, sells, locks out, unlocks | high | 11, 14 | Not started |
+| 15 | PIN sign-in, lockout, and auto-lock | The PIN screen (name tiles, pad, keyboard digits) verifies against the bundle's verifiers offline and opens a device-bound server session online; five wrong PINs lock the user on the device across restarts until a supervisor with `access.users.unlock` unlocks (tests); 5 idle minutes return to the PIN screen with the cart kept; PIN-only users sign in; a Playwright journey loads the app, goes offline, returns to the PIN screen, signs in by PIN, sells, locks a user out, and a supervisor unlocks (the browser cannot start offline: no service worker), and the Windows app started with no network reaches the PIN screen and sells (manual check recorded) | high | 11, 14 | Not started |
 | 16 | Client permissions, scope, and supervisor override | `can(permission, department)` and `limitFor` on the client read the bundle's access part and match the server's resolution (shared tests); screens hide what the user may not do; the override dialog (supervisor name, PIN) grants only when the supervisor's role covers the action, value, and department, attaches approver and override id, and audits it through the device path; the server flags `overrideNotAuthorized` (test with a fixture limit); a user whose scope lists one department sells under it | high | 15 | Not started |
 | 17 | Audit log screen | `GET /api/v1/audit/entries` with filters (user, action, device, date range) and keyset pages, readable by owners and `audit.view` only (403 test); the screen shows entries in a compact table with Arabic labels, device and server times, and a side panel with before/after values; filters live in the URL; a Playwright journey filters by user and opens an entry; axe passes | medium | 3, 14 | Not started |
 | 18 | Windows keystore | The Windows app stores the device credential and session token in Windows Credential Manager through a Tauri command, moves an existing credential out of the local database and deletes it there (test on the native core); the session survives an app restart; the ADR-0022 amendment on the Windows deviation is closed; manual check on the release build recorded | high | 15 | Not started |
@@ -336,10 +355,24 @@ Screens ship with the feature they serve, so every milestone ends with something
 
 - **Commercial defaults of the license CLI** — until the admin console holds plans: grace 7 days, read-only 30 days, maximum offline 10 days (v1-scope), companion devices 2 in every plan (v1-scope says "a small free allowance" without a number). The CLI takes overrides per tenant.
 - **Which department a sale belongs to** when a user's scope has several departments, or a cart mixes departments — `sales` decides; until then rule 32.
-- **Argon2id parameters for PIN verifiers** checked on low-end devices (verification should stay under about 300 ms on the reference hardware) and the WASM or native implementation on the client — chosen and measured in slice 12, recorded in its notes.
+- **Argon2id parameters for PIN verifiers** checked on low-end devices (verification should stay under about 300 ms on the reference hardware) and the WASM or native implementation on the client — chosen and measured in slice 15, recorded in its notes. Slice 6 creates verifiers with `@node-rs/argon2`'s defaults; the PHC string carries its parameters, so a change in slice 15 does not break stored verifiers (they are rehashed at the next PIN change).
+- **Library choices** (`jose` for Ed25519 JWS on server and clients, `otpauth` for TOTP, an Argon2id implementation for the client, `@axe-core/playwright`) are checked against their current releases in the slice that adds them, as for every dependency; Ed25519 in WebCrypto is verified in WebView2 and the browser in slice 11.
 - **The TOTP secret's encryption key** custody — a server secret file like the bundle key until `ops` defines the key procedure.
 
 ## Changelog
 
 - 2026-09-25 — Spec agreed; ADR-0030 accepted by the user.
 - 2026-09-25 — Slices regrouped into five milestones with each screen shipped beside its feature (18 slices); screen conventions agreed: side navigation, side panels, preview before code, component gallery, license screen, axe (user decisions).
+- 2026-09-25 — Readiness review before slice 1. Fixes:
+  - the departments screen stays reachable;
+  - the receipt's store name moves to slice 4 with a new template version, keeping the skeleton version for reprints;
+  - `core_sync.operation_flags` is created in slice 4, now `high` because it changes sync ingest;
+  - department foreign keys on invoices and journal lines;
+  - `devices.last_sync_at` and `revoke_reason`;
+  - the per-address sign-in limit is counted in memory, because a table would not be tenant-owned;
+  - explicit `public` and authenticated routes, and permissions for the skeleton's routes;
+  - the plan table;
+  - clarified business-day evaluation, PIN lockout, PIN runs, and lifecycle boundaries;
+  - the test license key kept out of production;
+  - the offline journey split between the browser and the Windows app;
+  - `v1-scope.md` module dependencies aligned.
