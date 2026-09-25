@@ -24,14 +24,14 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 
 | ID | Module | Layer | Depends on | Can be disabled |
 |---|---|---|---|---|
-| `core.tenancy` | Tenant & license | Core | — | No |
-| `core.access` | Identity, permissions, devices | Core | core.tenancy | No |
-| `core.organization` | Store profile, departments, numbering | Core | core.access | No |
+| `core.tenancy` | Tenant & license | Core | core.config | No |
+| `core.access` | Identity, permissions, devices | Core | core.config, core.tenancy, core.audit | No |
+| `core.organization` | Store profile, departments, numbering | Core | core.config, core.tenancy, core.access, core.audit, core.sync | No |
 | `core.currency` | Currencies & exchange rates | Core | — | No |
-| `core.ledger` | Accounting engine | Core | core.currency, core.organization | No |
-| `core.audit` | Audit log | Core | core.tenancy | No |
-| `core.sync` | Offline storage & sync | Core | all core | No |
-| `core.config` | Module registry, entitlements, settings, custom fields, templates | Core | core.tenancy | No |
+| `core.ledger` | Accounting engine | Core | core.config, core.tenancy, core.currency | No |
+| `core.audit` | Audit log | Core | core.config, core.tenancy | No |
+| `core.sync` | Offline storage & sync | Core | core.config, core.tenancy, core.access, core.audit² | No |
+| `core.config` | Module registry, entitlements, settings, custom fields, templates | Core | — (the root module; the host hands it the database) | No |
 | `core.notifications` | In-app notifications, WhatsApp links | Core | core.config | No |
 | `core.data` | Import/export framework (each module registers its own importers and exporters) | Core | core.config | No |
 | `inventory` | Products & stock | Base | core platform¹ | No |
@@ -48,6 +48,8 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 | `admin` | Super admin console (separate app) | Control plane | — | — |
 
 ¹ Core platform = `core.tenancy`, `core.access`, `core.organization`, `core.currency`, `core.ledger`, `core.audit`, `core.sync`, `core.config`. `core.notifications` and `core.data` are services modules plug into once they exist; they are not build prerequisites.
+
+² Other modules plug their sync operations and configuration-bundle parts into `core.sync` through the host, so `core.sync` does not depend on them. Departments are stored in `core.tenancy` and managed through `core.organization` (ADR-0030). `core.audit` sits below `core.access` because access writes sign-in entries (walking-skeleton slice 6).
 
 ## 4. Features
 
