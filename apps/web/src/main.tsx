@@ -7,6 +7,7 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
 import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
+import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
 import { TENANCY_NAMESPACE, tenancyMessages } from "@mustawfi/core-tenancy/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { ORGANIZATION_NAMESPACE, organizationMessages } from "@mustawfi/core-organization/client";
@@ -45,6 +46,7 @@ const i18n = createI18n({
   [GALLERY_NAMESPACE]: galleryMessages,
   [ACCESS_NAMESPACE]: accessMessages,
   [TENANCY_NAMESPACE]: tenancyMessages,
+  [AUDIT_NAMESPACE]: auditMessages,
   [ORGANIZATION_NAMESPACE]: organizationMessages,
   [INVENTORY_NAMESPACE]: inventoryMessages,
   [SYNC_NAMESPACE]: syncMessages,

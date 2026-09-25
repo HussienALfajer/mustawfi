@@ -90,3 +90,10 @@ export {
 } from "./components/side-navigation.tsx";
 export { SidePanel, type SidePanelProps } from "./components/side-panel.tsx";
 export { TextArea, type TextAreaProps } from "./components/text-area.tsx";
+export {
+  Checkbox,
+  CheckboxGroup,
+  type CheckboxGroupProps,
+  type CheckboxProps,
+} from "./components/checkbox.tsx";
+export { Select, type SelectOption, type SelectProps } from "./components/select.tsx";

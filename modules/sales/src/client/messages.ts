@@ -4,6 +4,13 @@ import type { Messages } from "@mustawfi/i18n";
 export const SALES_NAMESPACE = "sales";
 
 export const salesMessages = {
+  /** The module's name over its permissions in the roles screen's matrix. */
+  moduleName: "المبيعات",
+  /** Labels of this module's permissions: `sales.invoice.create` → `permission.invoice.create`. */
+  permission: {
+    invoices: { view: "عرض الفواتير" },
+    invoice: { create: "البيع وإنشاء الفواتير" },
+  },
   pos: {
     title: "البيع",
     loading: "جارٍ قراءة بيانات الجهاز…",

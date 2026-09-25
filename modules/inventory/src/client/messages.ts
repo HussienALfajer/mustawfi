@@ -4,6 +4,12 @@ import type { Messages } from "@mustawfi/i18n";
 export const INVENTORY_NAMESPACE = "inventory";
 
 export const inventoryMessages = {
+  /** The module's name over its permissions in the roles screen's matrix. */
+  moduleName: "المخزون",
+  /** Labels of this module's permissions: `inventory.products.view` → `permission.products.view`. */
+  permission: {
+    products: { view: "عرض المنتجات", manage: "إضافة المنتجات وتعديلها" },
+  },
   products: {
     title: "المنتجات",
     count:
