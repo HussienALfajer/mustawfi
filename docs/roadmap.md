@@ -14,7 +14,7 @@ Work is organized in **spec units**. A unit is one module, or a few tightly coup
 |---|---|---|
 | A1 | Foundation documents and agent setup (this repository's current contents) | Done (2026-09-25) |
 | A2 | Architecture session | Done (2026-09-25) — ADR-0014 to ADR-0028 accepted (ADR-0024 after a follow-up identity comparison) |
-| A3 | Walking skeleton (`docs/product/modules/walking-skeleton.md`) | Spec ready — **next** |
+| A3 | Walking skeleton (`docs/product/modules/walking-skeleton.md`) | In progress |
 
 ### A2 — Architecture session
 

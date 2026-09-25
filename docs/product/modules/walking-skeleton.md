@@ -1,6 +1,6 @@
 # Walking skeleton (`walking-skeleton`)
 
-- Status: Spec ready
+- Status: In progress
 - Modules covered: thin slices of `core.tenancy`, `core.access`, `core.audit`, `core.config` (registry only), `core.ledger`, `core.sync`, `inventory`, `sales`; packages `kernel`, `ui`, `i18n`, `local-db`, `testing`
 - Spec agreed with the user on: 2026-09-25 (Phase A2 architecture session)
 
@@ -118,7 +118,7 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 
 | # | Slice | Done when (3–5 checks) | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| 1 | Monorepo and verification pipeline | `pnpm verify` (build, format check, lint, typecheck, test) passes on a clean checkout; the GitHub Actions workflow runs it on pull requests and passes; `pnpm check:boundaries` fails on fixture violations of ADR-0015 rules 1–4; `AGENTS.md` Commands lists the real commands | medium | — | Not started |
+| 1 | Monorepo and verification pipeline | `pnpm verify` (build, format check, lint, typecheck, test) passes on a clean checkout; the GitHub Actions workflow runs it on pull requests and passes; `pnpm check:boundaries` fails on fixture violations of ADR-0015 rules 1–4; `AGENTS.md` Commands lists the real commands | medium | — | Done 2026-09-25 — see deviations below |
 | 2 | Agent tooling | A `verify` skill runs `pnpm verify` with filtered output; a hook formats edited files; a hook or wrapper filters test output to failures and summaries; path-scoped rules exist for ledger, sync, tenancy, migrations, and RTL UI, each citing its ADRs | medium | 1 | Not started |
 | 3 | Kernel: exact money and identifiers | `Decimal`/`Money`/`Quantity`/`ExchangeRate` round only through named, mode-explicit functions (half away from zero); property tests prove exact allocation, mirrored reversals, and bounded conversion residuals; UUIDv7 and an injectable `Clock`; lint rules ban float money, ambient clock, and ambient randomness in domain code, each with a fixture test | high | 1 | Not started |
 | 4 | Database foundation and tenant isolation | Tests start PostgreSQL 18 through Testcontainers and apply migrations as `mustawfi_owner`; the app connects as `mustawfi_app` and every access goes through `withTenant`; the catalog test fails on a fixture table without forced RLS; the isolation test proves tenant A cannot read, change, or count tenant B's rows, and that no context returns zero rows and blocks inserts | high | 3 | Not started |
@@ -133,6 +133,16 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 | 13 | Windows desktop shell | The Tauri spike chooses the SQLite binding (recorded in ADR-0019's consequences); the native adapter passes the `LocalDb` contract suite, including multi-statement transactions, with WAL and `synchronous = FULL`; an offline sale works in the packaged app (manual check recorded); a CI job on a Windows runner builds the installer | high | 11 | Not started |
 | 14 | Receipt printing spike | A LiquidJS receipt template renders to a 576-dot raster with the bundled Arabic font; ESC/POS bytes are produced with the encoder, including cut and drawer kick; printed through the Windows spooler in RAW mode on one real printer, legible (photo recorded); receipt-to-printer time is measured on reference hardware, and the chosen rasterizer is recorded in ADR-0025 | medium | 13 | Not started |
 
+### Slice notes and deviations
+
+- **Slice 1 (2026-09-25).**
+  - TypeScript is pinned to 6.0.x, not 7.x: `typescript-eslint` 8.70 supports `typescript <6.1`. Move to 7 when it does.
+  - A module's `dependsOn` lives in its `package.json` as `mustawfi.dependsOn` (module ids) so the boundary check reads it statically; slice 5's `defineModule` manifest must match it (add that check there).
+  - Beyond rules 1–4, the checker enforces ADR-0015's entry table: `shared` imports only `packages/kernel` among packages, `server` does not import `packages/ui`, `i18n`, or `local-db`, and `server` never imports `client`. Browser and Node globals under `src/shared/` are an ESLint error.
+  - `pnpm build` has no build tasks yet; the first come with the apps (slices 5 and 10).
+  - Prettier skips Markdown so docs tables and Arabic prose are not reflowed.
+  - Dependencies respect pnpm's minimum release age (turbo pinned to 2.11.3; 2.11.4 was under a day old). No policy exclusions.
+
 ## Open questions
 
 - Reference low-end hardware for the POS speed budget (add an item < 100 ms, sale < 1 s). Default until decided: the oldest Windows 10 PC and Android tablet available to the team; the business track names the reference models.
@@ -142,3 +152,5 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 ## Changelog
 
 - 2026-09-25 — Spec agreed in the Phase A2 architecture session.
+- 2026-09-25 — Unit base commit: f0196b4c5701f564778daeed0dc8ddf04a3ed3fc
+- 2026-09-25 — Slice 1 done: monorepo, `pnpm verify`, CI, boundary checks.

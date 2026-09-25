@@ -95,4 +95,17 @@ End every task that changes files or runs more than a few steps with a report to
 
 ## Commands
 
-Not defined yet — set during Phase A3 (walking skeleton). Until then there is no code to build or test.
+Node.js 24 (`.nvmrc`) and pnpm (version pinned in `package.json` → `packageManager`). Run from the repository root:
+
+| Command | What it does |
+|---|---|
+| `pnpm install` | Install dependencies (CI uses `--frozen-lockfile`) |
+| `pnpm build` | Build every package that has a build step (Turborepo) |
+| `pnpm format` / `pnpm format:check` | Format with Prettier / check formatting (Markdown is excluded) |
+| `pnpm lint` | ESLint, zero warnings allowed |
+| `pnpm typecheck` | TypeScript for root config and every package (Turborepo) |
+| `pnpm check:boundaries` | ADR-0015 boundary rules: package exports, module `dependsOn`, entry and layer rules |
+| `pnpm test` | Vitest across all workspace projects |
+| `pnpm verify` | All of the above in order — the gate before any commit; CI runs the same |
+
+A module declares its dependencies in its `package.json` as `"mustawfi": { "dependsOn": ["core.ledger", …] }` (module ids, not package names).
