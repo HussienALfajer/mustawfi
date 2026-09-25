@@ -1,0 +1,169 @@
+# Glossary
+
+The UI speaks Arabic; the code speaks English. Use these identifiers in code, APIs, and docs so one concept always has one name. Add new terms here when a module introduces them.
+
+## Organization and access
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| حساب الزبون (المتجر المشترك) | Tenant | `tenant` |
+| فرع | Branch | `branch` |
+| قسم | Department (profit center) | `department` |
+| مستخدم | User | `user` |
+| دور | Role | `role` |
+| صلاحية | Permission | `permission` |
+| موافقة المشرف | Supervisor override | `supervisorOverride` |
+| جهاز رئيسي (كاشير) | Main POS device | `mainPosDevice` |
+| جهاز مساعد (موبايل) | Mobile companion device | `companionDevice` |
+| لوحة المالك | Owner dashboard | `ownerDashboard` |
+
+## Accounting
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| قيد | Journal entry | `journalEntry` |
+| سطر قيد | Journal line | `journalLine` |
+| دفتر اليومية | Journal | `journal` |
+| دفتر الأستاذ | General ledger | `ledger` |
+| دليل الحسابات | Chart of accounts | `chartOfAccounts` |
+| حساب | Account | `account` |
+| ميزان المراجعة | Trial balance | `trialBalance` |
+| ترحيل | Posting | `post` / `posting` |
+| قيد عكسي | Reversal | `reversal` |
+| قفل الفترة | Period lock | `periodLock` |
+| أرصدة افتتاحية | Opening balances | `openingBalances` |
+| مركز ربح | Profit center | none — a department is the profit center; use `department` |
+| أرباح وخسائر | Profit and loss | `profitAndLoss` |
+
+## Currency
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| العملة الأساسية | Base currency | `baseCurrency` |
+| عملة الحساب | Account currency | `accountCurrency` |
+| سعر الصرف | Exchange rate | `exchangeRate` |
+| فروق الصرف | Exchange differences | `fxDifference` |
+| تقريب | Rounding | `rounding` |
+| صرافة (داخل الصندوق) | Currency exchange | `currencyExchange` |
+| الليرة السورية الجديدة | New Syrian pound | `SYP` |
+| الليرة القديمة | Old Syrian pound (legacy, ÷100) | `legacySyp` |
+| دولار | US dollar | `USD` |
+
+## Treasury
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| صندوق | Cash box | `cashBox` |
+| الصندوق الرئيسي | Main cash box | `mainCashBox` |
+| وردية | Shift | `shift` |
+| رصيد افتتاحي للوردية | Opening float | `openingFloat` |
+| عدّ النقد | Cash count | `cashCount` |
+| فرق الوردية (عجز / زيادة) | Shift variance (shortage / overage) | `shiftVariance` |
+| تسليم الصندوق | Cash handover | `cashHandover` |
+| سند قبض | Receipt voucher | `receiptVoucher` |
+| سند دفع | Payment voucher | `paymentVoucher` |
+| مصروف | Expense | `expense` |
+| تصنيف المصروف | Expense category | `expenseCategory` |
+| اشتراك الأمبيرات (المولدة) | Generator subscription | `generatorFee` |
+| سلفة موظف | Staff advance | `staffAdvance` |
+| مسحوبات شخصية | Owner drawing | `ownerDrawing` |
+| وسيلة دفع | Payment method | `paymentMethod` |
+| شام كاش / سيريتل كاش / MTN كاش | Sham Cash / Syriatel Cash / MTN Cash | `shamCash` / `syriatelCash` / `mtnCash` |
+| بطاقة بيميرا | Bemira card | `bemiraCard` |
+
+## Inventory
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| مادة | Product | `product` |
+| خدمة | Service item | `serviceItem` |
+| تصنيف | Category | `category` |
+| ماركة | Brand | `brand` |
+| وحدة / تحويل وحدات | Unit / unit conversion | `unit` / `unitConversion` |
+| كرتونة / علبة / قطعة | Carton / pack / piece | `carton` / `pack` / `piece` |
+| مفرّق / نصف جملة / جملة | Retail / half-wholesale / wholesale | `retail` / `halfWholesale` / `wholesale` |
+| مستوى السعر | Price level | `priceLevel` |
+| التكلفة بالمتوسط المرجّح | Weighted average cost | `weightedAverageCost` |
+| حركة مخزون | Stock movement | `stockMovement` |
+| موقع مخزون | Stock location | `stockLocation` |
+| تسوية مخزون | Stock adjustment | `stockAdjustment` |
+| جرد | Stocktake | `stocktake` |
+| تحويل مخزون | Stock transfer | `stockTransfer` |
+| حد أدنى | Minimum stock | `minStock` |
+| ملصق باركود | Barcode label | `barcodeLabel` |
+
+## Sales and purchases
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| فاتورة مبيع | Sales invoice | `salesInvoice` |
+| فاتورة شراء | Purchase invoice | `purchaseInvoice` |
+| مرتجع مبيعات / مشتريات | Sales return / purchase return | `salesReturn` / `purchaseReturn` |
+| بيع بالدين (آجل) | Credit sale | `creditSale` |
+| تعليق فاتورة | Hold invoice | `holdInvoice` |
+| تقسيم الدفع | Split payment | `splitPayment` |
+| طلب مُرسل إلى الكاشير | Cashier order (sent from mobile) | `cashierOrder` |
+| إيصال رقمي | Digital receipt | `digitalReceipt` |
+| مورد | Supplier | `supplier` |
+| زبون | Customer | `customer` |
+| ذمم مدينة (ديون الزبائن) | Receivables | `receivables` |
+| ذمم دائنة | Payables | `payables` |
+| كشف حساب | Account statement | `statement` |
+| حد الدين | Credit limit | `creditLimit` |
+
+## Phone shop pack
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| رقم تسلسلي | Serial number | `serialNumber` |
+| IMEI الأول / الثاني | IMEI 1 / IMEI 2 | `imei1` / `imei2` |
+| وحدة متتبَّعة | Serialized unit | `serializedUnit` |
+| شراء جهاز مستعمل | Used-device purchase | `tradeIn` |
+| ضمان | Warranty | `warranty` |
+| بطاقة صيانة | Repair ticket | `repairTicket` |
+| عربون | Deposit | `deposit` |
+| فني | Technician | `technician` |
+| قطعة غيار | Spare part | `sparePart` |
+| أجرة يد | Labor | `labor` |
+| رمز قفل الجهاز | Device passcode | `devicePasscode` |
+| رصيد الشبكة | Carrier balance | `carrierBalance` |
+| بيع رصيد (تحويل وحدات) | Top-up sale | `topUpSale` |
+| بطاقة تعبئة | Recharge card | `rechargeCard` |
+| خدمات الوكالة (إيداع / سحب) | E-wallet agent service (cash-in / cash-out) | `walletAgentService` |
+| عمولة | Commission / fee | `commission` |
+| مطابقة يومية | Daily reconciliation | `dailyReconciliation` |
+
+## Supermarket pack
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| مادة موزونة | Weighted item | `weightedItem` |
+| باركود الميزان | Scale barcode | `scaleBarcode` |
+| رمز PLU | PLU code | `plu` |
+| تعديل جماعي للأسعار | Bulk price update | `bulkPriceUpdate` |
+
+## Platform and licensing
+
+| Arabic | English | Code identifier |
+|---|---|---|
+| خطة / باقة | Plan | `plan` |
+| استحقاق | Entitlement | `entitlement` |
+| إضافة مدفوعة | Add-on | `addOn` |
+| ترخيص | License | `license` |
+| ترخيص دائم | Perpetual license | `perpetualLicense` |
+| صيانة سنوية | Annual maintenance | `annualMaintenance` |
+| مهلة سماح | Grace period | `gracePeriod` |
+| قراءة فقط | Read-only | `readOnly` |
+| موقوف | Suspended | `suspended` |
+| تمديد مؤقت | Temporary extension | `temporaryExtension` |
+| الدخول كزبون | Support impersonation | `impersonation` |
+| لوحة السوبر أدمن | Admin console | `adminConsole` |
+| وكيل (موزّع) | Reseller | `reseller` |
+| حقل مخصص | Custom field | `customField` |
+| قالب طباعة | Print template | `printTemplate` |
+| إعداد | Setting | `setting` |
+| مزامنة | Sync | `sync` |
+| طابور الإرسال | Outbox | `outbox` |
+| حزمة الإعدادات الموقّعة | Signed configuration bundle | `configBundle` |
+| سجل التدقيق | Audit log | `auditLog` |
+| صفحات الزبون | Customer portal | `customerPortal` |

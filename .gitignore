@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+coverage/
+*.tsbuildinfo
+
+# Native shells (Tauri / Capacitor)
+src-tauri/target/
+android/.gradle/
+android/app/build/
+ios/App/Pods/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+.env.production
+*.pem
+*.key
+secrets/
+
+# Logs
+*.log
+logs/
+
+# Local agent configuration (personal, not shared)
+.claude/settings.local.json
+CLAUDE.local.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
