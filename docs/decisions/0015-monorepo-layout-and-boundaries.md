@@ -68,3 +68,7 @@ Rules 1 and 4 come from package `exports`; rules 2, 3, and 5 from dependency-cru
 - **pnpm workspaces alone** — no build cache and no boundary checking; we would build both.
 - **Separate server and client trees** — simpler at first, but every module is split in two places and shared rules need a third.
 - **Biome instead of ESLint** — faster, but custom rules (money, clock, RTL, i18n) are far easier to write and test in ESLint.
+
+## Amendments
+
+- 2026-09-25 (walking-skeleton close, layout details): `packages/printing` exists (receipt template, rasterizer, ESC/POS, Windows spooler transport — ADR-0025); a module's `client` may not import it, so `apps/web` composes it with `sales/client`. `Result` is not in `packages/kernel`: refusals are thrown `ProblemError`s (see the walking-skeleton slice 5 notes). Rule 5 has no automated check yet; walking-skeleton slice 16 adds it.

@@ -13,8 +13,8 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | دور | Role | `role` |
 | صلاحية | Permission | `permission` |
 | موافقة المشرف | Supervisor override | `supervisorOverride` |
-| جهاز رئيسي (كاشير) | Main POS device | `mainPosDevice` |
-| جهاز مساعد (موبايل) | Mobile companion device | `companionDevice` |
+| جهاز رئيسي (كاشير) | Main POS device (device type `mainPos`) | `mainPosDevice` |
+| جهاز مساعد (موبايل) | Mobile companion device (device type `companion`; the browser registers as one) | `companionDevice` |
 | لوحة المالك | Owner dashboard | `ownerDashboard` |
 
 ## Accounting
@@ -180,11 +180,13 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | اعتماد الجهاز | Device credential | `deviceCredential` |
 | رمز PIN | PIN | `pin` |
 | جلسة | Session | `session` |
-| عملية مزامنة | Sync operation | `syncOp` |
+| عملية مزامنة | Sync operation (identified by `opId`) | `SyncOperation` |
 | سجل التغييرات | Change log | `changeLog` |
 | مؤشر المزامنة | Sync cursor | `syncCursor` |
 | بحاجة لمراجعة | Needs review | `needsReview` |
 | تنبيه للمحاسب | Accountant flag | `flag` |
+| مخزون سالب | Negative stock (flag) | `negativeStock` |
+| عدم تطابق حسابي | Arithmetic mismatch (flag) | `arithmeticMismatch` |
 | قاعدة البيانات المحلية | Local database (ADR-0019) | `localDb` |
 | سلة البيع | POS cart | `cart` |
 | حالة المزامنة | Sync status (phase, pending, needs review) | `syncStatus` |

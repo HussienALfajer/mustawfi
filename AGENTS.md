@@ -41,6 +41,7 @@ These hold in every change. A change that needs to break one stops and asks the 
 - **IMEI:** 15 digits with a Luhn check digit. Dual-SIM phones have two IMEIs. Phone boxes carry several barcodes (IMEI1, IMEI2, serial, EAN) — classify them, don't take the first one scanned.
 - **Clients run on Windows 10 or later.** Windows 7 is still common in Syrian shops but is not supported; say so wherever requirements are shown.
 - **Cash is local reality:** shifts, cash counts, handovers, and owner drawings are core features, not edge cases.
+- **Cash drawer:** it opens with a sale, once. A reprint never kicks it; any other opening is an audited event (non-negotiable 10).
 
 ## How work is organized
 

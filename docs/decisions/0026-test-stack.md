@@ -35,3 +35,7 @@ The definition of done requires tests for new behavior and for every invariant a
 - **PGlite or mocked databases for integration** — RLS, roles, and pooling semantics must be proven on real PostgreSQL.
 - **A shared CI Postgres service with docker-compose locally** — two setups that drift; Testcontainers gives one.
 - **Cypress** — weaker multi-context and offline control than Playwright.
+
+## Amendments
+
+- 2026-09-25 (walking-skeleton slice 12, a layout detail): the generic harness is `packages/testing/src/sync-sim` (`@mustawfi/testing/sync-sim`), and the scenario that composes the real modules and server is `apps/server/sync-sim/`, because packages may not import modules (ADR-0015 rule 4).

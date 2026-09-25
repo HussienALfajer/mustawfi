@@ -39,3 +39,7 @@
 - **JWT access tokens + refresh tokens** — no per-request lookup, but revocation waits for expiry; the performance gain does not matter at this scale.
 - **Better Auth with custom plugins** — covers passwords, sessions, and 2FA, but imposes its own tables, and the hard parts (devices, PIN, offline) would still be written outside it.
 - **PIN checked only online** — cashiers could not switch users during an outage.
+
+## Amendments
+
+- 2026-09-25 (walking-skeleton slice 13, a temporary deviation accepted by the user on 2026-09-25): the Windows app keeps the device credential in the local database file, not the OS keystore, and holds the session token in memory only (sign in again after every start). Both move to the keystore in `core-foundation`.

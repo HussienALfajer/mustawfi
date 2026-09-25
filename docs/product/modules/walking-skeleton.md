@@ -1,6 +1,6 @@
 # Walking skeleton (`walking-skeleton`)
 
-- Status: In progress
+- Status: Closing — slice 16 (ADR-0015 rule 5 check) remains; slice 15 moved to the `sales` unit
 - Modules covered: thin slices of `core.tenancy`, `core.access`, `core.audit`, `core.config` (registry only), `core.ledger`, `core.sync`, `inventory`, `sales`; packages `kernel`, `ui`, `i18n`, `local-db`, `testing`
 - Spec agreed with the user on: 2026-09-25 (Phase A2 architecture session)
 
@@ -45,8 +45,8 @@ Only what the path needs, each in its owning module's schema:
 - `core_access.users` (password hash), `core_access.sessions` (token hash, expiry, revoked_at), `core_access.devices` (type, prefix, credential hash), `core_access.registration_codes`.
 - `core_audit.entries` (append-only).
 - `core_ledger.accounts` (seeded: cash, sales revenue, rounding differences), `core_ledger.journal_entries`, `core_ledger.journal_lines`.
-- `inventory.products` (name, barcode, price with currency).
-- `sales.invoices`, `sales.invoice_lines` — with every field of non-negotiable 7 (department, shift, and template version take fixed skeleton values).
+- `inventory.products` (name, barcode, price with currency), `inventory.stock_levels`, `inventory.stock_movements` (append-only).
+- `sales.invoices`, `sales.invoice_lines`, `sales.invoice_flags` — with every field of non-negotiable 7 (department, shift, and template version take fixed skeleton values).
 - `core_sync.received_ops`, `core_sync.changes`, `core_sync.tenant_counters`.
 
 ## Business rules and invariants
@@ -102,10 +102,10 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 1. The full path (flows 1–7) runs as a Playwright end-to-end test in CI.
 2. `AGENTS.md` → Commands lists the real build, test, lint, typecheck, and verify commands.
 3. A `verify` skill, the hooks, and the path-scoped rules exist and are used by the slices after they land.
-4. Every boundary rule of ADR-0015 fails the build on its fixture violation.
+4. Every boundary rule of ADR-0015 fails the build on its fixture violation. *(Close review: rules 1–4 and 6 have fixture tests; rule 5 — table definitions not exported, SQL only in the module's own schema — holds in the code today but has no check; the user chose on 2026-09-25 to add it as slice 16 before the unit closes.)*
 5. The RLS catalog test, the isolation test, and the ledger property test pass in CI.
 6. The user approved the generated palette on the preview page.
-7. The Windows desktop app sells offline through native SQLite, and a receipt printed from the spike is legible Arabic on a real printer.
+7. The Windows desktop app sells offline through native SQLite, and a receipt printed from the spike is legible Arabic on a real printer. *(The real-printer half moved to the `sales` unit with slice 15; the receipt pipeline up to the Windows spooler is built and tested here.)*
 
 ## Verification plan
 
@@ -113,7 +113,7 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 - Integration (Testcontainers PostgreSQL 18): migrations, RLS catalog and isolation, posting, push idempotency, pull ordering.
 - Sync simulation harness v1: three devices, drops, duplicates, reordering, convergence.
 - End-to-end (Playwright): keyboard-only login and product creation; the offline sale path.
-- Manual, with the results recorded in the slice: the Windows app offline sale; a printed receipt on one real thermal printer.
+- Manual, with the results recorded in the slice: the Windows app offline sale. (A printed receipt on one real thermal printer moved to the `sales` unit with slice 15.)
 
 ## Slices
 
@@ -133,7 +133,8 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 | 12 | Sync simulation harness v1 | The harness runs three virtual devices on the Node adapter against a real server and database; the network drops, duplicates, and reorders requests from a seed; after convergence there are no lost or duplicate invoices and the ledger balances; it runs in CI within a time budget | high | 11 | Done 2026-09-25 — see deviations below |
 | 13 | Windows desktop shell | The Tauri spike chooses the SQLite binding (recorded in ADR-0019's consequences); the native adapter passes the `LocalDb` contract suite, including multi-statement transactions, with WAL and `synchronous = FULL`; an offline sale works in the packaged app (manual check recorded); a CI job on a Windows runner builds the installer | high | 11 | Done 2026-09-25 — see deviations below |
 | 14 | Receipt printing spike | A LiquidJS receipt template renders to a 576-dot raster with the bundled Arabic font; ESC/POS bytes are produced with the encoder, including cut and drawer kick; printed through the Windows spooler in RAW mode on one real printer, legible (photo recorded); receipt-to-printer time is measured on reference hardware, and the chosen rasterizer is recorded in ADR-0025 | medium | 13 | Done 2026-09-25 — the real-printer and reference-hardware checks split into slice 15; see deviations below |
-| 15 | Receipt on a real printer | One 80 mm ESC/POS printer on Windows prints a sale's receipt through the spooler in RAW mode from the Windows app: legible Arabic, figures, and double rule (photo recorded in the slice notes); the paper is cut and the cash drawer opens when enabled; receipt-to-printer time (including the spooler send) is measured on the reference low-end PC and recorded in ADR-0025, and if it misses 1 s the cause is profiled and a fix or a follow-up is recorded | medium | 14 | Not started |
+| 15 | Receipt on a real printer | One 80 mm ESC/POS printer on Windows prints a sale's receipt through the spooler in RAW mode from the Windows app: legible Arabic, figures, and double rule (photo recorded in the slice notes); the paper is cut and the cash drawer opens when enabled; receipt-to-printer time (including the spooler send) is measured on the reference low-end PC and recorded in ADR-0025, and if it misses 1 s the cause is profiled and a fix or a follow-up is recorded | medium | 14 | Moved to the `sales` unit (2026-09-25, user decision: no thermal printer available) |
+| 16 | ADR-0015 rule 5 check (added at the unit close, 2026-09-25) | `pnpm check:boundaries` fails when a module entry (`shared`, `server`, `client`) exports its Drizzle table definitions, directly or through a re-export (fixture test); it fails when a module's SQL or Drizzle schema names another module's PostgreSQL schema other than through the foreign keys ADR-0016 allows to modules in `dependsOn` (fixture test); it passes on the current code; ADR-0015's amendment and acceptance criterion 4 are updated | medium | 1 | Not started |
 
 ### Slice notes and deviations
 
@@ -264,10 +265,23 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
   - **The drawer opens only with the sale** (conformance review): the first print of the receipt offered with a just-completed sale may kick the drawer; a reprint, or any print from the recent-invoices list, never does (`apps/web/src/receipt-commands.ts`, tested) — an opening without a sale is audited (non-negotiable 10) and the client has no audit path yet.
   - Measurements are in ADR-0025's spike result. The 1 s target holds on this PC and for the pipeline alone under 6× CPU throttling, but not inside the running POS under 6× throttling (0.8–4.4 s); slice 15 measures on real hardware.
 
+## Carried to later units
+
+The unit closed on 2026-09-25. What it leaves open, by the unit that takes it:
+
+- **`sales`:** slice 15 as written above — a sale's receipt printed through the spooler in RAW mode on a real 80 mm ESC/POS printer (photo), cut and drawer kick on paper, and receipt-to-printer time on the reference low-end PC recorded in ADR-0025 (confirm or revisit the rasterizer). Also: printer settings out of `localStorage` into the local database; the receipt's store name; the certified printer list; which printer model is tested (default: whatever 80 mm ESC/POS printer the team has on hand).
+- **`core-foundation`, `treasury`, `core-config`:** replace `SKELETON_DOCUMENT_DEFAULTS` — the fixed department (`core.organization`), shift (`treasury`), and template version (templates in `core-config`).
+- **`core-foundation`:** login rate limiting, device revoke, PIN and offline sign-in, 2FA, sessions bound to a device, the OS keystore for the Windows app's token and credential, the store profile, permissions beyond "owner", and an audit path from the client (drawer opened without a sale).
+- **`core-money`:** multi-currency posting and currency data (`MINOR_UNITS` in `sales`, the price-currency list in `inventory/client`).
+- **`core-config`:** settings, entitlements, templates; the `core.config` ↔ `core.tenancy` cycle risk (slice 5) and sync operations declared in the manifest (slice 8).
+- **`core-sync`:** per-device pull scope, compaction and bootstrap, device restore (a `deviceSeq` counter behind the server's is answered `seqTaken` and the sale is never recorded — found by the close review), `unsupportedType`/`unsupportedVersion` stored as permanent rejections, global `opId` collisions, the push size bound, the Android shell, and the harness items listed under slice 12.
+- **`inventory`:** stock receiving (every skeleton sale carries `negativeStock`), product editing and archiving, units.
+- **`ops`:** production roles, `db:migrate` in deployment, the reverse proxy forwarding `Host`, server backups.
+- **Not yet assigned:** closed periods (non-negotiable 9) — no period table exists and entries post on the business date; the web bundle is one 1.16 MB chunk (lazy routes); `pnpm test:e2e` fails when port 4173 is taken.
+
 ## Open questions
 
 - Reference low-end hardware for the POS speed budget (add an item < 100 ms, sale < 1 s). Default until decided: the oldest Windows 10 PC and Android tablet available to the team; the business track names the reference models.
-- Which thermal printer model is used for slice 15. Default: whatever 80 mm ESC/POS printer the team has on hand; the certified list comes later.
 - Final product mark. Default: a text placeholder («مستوفي» with the double rule) until a designer delivers it.
 
 ## Changelog
@@ -289,3 +303,4 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 - 2026-09-25 — Slice 12 done: sync simulation harness v1 (`@mustawfi/testing/sync-sim`: seeded faulty network, runner, convergence checks) and a three-device scenario against the real server in CI.
 - 2026-09-25 — Slice 13 done: Windows desktop shell (Tauri 2), native `rusqlite` LocalDb core passing the contract suite, `VACUUM INTO` backups, browser registers as companion, Windows installer CI job; binding recorded in ADR-0019 (amendment and ADR-0022 deviations accepted by the user).
 - 2026-09-25 — Slice 14 done: receipt pipeline (`@mustawfi/printing`: LiquidJS template, sandboxed-frame rasterizer, 1-bit, ESC/POS), Windows spooler RAW transport (`mustawfi-printing`), receipt template in `sales`, printer page and preview/print in the app; rasterizer recorded in ADR-0025. Real-printer and reference-hardware checks split into slice 15.
+- 2026-09-25 — Unit close review (the user accepted the ADR-0020 route amendment and chose to add slice 16 for ADR-0015 rule 5). Slice 15 moved to the `sales` unit (user decision: no thermal printer available); acceptance criterion 7's real-printer half goes with it. What later units inherit is listed under *Carried to later units*.
