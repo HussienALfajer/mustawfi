@@ -1,0 +1,13 @@
+{
+  "name": "@mustawfi/tools-drizzle",
+  "private": true,
+  "type": "module",
+  "description": "drizzle-kit, kept apart from packages that run Vitest so its esbuild and tsx peers do not split the Vitest install.",
+  "scripts": {
+    "drizzle-kit": "drizzle-kit"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11",
+    "drizzle-orm": "0.45.3"
+  }
+}
