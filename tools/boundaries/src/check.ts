@@ -6,7 +6,8 @@ import { cruise, type ICruiseResult, type IForbiddenRuleType } from "dependency-
  * Boundary checks for the monorepo (ADR-0015).
  *
  * Rules 1 and 2 are checked here against package manifests and the resolved import graph;
- * rules 3 and 4 are dependency-cruiser path rules (`forbiddenRules` below).
+ * rules 3 and 4 are dependency-cruiser path rules (`forbiddenRules` below), and so is the
+ * ADR-0017 rule that only `core/tenancy`'s server entry reaches a database driver.
  */
 
 export interface Violation {
@@ -43,6 +44,9 @@ interface WorkspacePackage {
 
 const ENTRY = "(core|modules)/[^/]+/src";
 const TEST_FILE = "\\.test\\.[cm]?[jt]sx?$";
+/** PostgreSQL drivers, and the Drizzle adapters that wrap them, as installed paths. */
+const DATABASE_DRIVERS =
+  "(^|/)node_modules/(pg|pg-pool|postgres|@electric-sql/pglite|drizzle-orm/(node-postgres|postgres-js|pg-proxy|pglite|neon-http|neon-serverless))/";
 
 /** ADR-0015 rules 3 and 4, plus the entry table's package allowances. */
 export const forbiddenRules: IForbiddenRuleType[] = [
@@ -87,6 +91,14 @@ export const forbiddenRules: IForbiddenRuleType[] = [
     severity: "error",
     from: { path: `^${ENTRY}/server/`, pathNot: TEST_FILE },
     to: { path: "^packages/(ui|i18n|local-db)/" },
+  },
+  {
+    name: "database-through-tenancy",
+    comment:
+      "ADR-0017: only core/tenancy's server entry opens database connections; modules reach the database through withTenant.",
+    severity: "error",
+    from: { path: `^${ENTRY}/`, pathNot: `^core/tenancy/src/server/|${TEST_FILE}` },
+    to: { path: DATABASE_DRIVERS },
   },
   {
     name: "packages-not-modules",
@@ -327,7 +339,8 @@ export async function checkBoundaries(rootDir: string): Promise<Violation[]> {
     validate: true,
     ruleSet: { forbidden: forbiddenRules },
     tsPreCompilationDeps: true,
-    exclude: { path: "(^|/)(node_modules|dist|coverage|\\.turbo)/" },
+    // node_modules stays in the graph as unfollowed leaves, so rules can see npm imports.
+    exclude: { path: "(^|/)(dist|coverage|\\.turbo)/" },
     doNotFollow: { path: "node_modules" },
     enhancedResolveOptions: {
       exportsFields: ["exports"],

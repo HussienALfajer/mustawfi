@@ -230,4 +230,55 @@ describe("boundary check", { timeout: 30_000 }, () => {
       ).toEqual(["modules-not-apps"]);
     });
   });
+
+  describe("ADR-0017: the database only through core/tenancy", () => {
+    /** Installed npm packages; string content keeps `materialize` from linking them. */
+    const drivers: Tree = {
+      "node_modules/pg/package.json": JSON.stringify({ name: "pg", main: "index.js" }),
+      "node_modules/pg/index.js": "export default {};\n",
+      "node_modules/drizzle-orm/package.json": JSON.stringify({
+        name: "drizzle-orm",
+        exports: {
+          "./pg-core": "./pg-core/index.js",
+          "./node-postgres": "./node-postgres/index.js",
+        },
+      }),
+      "node_modules/drizzle-orm/pg-core/index.js": "export const pgTable = 1;\n",
+      "node_modules/drizzle-orm/node-postgres/index.js": "export const drizzle = 1;\n",
+      "core/tenancy/package.json": {
+        name: "@mustawfi/core-tenancy",
+        exports: moduleExports,
+        mustawfi: { dependsOn: [] },
+      },
+      "core/tenancy/src/server/index.ts":
+        'import pg from "pg";\nimport { drizzle } from "drizzle-orm/node-postgres";\nexport const tenancy = [pg, drizzle];\n',
+      "modules/sales/src/server/schema.ts":
+        'import { pgTable } from "drizzle-orm/pg-core";\nexport const invoices = pgTable;\n',
+      "modules/sales/src/server/schema.test.ts": 'import pg from "pg";\nexport const probe = pg;\n',
+    };
+
+    it("allows core/tenancy's server entry, schema definitions, and tests", async () => {
+      expect(await rulesBrokenBy(drivers)).toEqual([]);
+    });
+
+    it("fails when a module imports a PostgreSQL driver", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...drivers,
+          "modules/sales/src/server/index.ts":
+            'import pg from "pg";\nexport const salesServer = pg;\n',
+        }),
+      ).toEqual(["database-through-tenancy"]);
+    });
+
+    it("fails when a module imports a Drizzle driver adapter", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...drivers,
+          "core/ledger/src/server/index.ts":
+            'import { drizzle } from "drizzle-orm/node-postgres";\nexport const ledgerServer = drizzle;\n',
+        }),
+      ).toEqual(["database-through-tenancy"]);
+    });
+  });
 });

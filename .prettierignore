@@ -1,3 +1,6 @@
 # Prose is formatted by hand; tables and Arabic text are not reflowed.
 *.md
 pnpm-lock.yaml
+
+# drizzle-kit writes and rewrites these; formatting them only adds churn.
+**/migrations/meta/
