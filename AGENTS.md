@@ -89,8 +89,11 @@ End every task that changes files or runs more than a few steps with a report to
 
 ## Git
 
-- Until CI exists (Phase A3), documentation-only changes may be committed directly to `main`.
-- After that: one branch per slice (`slice/<unit>-<n>-<short-name>`), a PR to `main`, squash-merge once verification and review pass. A slice that touches a non-negotiable or an ADR waits for the user's approval under **ينتظرك**.
+- CI exists: every change, docs included, goes through a branch and a PR to `main`. `main` is protected; the `verify` check must pass before merging, and only squash-merge is allowed.
+- Branches: `slice/<unit>-<n>-<short-name>` for slices, `docs/<short-name>` or `fix/<short-name>` otherwise.
+- Merging is done by GitHub, not by the agent: after opening the PR, enable auto-merge (squash). GitHub merges when `verify` passes and deletes the remote branch. Then update local `main` (`git switch main && git pull --ff-only`) and delete the local branch.
+- A change that touches a non-negotiable or an accepted ADR is never auto-merged: leave the PR open for the user under **ينتظرك**.
+- When CI fails, the agent diagnoses and fixes it in code, at most three attempts per PR. Never weaken a test, a lint rule, a boundary rule, or a CI step to make CI pass. After three failed attempts, stop and report under **ينتظرك**: hypotheses, what was tried, the evidence, and a proposal.
 - Never force-push and never rewrite pushed history.
 
 ## Commands
