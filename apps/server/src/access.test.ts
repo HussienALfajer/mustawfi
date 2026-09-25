@@ -437,8 +437,15 @@ describe("device registration", () => {
     const { code } = await issueCode(await tokenFor());
     const response = await register(store.storeCode, code.toLowerCase());
     expect(response.statusCode).toBe(201);
-    const device = response.json<{ deviceId: string; prefix: string; credential: string }>();
+    const device = response.json<{
+      deviceId: string;
+      prefix: string;
+      credential: string;
+      baseCurrency: string;
+    }>();
     expect(device.prefix).toMatch(/^[A-HJ-NP-Z2-9]{2}$/);
+    expect(device.baseCurrency).toBe("SYP");
+    expect(response.json()).toMatchObject({ tenantId: store.tenantId, name: "كاشير ١" });
     expect(device.credential).toMatch(new RegExp(`^d1\\.${store.tenantId}\\.[A-Za-z0-9_-]{43}$`));
 
     const { rows } = await superuser.query<{ credential_hash: string; row: string }>(

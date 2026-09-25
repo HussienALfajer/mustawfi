@@ -1,3 +1,16 @@
+export {
+  ACCESS_DEVICE_TABLE,
+  accessLocalMigrations,
+  DeviceAlreadyRegistered,
+  issueRegistrationCode,
+  type LocalDevice,
+  localDevice,
+  localDeviceQueryKey,
+  localDeviceQueryOptions,
+  registerThisDevice,
+  type RegisterThisDeviceInput,
+} from "./device.ts";
+export { DeviceScreen } from "./device-screen.tsx";
 export { LoginScreen, type LoginScreenProps } from "./login-screen.tsx";
 export { ACCESS_NAMESPACE, accessMessages } from "./messages.ts";
 export {

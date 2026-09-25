@@ -14,4 +14,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: { proxy },
   preview: { proxy },
+  // SQLite WASM loads its `.wasm` next to itself; pre-bundling would move the module away from it.
+  optimizeDeps: { exclude: ["@sqlite.org/sqlite-wasm"] },
+  worker: { format: "es" },
 });

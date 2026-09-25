@@ -78,10 +78,15 @@ export const registerDeviceRequestSchema = z.object({
 
 export const registeredDeviceSchema = z.object({
   deviceId: z.uuid(),
+  tenantId: z.uuid(),
+  /** As registered. */
+  name: z.string(),
   /** The device's document-number prefix (ADR-0020). */
   prefix: z.string(),
   /** Shown once: the device keeps it in the OS secure store and syncs with it. */
   credential: z.string(),
+  /** The store's base currency, which the device sells in until multi-currency sales exist. */
+  baseCurrency: z.string(),
 });
 
 export const currentDeviceSchema = z.object({

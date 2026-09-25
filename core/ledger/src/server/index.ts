@@ -8,8 +8,10 @@ export {
 export {
   balancedTotal,
   type JournalEntryInput,
+  journalEntriesForSources,
   type JournalLineInput,
   postJournalEntry,
   type PostedJournalEntry,
+  type RecordedJournalEntry,
 } from "./journal.ts";
 export { ledgerModule } from "./manifest.ts";

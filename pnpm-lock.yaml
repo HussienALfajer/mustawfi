@@ -284,6 +284,9 @@ importers:
       '@mustawfi/core-config':
         specifier: workspace:*
         version: link:../../core/config
+      '@mustawfi/core-sync':
+        specifier: workspace:*
+        version: link:../../core/sync
       '@mustawfi/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -293,6 +296,12 @@ importers:
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@mustawfi/local-db':
+        specifier: workspace:*
+        version: link:../../packages/local-db
+      '@mustawfi/sales':
+        specifier: workspace:*
+        version: link:../../modules/sales
       '@mustawfi/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -387,6 +396,9 @@ importers:
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@mustawfi/local-db':
+        specifier: workspace:*
+        version: link:../../packages/local-db
       '@mustawfi/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -467,9 +479,15 @@ importers:
 
   core/config:
     dependencies:
+      '@mustawfi/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       fastify:
         specifier: 5.12.5
         version: 5.12.5
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -538,9 +556,21 @@ importers:
       '@mustawfi/core-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@mustawfi/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@mustawfi/local-db':
+        specifier: workspace:*
+        version: link:../../packages/local-db
+      '@mustawfi/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@tanstack/react-query':
+        specifier: 5.103.2
+        version: 5.103.2(react@19.3.0)
       drizzle-orm:
         specifier: 0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
@@ -550,6 +580,12 @@ importers:
       fastify-type-provider-zod:
         specifier: 7.0.0
         version: 7.0.0(@fastify/swagger@9.9.0(supports-color@7.2.0))(fastify@5.12.5)(openapi-types@12.1.3)(zod@4.6.5)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-i18next:
+        specifier: 17.0.15
+        version: 17.0.15(i18next@26.4.2(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -560,6 +596,9 @@ importers:
       '@types/node':
         specifier: 24.13.6
         version: 24.13.6
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -630,6 +669,9 @@ importers:
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@mustawfi/local-db':
+        specifier: workspace:*
+        version: link:../../packages/local-db
       '@mustawfi/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -676,6 +718,9 @@ importers:
 
   modules/sales:
     dependencies:
+      '@hookform/resolvers':
+        specifier: 5.9.1
+        version: 5.9.1(ajv@8.20.0)(react-hook-form@7.88.0(react@19.3.0))(zod@4.6.5)
       '@mustawfi/core-access':
         specifier: workspace:*
         version: link:../../core/access
@@ -694,15 +739,42 @@ importers:
       '@mustawfi/core-tenancy':
         specifier: workspace:*
         version: link:../../core/tenancy
+      '@mustawfi/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@mustawfi/inventory':
         specifier: workspace:*
         version: link:../inventory
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@mustawfi/local-db':
+        specifier: workspace:*
+        version: link:../../packages/local-db
+      '@mustawfi/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@tanstack/react-query':
+        specifier: 5.103.2
+        version: 5.103.2(react@19.3.0)
       drizzle-orm:
         specifier: 0.45.3
         version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
+      fastify:
+        specifier: 5.12.5
+        version: 5.12.5
+      fastify-type-provider-zod:
+        specifier: 7.0.0
+        version: 7.0.0(@fastify/swagger@9.9.0(supports-color@7.2.0))(fastify@5.12.5)(openapi-types@12.1.3)(zod@4.6.5)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-hook-form:
+        specifier: 7.88.0
+        version: 7.88.0(react@19.3.0)
+      react-i18next:
+        specifier: 17.0.15
+        version: 17.0.15(i18next@26.4.2(typescript@6.0.3))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@6.0.3)
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -716,6 +788,9 @@ importers:
       '@types/node':
         specifier: 24.13.6
         version: 24.13.6
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
@@ -803,6 +878,34 @@ importers:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.6)(jsdom@30.1.1)(vite@8.3.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/local-db:
+    dependencies:
+      '@sqlite.org/sqlite-wasm':
+        specifier: 3.53.4-build1
+        version: 3.53.4-build1
+      drizzle-orm:
+        specifier: 0.45.3
+        version: 0.45.3(@types/pg@8.23.1)(pg@8.23.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+    devDependencies:
+      '@mustawfi/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1960,6 +2063,10 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@sqlite.org/sqlite-wasm@3.53.4-build1':
+    resolution: {integrity: sha512-U8pvL0patYHMgieD8JxxYJTlh9m1LUX8+BDYb7MiKQzBI89f2qbdmdcG/PvnPaLm9wsBbv4VlVG453ixnxBOnA==}
+    engines: {node: '>=22'}
 
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
@@ -4739,6 +4846,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@sqlite.org/sqlite-wasm@3.53.4-build1': {}
 
   '@standard-schema/utils@0.3.0': {}
 

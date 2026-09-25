@@ -1,6 +1,10 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
-import type { TenantDatabase, TenantTransaction } from "@mustawfi/core-tenancy/server";
+import {
+  currentTenant,
+  type TenantDatabase,
+  type TenantTransaction,
+} from "@mustawfi/core-tenancy/server";
 import { randomIndex, UNAMBIGUOUS_ALPHABET } from "@mustawfi/kernel";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import {
@@ -76,9 +80,13 @@ export interface NewDevice {
 
 export interface RegisteredDevice {
   readonly deviceId: string;
+  readonly tenantId: string;
+  readonly name: string;
   readonly prefix: string;
   /** The device credential, handed to the device once; only its hash is stored. */
   readonly credential: string;
+  /** The store's base currency: what the device sells in until `core-money`. */
+  readonly baseCurrency: string;
 }
 
 export function registrationFailed(): ProblemError {
@@ -166,7 +174,16 @@ export async function registerDevice(
     entity: { type: "access.device", id: deviceId },
     after: { name, type, prefix, registrationCodeId: code.id },
   });
-  return { deviceId, prefix, credential };
+  const tenant = await currentTenant(tx);
+  if (tenant === undefined) throw new Error("a device registered outside its tenant");
+  return {
+    deviceId,
+    tenantId: device.tenantId,
+    name,
+    prefix,
+    credential,
+    baseCurrency: tenant.baseCurrency,
+  };
 }
 
 /** An authenticated device. */
