@@ -2,6 +2,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { accessLocalMigrations, type LocalDevice } from "@mustawfi/core-access/client";
+import {
+  departmentPullApplier,
+  organizationLocalMigrations,
+} from "@mustawfi/core-organization/client";
+import type { DepartmentView } from "@mustawfi/core-organization/shared";
 import { syncLocalMigrations } from "@mustawfi/core-sync/client";
 import { syncOperationSchema } from "@mustawfi/core-sync/shared";
 import { inventoryLocalMigrations, productPullApplier } from "@mustawfi/inventory/client";
@@ -40,12 +45,20 @@ const device: LocalDevice = {
   registeredAt: clock.now().toISOString(),
 };
 const userId = newId();
+const shop: DepartmentView = {
+  id: newId(),
+  name: "المتجر",
+  isDefault: true,
+  sortOrder: 0,
+  archivedAt: null,
+};
 
 const migrations = [
   ...accessLocalMigrations,
   ...syncLocalMigrations,
   ...inventoryLocalMigrations,
   ...salesLocalMigrations,
+  ...organizationLocalMigrations,
 ];
 
 let db: LocalDb;
@@ -75,6 +88,16 @@ async function product(name: string, price: string, currency = "SYP", barcode = 
   return id;
 }
 
+async function pullDepartment(department: DepartmentView): Promise<void> {
+  await db.transaction((tx) =>
+    departmentPullApplier.apply(tx, {
+      entity: "organization.department",
+      id: department.id,
+      row: { ...department },
+    }),
+  );
+}
+
 async function count(table: string): Promise<bigint> {
   const [row] = await db.query(`SELECT count(*) AS n FROM ${table}`);
   return row?.["n"] as bigint;
@@ -87,6 +110,7 @@ function sell() {
 beforeEach(async () => {
   path = join(directory, `${newId()}.sqlite3`);
   db = await openMigrated(path);
+  await pullDepartment(shop);
 });
 
 afterEach(async () => {
@@ -148,6 +172,9 @@ describe("completeCashSale", () => {
       businessDate: "2026-09-26",
       currency: "SYP",
       exchangeRate: "1",
+      // The store's default department (rule 32), and the receipt that prints the store's name.
+      departmentId: shop.id,
+      templateVersion: "receipt.cash.2",
       total: "25.34",
       lines: [
         { productId: charger, quantity: "2", unitPrice: "12.5", amount: "25" },
@@ -195,6 +222,33 @@ describe("completeCashSale", () => {
     await removeFromCart(db, imported);
     expect((await readCart(db, "SYP")).lines).toEqual([]);
     expect(await count("sync_counters")).toBe(0n);
+  });
+
+  it("sells under the default department, never another active one", async () => {
+    await pullDepartment({ ...shop, id: newId(), name: "الصيانة", isDefault: false, sortOrder: 1 });
+    await addToCart(db, await product("شاحن", "12.5"));
+    const sale = await sell();
+    const [row] = await db.query("SELECT department_id FROM sales_invoices WHERE id = ?", [
+      sale.invoiceId,
+    ]);
+    expect(row?.["department_id"]).toBe(shop.id);
+  });
+
+  it("refuses a sale before the store's departments reach the device, recording nothing", async () => {
+    const fresh = await openMigrated(join(directory, `${newId()}.sqlite3`));
+    const previous = db;
+    db = fresh;
+    try {
+      await addToCart(db, await product("شاحن", "12.5"));
+      await expect(sell()).rejects.toEqual(new SaleRefused("noDepartment"));
+      expect(await count("sales_invoices")).toBe(0n);
+      expect(await count("sync_outbox")).toBe(0n);
+      expect(await count("sync_counters")).toBe(0n);
+      expect((await readCart(db, "SYP")).lines).toHaveLength(1);
+    } finally {
+      await fresh.close();
+      db = previous;
+    }
   });
 
   it("keeps the cart when the app closes mid-sale", async () => {

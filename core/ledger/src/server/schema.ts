@@ -98,7 +98,10 @@ export const journalLines = coreLedger.table(
     /** Position in the entry, from 1. */
     lineNo: smallint().notNull(),
     accountId: uuid().notNull(),
-    /** The profit center (ADR-0006); references `core.organization` once it exists. */
+    /**
+     * The profit center (ADR-0006); references `core_tenancy.departments`, tenant-scoped (FK in
+     * `0002_journal_lines_department_fk.sql`).
+     */
     departmentId: uuid().notNull(),
     /** The line's own currency; the base currency until multi-currency posting (`core-money`). */
     currency: text().notNull(),

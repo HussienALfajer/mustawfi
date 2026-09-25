@@ -15,6 +15,8 @@ export interface ModuleRegistry<Context> {
    * its tables and data (`docs/architecture/overview.md` §2).
    */
   readonly migrationSets: readonly { readonly moduleId: string; readonly dir: string }[];
+  /** Every declared document code with the module that declared it, enabled or not. */
+  readonly documentCodes: ReadonlyMap<string, string>;
   /** Registers the routes of every enabled module, each in its own scope. */
   mount(app: FastifyInstance, context: Context): Promise<void>;
 }
@@ -51,9 +53,9 @@ function dependencyOrder<Context>(
 
 /**
  * Validates the modules a server runs and orders them. Refuses to start — throws — on a
- * module registered twice, a dependency that is not registered, a dependency cycle, or an
+ * module registered twice, a dependency that is not registered, a dependency cycle, an
  * enabled module whose dependency is disabled (a module cannot be disabled while an enabled
- * module depends on it).
+ * module depends on it), or a document code two modules declare.
  */
 export function createModuleRegistry<Context>(
   modules: readonly ModuleManifest<Context>[],
@@ -73,6 +75,20 @@ export function createModuleRegistry<Context>(
           `module ${module.id} depends on ${dependency}, which is not registered`,
         );
       }
+    }
+  }
+
+  // A disabled module's documents keep their numbers, so its codes stay taken.
+  const documentCodes = new Map<string, string>();
+  for (const module of modules) {
+    for (const code of module.documentCodes ?? []) {
+      const owner = documentCodes.get(code);
+      if (owner !== undefined) {
+        throw new ModuleRegistryError(
+          `document code ${code} is declared by both ${owner} and ${module.id}`,
+        );
+      }
+      documentCodes.set(code, module.id);
     }
   }
 
@@ -99,6 +115,7 @@ export function createModuleRegistry<Context>(
     migrationSets: ordered.flatMap((module) =>
       module.migrations === undefined ? [] : [{ moduleId: module.id, dir: module.migrations }],
     ),
+    documentCodes,
     async mount(app, context) {
       for (const module of enabled) {
         if (module.routes === undefined) continue;

@@ -50,7 +50,10 @@ export const invoices = sales.table(
     currency: text().notNull(),
     /** Of `currency` to the base currency. */
     exchangeRate: numeric({ precision: 20, scale: 6 }).notNull(),
-    /** The profit center (ADR-0006); references `core.organization` once it exists. */
+    /**
+     * The profit center (ADR-0006); references `core_tenancy.departments`, tenant-scoped (FK in
+     * `0002_invoices_department_fk.sql`).
+     */
     departmentId: uuid().notNull(),
     /** References the `treasury` shift once it exists. */
     shiftId: uuid().notNull(),

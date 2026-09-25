@@ -17,6 +17,7 @@ export {
   readCart,
   type RecordedSale,
   removeFromCart,
+  type SaleRefusal,
   SaleRefused,
   salesLocalMigrations,
 } from "./local-sales.ts";
@@ -29,6 +30,10 @@ export { SALES_NAMESPACE, salesMessages } from "./messages.ts";
 export { PosScreen, type PosScreenProps, type RecordedInvoiceRef } from "./pos-screen.tsx";
 export {
   CASH_RECEIPT_TEMPLATE,
+  cashReceiptTemplate,
+  type ReceiptTemplate,
+} from "./receipt-templates.ts";
+export {
   type ReceiptDocument,
   type ReceiptFormat,
   type ReceiptInvoice,

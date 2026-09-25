@@ -1,5 +1,5 @@
 import { ProblemError } from "@mustawfi/core-config/server";
-import { and, asc, count, eq, isNull, max } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, max } from "drizzle-orm";
 import { departmentNameSchema, type DepartmentView, tenancyProblemCodes } from "../shared/index.ts";
 import { currentLicense } from "./licenses.ts";
 import { departments, tenants } from "./schema.ts";
@@ -212,4 +212,20 @@ export async function defaultDepartment(tx: TenantTransaction): Promise<Departme
   const [row] = await tx.select().from(departments).where(eq(departments.isDefault, true));
   if (row === undefined) throw new Error("the tenant has no default department");
   return toView(row);
+}
+
+/**
+ * Which of `ids` name a department of the tenant, archived ones included: a document keeps
+ * the department it was made in (`core-foundation` rule 28).
+ */
+export async function knownDepartments(
+  tx: TenantTransaction,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .select({ id: departments.id })
+    .from(departments)
+    .where(inArray(departments.id, [...new Set(ids)]));
+  return new Set(rows.map((row) => row.id));
 }

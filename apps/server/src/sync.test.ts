@@ -1,7 +1,11 @@
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { hostProblemCodes, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import { authenticateDevice } from "@mustawfi/core-access/server";
-import { createSyncOperationTable, pushOperations } from "@mustawfi/core-sync/server";
+import {
+  createSyncOperationTable,
+  flagOperation,
+  pushOperations,
+} from "@mustawfi/core-sync/server";
 import {
   syncProblemCodes,
   type OperationResult,
@@ -147,6 +151,7 @@ function sale(
     newId,
     device,
     userId: device.store.tenant.ownerId,
+    departmentId: device.store.tenant.defaultDepartmentId,
     deviceSeq,
     lines,
     ...extra,
@@ -253,9 +258,9 @@ describe("POST /api/v1/sync/push", () => {
         sold_at: new Date(operation.createdAt),
         currency: "SYP",
         exchange_rate: "1.000000",
-        department_id: SKELETON_DOCUMENT_DEFAULTS.departmentId,
+        department_id: store.tenant.defaultDepartmentId,
         shift_id: SKELETON_DOCUMENT_DEFAULTS.shiftId,
-        template_version: SKELETON_DOCUMENT_DEFAULTS.templateVersion,
+        template_version: "receipt.cash.2",
         total: "2501.0000",
       },
     ]);
@@ -289,7 +294,7 @@ describe("POST /api/v1/sync/push", () => {
       source_type: "sales.invoice",
       source_id: result.invoiceId,
       created_by: store.tenant.ownerId,
-      department_id: SKELETON_DOCUMENT_DEFAULTS.departmentId,
+      department_id: store.tenant.defaultDepartmentId,
       currency: "SYP",
     };
     expect(journal.rows).toEqual([
@@ -513,6 +518,20 @@ describe("POST /api/v1/sync/push", () => {
           }),
       ],
       [
+        "a department the store does not have",
+        salesProblemCodes.unknownDepartment,
+        (d, p) =>
+          sale(d, [{ productId: p.id, quantity: "1", unitPrice: "1" }], { departmentId: newId() }),
+      ],
+      [
+        "a number with another document code",
+        salesProblemCodes.numberMismatch,
+        (d, p) =>
+          sale(d, [{ productId: p.id, quantity: "1", unitPrice: "1" }], {
+            payload: { number: `${d.prefix}-RET-000001` },
+          }),
+      ],
+      [
         "another currency than the base currency",
         salesProblemCodes.unsupportedCurrency,
         (d, p) =>
@@ -685,6 +704,206 @@ describe("POST /api/v1/sync/push", () => {
       status: "rejected",
       code: salesProblemCodes.unknownProduct,
     });
+  });
+
+  it("keeps a device to its own store's departments", async () => {
+    const rival = await newStore("متجر منافس آخر");
+    const theirs = await newDevice(rival);
+    const item = await newProduct(rival);
+    const operation = sale(theirs, [{ productId: item.id, quantity: "1", unitPrice: "1" }], {
+      departmentId: store.tenant.defaultDepartmentId,
+    });
+    const response = await push(theirs, [operation]);
+    expect(response.results[0]).toMatchObject({
+      status: "rejected",
+      code: salesProblemCodes.unknownDepartment,
+    });
+  });
+
+  it("records a sale under an archived department: the device sold before it heard", async () => {
+    const headers = { authorization: `Bearer ${store.token}` };
+    const created = await server.inject({
+      method: "POST",
+      url: "/api/v1/organization/departments",
+      headers,
+      payload: { name: "الصيانة" },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const { id } = created.json<{ id: string }>();
+    const archived = await server.inject({
+      method: "POST",
+      url: `/api/v1/organization/departments/${id}/archive`,
+      headers,
+    });
+    expect(archived.statusCode, archived.body).toBe(200);
+
+    const operation = sale(
+      device,
+      [{ productId: product.id, quantity: "1", unitPrice: "1250.50" }],
+      { departmentId: id },
+    );
+    const result = accepted((await push(device, [operation])).results[0]);
+    const recorded = await superuser.query(
+      `select (select department_id from sales.invoices where id = $1) as invoice,
+              (select array_agg(distinct department_id) from core_ledger.journal_lines
+                where journal_entry_id = $2) as lines`,
+      [result.invoiceId, result.journalEntryId],
+    );
+    expect(recorded.rows).toEqual([{ invoice: id, lines: [id] }]);
+  });
+});
+
+describe("document numbers on ingest (core-foundation rule 31)", () => {
+  let store: Store;
+  let product: ProductView;
+
+  beforeAll(async () => {
+    store = await newStore("متجر الترقيم");
+    product = await newProduct(store);
+    await receiveStock(store, product.id, "100");
+  });
+
+  const line = () => ({ productId: product.id, quantity: "1", unitPrice: "1250.50" });
+
+  async function flagsOf(opId: string): Promise<unknown[]> {
+    const { rows } = await superuser.query<Record<string, unknown>>(
+      "select code, detail, created_by from core_sync.operation_flags where op_id = $1",
+      [opId],
+    );
+    return rows;
+  }
+
+  async function sequencesOf(device: TestDevice): Promise<unknown[]> {
+    const { rows } = await superuser.query<Record<string, unknown>>(
+      "select doc_code, last_seq from core_organization.document_sequences where device_id = $1",
+      [device.deviceId],
+    );
+    return rows;
+  }
+
+  async function gapAuditsOf(device: TestDevice): Promise<unknown[]> {
+    const { rows } = await superuser.query<Record<string, unknown>>(
+      `select created_by, device_id, entity_type, entity_id, after
+         from core_audit.entries
+        where action = 'organization.numbering.gap' and device_id = $1
+        order by created_at, id`,
+      [device.deviceId],
+    );
+    return rows;
+  }
+
+  it("tracks the last sequence per device and code, and flags nothing in order", async () => {
+    const device = await newDevice(store);
+    const operations = [sale(device, [line()]), sale(device, [line()])];
+    const response = await push(device, operations);
+    expect(response.results.map((r) => r.status)).toEqual(["accepted", "accepted"]);
+    for (const op of operations) expect(await flagsOf(op.opId)).toEqual([]);
+    expect(await sequencesOf(device)).toEqual([{ doc_code: "INV", last_seq: "2" }]);
+    expect(await gapAuditsOf(device)).toEqual([]);
+  });
+
+  it("accepts a jump, flags it numberGap, and audits the missing range once", async () => {
+    const device = await newDevice(store);
+    accepted((await push(device, [sale(device, [line()])])).results[0]);
+    const jump = sale(device, [line()], { invoiceSeq: 5 });
+    const result = accepted((await push(device, [jump])).results[0]);
+    expect(result.number).toBe(`${device.prefix}-INV-000005`);
+
+    const detail = {
+      docCode: "INV",
+      first: `${device.prefix}-INV-000002`,
+      last: `${device.prefix}-INV-000004`,
+      count: 3,
+      number: `${device.prefix}-INV-000005`,
+    };
+    expect(await flagsOf(jump.opId)).toEqual([
+      { code: "numberGap", detail, created_by: store.tenant.ownerId },
+    ]);
+    expect(await gapAuditsOf(device)).toEqual([
+      {
+        created_by: store.tenant.ownerId,
+        device_id: device.deviceId,
+        entity_type: "sales.invoice",
+        entity_id: result.invoiceId,
+        after: detail,
+      },
+    ]);
+    expect(await sequencesOf(device)).toEqual([{ doc_code: "INV", last_seq: "5" }]);
+
+    // A retry is answered from the record: no second flag, no second entry.
+    expect((await push(device, [jump])).results[0]?.status).toBe("duplicate");
+    expect(await flagsOf(jump.opId)).toHaveLength(1);
+    expect(await gapAuditsOf(device)).toHaveLength(1);
+  });
+
+  it("takes a late number inside a reported gap without moving the sequence back", async () => {
+    const device = await newDevice(store);
+    accepted((await push(device, [sale(device, [line()], { invoiceSeq: 3 })])).results[0]);
+    const late = sale(device, [line()], { invoiceSeq: 2 });
+    accepted((await push(device, [late])).results[0]);
+    expect(await flagsOf(late.opId)).toEqual([]);
+    expect(await sequencesOf(device)).toEqual([{ doc_code: "INV", last_seq: "3" }]);
+    expect(await gapAuditsOf(device)).toHaveLength(1);
+  });
+
+  it("counts nothing for a repeated number, which is refused as a duplicate", async () => {
+    const device = await newDevice(store);
+    accepted((await push(device, [sale(device, [line()])])).results[0]);
+    const repeat = sale(device, [line()], { invoiceSeq: 1 });
+    expect((await push(device, [repeat])).results[0]).toMatchObject({
+      status: "rejected",
+      code: salesProblemCodes.duplicate,
+    });
+    expect(await flagsOf(repeat.opId)).toEqual([]);
+    expect(await sequencesOf(device)).toEqual([{ doc_code: "INV", last_seq: "1" }]);
+  });
+
+  it("keeps one flag per code when an operation is flagged twice, and records it", async () => {
+    const device = await newDevice(store);
+    const operations = createSyncOperationTable([
+      {
+        type: "test.flag.post",
+        versions: {
+          1: async (tx, operation, handlerDependencies) => {
+            for (const detail of [{ first: true }, { first: false }]) {
+              await flagOperation(
+                tx,
+                operation,
+                { code: "numberGap", detail },
+                handlerDependencies,
+              );
+            }
+            return {};
+          },
+        },
+      },
+    ]);
+    const deviceOf = await authenticateDevice(tenants, device.credential);
+    if (deviceOf === undefined) throw new Error("the test device does not authenticate");
+    const operation: SyncOperation = {
+      ...sale(device, [line()]),
+      type: "test.flag.post",
+      payload: {},
+    };
+    const pushed = await pushOperations(tenants, deviceOf, [operation], {
+      ...dependencies,
+      operations,
+    });
+    expect(pushed.results.map((r) => r.status)).toEqual(["accepted"]);
+    expect(await flagsOf(operation.opId)).toEqual([
+      { code: "numberGap", detail: { first: true }, created_by: store.tenant.ownerId },
+    ]);
+  });
+
+  it("keeps each device's numbering apart", async () => {
+    const first = await newDevice(store);
+    const second = await newDevice(store);
+    const pushed = await push(first, [sale(first, [line()]), sale(first, [line()])]);
+    expect(pushed.results.map((r) => r.status)).toEqual(["accepted", "accepted"]);
+    const opening = sale(second, [line()]);
+    accepted((await push(second, [opening])).results[0]);
+    expect(await flagsOf(opening.opId)).toEqual([]);
+    expect(await sequencesOf(second)).toEqual([{ doc_code: "INV", last_seq: "1" }]);
   });
 });
 
@@ -883,6 +1102,7 @@ describe("the database", () => {
   let invoiceId: string;
   let opId: string;
   let productId: string;
+  let gapOpId: string;
 
   beforeAll(async () => {
     store = await newStore("متجر الثوابت");
@@ -894,6 +1114,10 @@ describe("the database", () => {
     expect(result.flags).toEqual(["negativeStock"]);
     invoiceId = result.invoiceId;
     opId = operation.opId;
+    // A second sale past a missing number: an operation flag and a document sequence.
+    const gapped = sale(device, [{ productId, quantity: "1", unitPrice: "1" }], { invoiceSeq: 3 });
+    accepted((await push(device, [gapped])).results[0]);
+    gapOpId = gapped.opId;
   });
 
   const inStore = (statement: SQL) =>
@@ -921,6 +1145,13 @@ describe("the database", () => {
       sql`update core_sync.received_ops set status = 'rejected' where id = ${opId}`,
     "delete a received operation": () => sql`delete from core_sync.received_ops where id = ${opId}`,
     "delete a change": () => sql`delete from core_sync.changes where entity_id = ${productId}`,
+    "update an operation flag": () =>
+      sql`update core_sync.operation_flags set code = 'deviceRevoked' where op_id = ${gapOpId}`,
+    "delete an operation flag": () =>
+      sql`delete from core_sync.operation_flags where op_id = ${gapOpId}`,
+    "delete a document sequence": () => sql`delete from core_organization.document_sequences`,
+    "move a document sequence to another device": () =>
+      sql`update core_organization.document_sequences set device_id = device_id`,
     "update a stock movement": () =>
       sql`update inventory.stock_movements set quantity = 1 where source_id = ${invoiceId}`,
     "delete a stock movement": () =>
@@ -939,8 +1170,45 @@ describe("the database", () => {
     "update sales.invoice_flags set code = 'arithmeticMismatch' where invoice_id = $1",
     "delete from core_sync.received_ops where id = (select op_id from sales.invoices where id = $1)",
     "delete from inventory.stock_movements where source_id = $1",
+    "delete from core_sync.operation_flags where tenant_id = (select tenant_id from sales.invoices where id = $1)",
   ])("refuses even a superuser: %s", async (statement) => {
     expect(await refusal(superuser.query(statement, [invoiceId]))).toBe("42501");
+  });
+
+  it("never moves a device's document sequence back", async () => {
+    const statement = sql`update core_organization.document_sequences set last_seq = 1`;
+    expect(await refusal(inStore(statement))).toBe("23514");
+  });
+
+  it("refuses, at commit, a flag on an operation the server never received", async () => {
+    const { tenantId, branchId, ownerId } = store.tenant;
+    const code = await refusal(
+      inStore(sql`
+        insert into core_sync.operation_flags
+          (id, tenant_id, branch_id, created_at, created_by, op_id, code, detail)
+        values (${newId()}, ${tenantId}, ${branchId}, now(), ${ownerId}, ${newId()}, 'numberGap', '{}')`),
+    );
+    expect(code).toBe("23503");
+  });
+
+  it("refuses an invoice naming another store's department", async () => {
+    const rival = await newStore("متجر الأقسام الأخرى");
+    const { tenantId, branchId, ownerId } = store.tenant;
+    const { rows } = await superuser.query<{ device_id: string }>(
+      "select device_id from sales.invoices where id = $1",
+      [invoiceId],
+    );
+    const code = await refusal(
+      inStore(sql`
+        insert into sales.invoices
+          (id, tenant_id, branch_id, created_at, created_by, number, device_id, doc_seq, op_id,
+           business_date, sold_at, currency, exchange_rate, department_id, shift_id,
+           template_version, total)
+        values (${newId()}, ${tenantId}, ${branchId}, now(), ${ownerId}, 'ZZ-INV-999999',
+                ${rows[0]?.device_id}, 999999, ${newId()}, '2026-09-25', now(), 'SYP', 1,
+                ${rival.tenant.defaultDepartmentId}, ${newId()}, 'receipt.cash.2', 1)`),
+    );
+    expect(code).toBe("23503");
   });
 
   it("refuses a line appended to a posted invoice", async () => {

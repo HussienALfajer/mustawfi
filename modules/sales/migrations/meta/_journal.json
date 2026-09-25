@@ -15,6 +15,13 @@
       "when": 1790315129992,
       "tag": "0001_sales_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790370846126,
+      "tag": "0002_invoices_department_fk",
+      "breakpoints": true
     }
   ]
 }

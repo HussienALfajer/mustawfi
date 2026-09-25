@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DepartmentView, StoreProfileView } from "../shared/index.ts";
 import {
   listLocalDepartments,
+  localDefaultDepartment,
   organizationLocalMigrations,
   organizationPullAppliers,
   readLocalStoreProfile,
@@ -65,6 +66,14 @@ const department = (row: DepartmentView): Change => ({
 });
 
 describe("pulled departments", () => {
+  it("give the store's default department once it has arrived", async () => {
+    expect(await localDefaultDepartment(db)).toBeUndefined();
+    await apply([department(repairs)]);
+    expect(await localDefaultDepartment(db)).toBeUndefined();
+    await apply([department(shop)]);
+    expect(await localDefaultDepartment(db)).toEqual(shop);
+  });
+
   it("are stored, updated in place, and listed in order; archived ones only on request", async () => {
     await apply([department(repairs), department(shop)]);
     expect(await listLocalDepartments(db)).toEqual([shop, repairs]);

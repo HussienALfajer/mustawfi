@@ -102,4 +102,46 @@ describe("module registry", () => {
     expect(disabled.statusCode).toBe(404);
     await app.close();
   });
+
+  describe("document codes (core-foundation rule 30)", () => {
+    it("lists every declared code with its module, disabled modules included", () => {
+      const registry = createModuleRegistry(
+        [
+          module("sales", [], { documentCodes: ["INV", "RET"] }),
+          module("repairs", [], { documentCodes: ["RPR"] }),
+        ],
+        { disabled: ["repairs"] },
+      );
+      expect([...registry.documentCodes]).toEqual([
+        ["INV", "sales"],
+        ["RET", "sales"],
+        ["RPR", "repairs"],
+      ]);
+    });
+
+    it("refuses a code two modules declare, even when one of them is disabled", () => {
+      const modules = [
+        module("sales", [], { documentCodes: ["INV"] }),
+        module("purchases", [], { documentCodes: ["INV"] }),
+      ];
+      const error = new ModuleRegistryError(
+        "document code INV is declared by both sales and purchases",
+      );
+      expect(() => createModuleRegistry(modules)).toThrow(error);
+      expect(() => createModuleRegistry(modules, { disabled: ["purchases"] })).toThrow(error);
+    });
+
+    it.each(["inv", "IN", "INVO", "IN1", "ÉTÉ", ""])(
+      "refuses %j, which is not a document code",
+      (code) => {
+        expect(() => module("sales", [], { documentCodes: [code] })).toThrow(TypeError);
+      },
+    );
+
+    it("refuses a module declaring a code twice", () => {
+      expect(() => module("sales", [], { documentCodes: ["INV", "INV"] })).toThrow(
+        new TypeError("module sales declares a document code twice"),
+      );
+    });
+  });
 });

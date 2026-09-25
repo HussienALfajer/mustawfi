@@ -1,3 +1,4 @@
+export { documentCodeSchema } from "./document-code.ts";
 export {
   hostProblemCodes,
   problemCodeSchema,

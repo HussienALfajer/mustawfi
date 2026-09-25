@@ -52,6 +52,8 @@ export const receivedOps = coreSync.table(
   },
   (t) => [
     unique("received_ops_device_seq").on(t.tenantId, t.deviceId, t.deviceSeq),
+    // Target of the operation flags' tenant-scoped foreign key.
+    unique("received_ops_id_per_tenant").on(t.tenantId, t.id),
     check("received_ops_device_seq_positive", sql`${t.deviceSeq} > 0`),
     check(
       "received_ops_outcome",
@@ -102,4 +104,36 @@ export const tenantCounters = coreSync.table(
     changeSeq: bigint({ mode: "number" }).notNull(),
   },
   (t) => [check("tenant_counters_change_seq_positive", sql`${t.changeSeq} > 0`)],
+);
+
+/**
+ * What the server flagged on an accepted operation, whatever its document type (ADR-0030):
+ * append-only, written in the operation's transaction by the module that found it.
+ */
+export const operationFlags = coreSync.table(
+  "operation_flags",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    /** When the server received the operation. */
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    /** The user the operation names. */
+    createdBy: uuid().notNull(),
+    /**
+     * The flagged operation. Written before the operation's own row in the same transaction, so
+     * its tenant-scoped foreign key is deferred to commit (`0003_operation_flags_rules.sql`).
+     */
+    opId: uuid().notNull(),
+    code: text().notNull(),
+    /** What was found, as a snapshot: the missing numbers of a gap… */
+    detail: jsonb().$type<SyncValues>().notNull(),
+  },
+  (t) => [
+    unique("operation_flags_code_per_op").on(t.tenantId, t.opId, t.code),
+    check(
+      "operation_flags_code",
+      sql`${t.code} in ('deviceRevoked', 'licenseReadOnly', 'permissionMissing', 'overrideNotAuthorized', 'numberGap')`,
+    ),
+  ],
 );

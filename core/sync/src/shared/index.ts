@@ -133,3 +133,20 @@ export const syncProblemCodes = {
    */
   seqTaken: "sync.operation.seqTaken",
 } as const;
+
+/**
+ * What the server flags on an accepted operation of any document type, for the accountant
+ * (ADR-0020, ADR-0030): the document is recorded as the device sent it, never refused.
+ * `deviceRevoked`: pushed by a revoked device. `licenseReadOnly`: dated on a business day after
+ * the store became read-only. `permissionMissing`: its user lacked the operation's permission.
+ * `overrideNotAuthorized`: its supervisor override did not cover it. `numberGap`: its number
+ * skipped numbers of its device and document code.
+ */
+export const operationFlagCodeSchema = z.enum([
+  "deviceRevoked",
+  "licenseReadOnly",
+  "permissionMissing",
+  "overrideNotAuthorized",
+  "numberGap",
+]);
+export type OperationFlagCode = z.infer<typeof operationFlagCodeSchema>;

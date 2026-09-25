@@ -158,6 +158,20 @@ export async function listLocalDepartments(
     .orderBy(asc(localDepartments.sortOrder), asc(localDepartments.id));
 }
 
+/**
+ * The store's default department on this device, once pulled: what documents are made under
+ * until `sales` chooses by the user's scope (`core-foundation` rule 32).
+ */
+export async function localDefaultDepartment(
+  executor: LocalExecutor,
+): Promise<DepartmentView | undefined> {
+  return localOrm(executor)
+    .select()
+    .from(localDepartments)
+    .where(eq(localDepartments.isDefault, true))
+    .get();
+}
+
 /** The store profile on this device, once pulled. */
 export async function readLocalStoreProfile(
   executor: LocalExecutor,

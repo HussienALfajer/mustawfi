@@ -33,9 +33,10 @@ const SYP = Currency.of("SYP", 2);
 const clock = manualClock(new Date("2026-09-25T08:00:00.000Z"));
 const newId = uuidV7Generator({ clock, random: cryptoRandom });
 const dependencies = { clock, newId, random: cryptoRandom };
-const departmentId = newId();
 
 let database: TestDatabase;
+/** The store's default department, which every line here belongs to. */
+let departmentId: string;
 let tenants: TenantDatabase;
 let superuser: pg.Client;
 let store: CreatedTenant;
@@ -71,10 +72,11 @@ const lineValues = (
   accountId: string,
   dr: string,
   cr: string,
+  lineDepartmentId: string = departmentId,
 ) => sql`
   insert into core_ledger.journal_lines
     (id, tenant_id, branch_id, created_at, created_by, journal_entry_id, line_no, account_id, department_id, currency, debit, credit)
-  values (${newId()}, ${store.tenantId}, ${store.branchId}, now(), ${store.ownerId}, ${entryId}, ${lineNo}, ${accountId}, ${departmentId}, 'SYP', ${dr}, ${cr})`;
+  values (${newId()}, ${store.tenantId}, ${store.branchId}, now(), ${store.ownerId}, ${entryId}, ${lineNo}, ${accountId}, ${lineDepartmentId}, 'SYP', ${dr}, ${cr})`;
 
 function post(lines: readonly JournalLineInput[], tenant: CreatedTenant = store) {
   return tenants.withTenant({ tenantId: tenant.tenantId, userId: tenant.ownerId }, (tx) =>
@@ -152,6 +154,7 @@ beforeAll(async () => {
   superuser = await database.connect("superuser");
   store = await newTenant("متجر النور");
   other = await newTenant("متجر آخر");
+  departmentId = store.defaultDepartmentId;
   accounts = await inStore(systemAccounts);
 });
 
@@ -265,6 +268,30 @@ describe("postJournalEntry", () => {
       inStore(async (tx) => {
         await tx.execute(entryValues(entryId));
         await tx.execute(lineValues(entryId, 1, theirs.cash.id, "10", "0"));
+        await tx.execute(lineValues(entryId, 2, accounts.salesRevenue.id, "0", "10"));
+      }),
+    );
+    expect(code).toBe("23503");
+  });
+
+  it.each([
+    ["no department at all", () => newId()],
+    ["another tenant's department", () => other.defaultDepartmentId],
+  ])("refuses a line naming %s, which the database refuses too", async (_, department) => {
+    const lines = [debit(accounts.cash, syp("10")), credit(accounts.salesRevenue, syp("10"))];
+    const before = await ledgerCounts(store.tenantId);
+    const named = lines.map((line, i) =>
+      i === 0 ? { ...line, departmentId: department() } : line,
+    );
+    expect(await refusal(post(named))).toBe(ledgerProblemCodes.entryInvalid);
+    expect(await ledgerCounts(store.tenantId)).toEqual(before);
+
+    // Written straight to the tables, the tenant-scoped foreign key refuses it.
+    const entryId = newId();
+    const code = await refusal(
+      inStore(async (tx) => {
+        await tx.execute(entryValues(entryId));
+        await tx.execute(lineValues(entryId, 1, accounts.cash.id, "10", "0", department()));
         await tx.execute(lineValues(entryId, 2, accounts.salesRevenue.id, "0", "10"));
       }),
     );

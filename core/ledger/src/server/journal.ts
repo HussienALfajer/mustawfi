@@ -1,5 +1,9 @@
 import { ProblemError } from "@mustawfi/core-config/server";
-import { currentTenant, type TenantTransaction } from "@mustawfi/core-tenancy/server";
+import {
+  currentTenant,
+  knownDepartments,
+  type TenantTransaction,
+} from "@mustawfi/core-tenancy/server";
 import { Decimal, Money, type IdGenerator } from "@mustawfi/kernel";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { calendarDateSchema, ledgerProblemCodes, type JournalSide } from "../shared/index.ts";
@@ -116,6 +120,11 @@ export async function postJournalEntry(
     .from(accounts)
     .where(inArray(accounts.id, accountIds));
   if (known.length !== accountIds.length) throw invalid("a line names an unknown account");
+  const departmentIds = entry.lines.map((line) => line.departmentId);
+  const departments = await knownDepartments(tx, departmentIds);
+  if (!departmentIds.every((id) => departments.has(id))) {
+    throw invalid("a line names an unknown department");
+  }
 
   const audit = {
     tenantId: entry.tenantId,

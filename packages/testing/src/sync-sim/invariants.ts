@@ -45,6 +45,14 @@ export interface ServerSnapshot {
   readonly entries: readonly ServerEntry[];
   readonly productIds: readonly string[];
   readonly stock: readonly { readonly productId: string; readonly onHand: string }[];
+  /** The server's view of each device's numbering: the last sequence per document code. */
+  readonly sequences: readonly {
+    readonly deviceId: string;
+    readonly docCode: string;
+    readonly lastSeq: number;
+  }[];
+  /** The operation flags the server wrote. */
+  readonly operationFlags: readonly { readonly opId: string; readonly code: string }[];
 }
 
 export interface ConvergenceInput {
@@ -71,7 +79,8 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 /**
  * What a converged run must show (ADR-0026, ADR-0020): every sale a device made is on the
  * server exactly once, with its number and total; no invoice appears that no device made;
- * each device's numbers run from 1 without gaps; every invoice with a total posts one balanced
+ * each device's numbers run from 1 without gaps, the server tracked each device's last invoice
+ * number, and no operation was flagged; every invoice with a total posts one balanced
  * entry for that total and the ledger balances; stock on hand is what was received minus what
  * was sold; and every device holds every product. Returns the problems found, empty when the
  * run converged.
@@ -125,11 +134,22 @@ export function convergenceProblems(input: ConvergenceInput): string[] {
     if (!gapless) {
       problems.push(`${device.name} numbers are not 1..${String(seqs.length)} without gaps`);
     }
+    const tracked = server.sequences.find(
+      (sequence) => sequence.deviceId === device.deviceId && sequence.docCode === "INV",
+    );
+    if ((tracked?.lastSeq ?? 0) !== seqs.length) {
+      problems.push(
+        `${device.name} made ${String(seqs.length)} invoices; the server's last number is ${String(tracked?.lastSeq ?? 0)}`,
+      );
+    }
     if (!sameSet(device.productIds, server.productIds)) {
       problems.push(
         `${device.name} holds ${String(device.productIds.length)} products, the server ${String(server.productIds.length)}`,
       );
     }
+  }
+  for (const flag of server.operationFlags) {
+    problems.push(`operation ${flag.opId} was flagged ${flag.code}`);
   }
   for (const invoice of server.invoices) {
     if (!made.has(invoice.id))

@@ -4,8 +4,9 @@
  * outbox, and sync engine over the real HTTP transport — against the real server and a real
  * PostgreSQL, through a network that drops, duplicates, delays, and reorders requests and cuts
  * devices off, every choice drawn from a seed. After the network heals and the devices sync,
- * no invoice is lost or duplicated, numbers have no gaps, the ledger balances, stock is what
- * was received minus what was sold, and every device holds every product.
+ * no invoice is lost or duplicated, numbers have no gaps and the server saw none, the ledger
+ * balances, stock is what was received minus what was sold, and every device holds every
+ * product.
  *
  * Replay a failing run with its seed: `SYNC_SIM_SEEDS=1234 pnpm test:agent sync-sim`.
  * Longer runs: `SYNC_SIM_STEPS=2000`.
@@ -15,6 +16,10 @@ import {
   type LocalDevice,
   registerThisDevice,
 } from "@mustawfi/core-access/client";
+import {
+  organizationLocalMigrations,
+  organizationPullAppliers,
+} from "@mustawfi/core-organization/client";
 import {
   createApiSyncTransport,
   createSyncEngine,
@@ -229,6 +234,7 @@ async function openDevice(
     ...syncLocalMigrations,
     ...inventoryLocalMigrations,
     ...salesLocalMigrations,
+    ...organizationLocalMigrations,
   ]);
   const { code } = await ownerRequest<{ code: string }>(
     "/api/v1/access/registration-codes",
@@ -242,7 +248,7 @@ async function openDevice(
   );
   const engine = createSyncEngine({
     db,
-    appliers: inventoryPullAppliers,
+    appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
     clock,
     transport: createApiSyncTransport({ fetch: link.fetch }),
   });
@@ -305,6 +311,12 @@ function serverSnapshot(store: Store): Promise<ServerSnapshot> {
     const stock = await tx.execute<{ product_id: string; on_hand: string }>(
       sql`SELECT product_id, on_hand::text AS on_hand FROM inventory.stock_levels`,
     );
+    const sequences = await tx.execute<{ device_id: string; doc_code: string; last_seq: string }>(
+      sql`SELECT device_id, doc_code, last_seq FROM core_organization.document_sequences`,
+    );
+    const flags = await tx.execute<{ op_id: string; code: string }>(
+      sql`SELECT op_id, code FROM core_sync.operation_flags`,
+    );
     return {
       invoices: invoices.rows.map((row) => ({
         id: row.id,
@@ -321,6 +333,12 @@ function serverSnapshot(store: Store): Promise<ServerSnapshot> {
       })),
       productIds: products.rows.map((row) => row.id),
       stock: stock.rows.map((row) => ({ productId: row.product_id, onHand: row.on_hand })),
+      sequences: sequences.rows.map((row) => ({
+        deviceId: row.device_id,
+        docCode: row.doc_code,
+        lastSeq: Number.parseInt(row.last_seq, 10),
+      })),
+      operationFlags: flags.rows.map((row) => ({ opId: row.op_id, code: row.code })),
     };
   });
 }

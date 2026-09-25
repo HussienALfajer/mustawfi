@@ -25,6 +25,8 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | الرقم الضريبي | Tax number | `taxNumber` |
 | رقم السجل التجاري | Commercial register number | `commercialRegister` |
 | رمز نوع المستند | Document code (three letters, e.g. `INV`) | `docCode` |
+| تسلسل مستندات الجهاز | Document sequence (the server's last number per device and document code) | `documentSequence` (`lastSeq`) |
+| فجوة في الترقيم | Number gap (numbers a device skipped, flagged and audited) | `numberGap` (`organization.numbering.gap`) |
 | قفل تلقائي | Auto-lock | `autoLock` |
 | قفل المستخدم على الجهاز | PIN lockout | `pinLockout` |
 | إبطال الجهاز | Device revoke | `revoke` (`revokedAt`) |

@@ -17,6 +17,9 @@ export const organizationMessages = {
       created: "إنشاء ملف المتجر",
       changed: "تعديل ملف المتجر",
     },
+    numbering: {
+      gap: "أرقام مستندات ناقصة",
+    },
   },
   departments: departmentsMessages,
   profile: storeProfileMessages,

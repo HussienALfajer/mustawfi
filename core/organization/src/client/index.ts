@@ -2,6 +2,7 @@ export {
   departmentPullApplier,
   listLocalDepartments,
   LOCAL_DEPARTMENTS_TABLE,
+  localDefaultDepartment,
   LOCAL_STORE_PROFILE_TABLE,
   localDepartmentsQueryKey,
   localDepartmentsQueryOptions,
