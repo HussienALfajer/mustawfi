@@ -1,13 +1,15 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cruise, type ICruiseResult, type IForbiddenRuleType } from "dependency-cruiser";
+import { checkSchemaOwnership, checkTableExports, type ModuleInfo } from "./schemas.ts";
 
 /**
  * Boundary checks for the monorepo (ADR-0015).
  *
  * Rules 1 and 2 are checked here against package manifests and the resolved import graph;
  * rules 3 and 4 are dependency-cruiser path rules (`forbiddenRules` below), and so is the
- * ADR-0017 rule that only `core/tenancy`'s server entry reaches a database driver.
+ * ADR-0017 rule that only `core/tenancy`'s server entry reaches a database driver. Rule 5
+ * (tables stay internal, SQL stays in the module's own schema) is in `schemas.ts`.
  */
 
 export interface Violation {
@@ -327,9 +329,33 @@ function checkGraph(packages: WorkspacePackage[], result: ICruiseResult): Violat
   return violations;
 }
 
+/** Modules with the files behind their entries, for the rule 5 checks. */
+function moduleInfos(rootDir: string, packages: WorkspacePackage[]): ModuleInfo[] {
+  return packages.flatMap((pkg) => {
+    if (pkg.moduleId === undefined) return [];
+    const exportsField = pkg.json.exports;
+    const entryFiles: string[] = [];
+    if (exportsField !== null && typeof exportsField === "object" && !Array.isArray(exportsField)) {
+      for (const [key, value] of Object.entries(exportsField)) {
+        if (!(MODULE_ENTRIES as readonly string[]).includes(key)) continue;
+        const targets: string[] = [];
+        collectTargets(value, targets);
+        for (const target of targets.filter((t) => !t.includes("*")))
+          entryFiles.push(join(rootDir, pkg.dir, target));
+      }
+    }
+    return [{ dir: pkg.dir, moduleId: pkg.moduleId, dependsOn: dependsOnOf(pkg), entryFiles }];
+  });
+}
+
 export async function checkBoundaries(rootDir: string): Promise<Violation[]> {
   const packages = discoverPackages(rootDir);
   const violations = checkManifests(packages);
+  const modules = moduleInfos(rootDir, packages);
+  violations.push(
+    ...checkTableExports(rootDir, modules),
+    ...checkSchemaOwnership(rootDir, modules),
+  );
 
   const roots = LAYERS.filter((layer) => existsSync(join(rootDir, layer)));
   if (roots.length === 0) return violations;

@@ -55,6 +55,25 @@ const cleanTree: Tree = {
     'import { salesServer } from "@mustawfi/sales/server";\nexport const app = salesServer;\n',
 };
 
+/** Installed npm packages; string content keeps `materialize` from linking them. */
+const drizzle: Tree = {
+  "node_modules/drizzle-orm/package.json": JSON.stringify({
+    name: "drizzle-orm",
+    exports: {
+      ".": "./index.js",
+      "./pg-core": "./pg-core/index.js",
+      "./sqlite-core": "./sqlite-core/index.js",
+      "./node-postgres": "./node-postgres/index.js",
+    },
+  }),
+  "node_modules/drizzle-orm/index.js": "export const sql = () => 1;\n",
+  "node_modules/drizzle-orm/pg-core/index.js":
+    "export const pgTable = () => 1;\nexport const pgSchema = () => ({ table: () => 1 });\nexport const uuid = () => 1;\n",
+  "node_modules/drizzle-orm/sqlite-core/index.js":
+    "export const sqliteTable = () => 1;\nexport const text = () => 1;\n",
+  "node_modules/drizzle-orm/node-postgres/index.js": "export const drizzle = 1;\n",
+};
+
 let workspace: string | undefined;
 
 afterEach(() => {
@@ -232,19 +251,10 @@ describe("boundary check", { timeout: 30_000 }, () => {
   });
 
   describe("ADR-0017: the database only through core/tenancy", () => {
-    /** Installed npm packages; string content keeps `materialize` from linking them. */
     const drivers: Tree = {
+      ...drizzle,
       "node_modules/pg/package.json": JSON.stringify({ name: "pg", main: "index.js" }),
       "node_modules/pg/index.js": "export default {};\n",
-      "node_modules/drizzle-orm/package.json": JSON.stringify({
-        name: "drizzle-orm",
-        exports: {
-          "./pg-core": "./pg-core/index.js",
-          "./node-postgres": "./node-postgres/index.js",
-        },
-      }),
-      "node_modules/drizzle-orm/pg-core/index.js": "export const pgTable = 1;\n",
-      "node_modules/drizzle-orm/node-postgres/index.js": "export const drizzle = 1;\n",
       "core/tenancy/package.json": {
         name: "@mustawfi/core-tenancy",
         exports: moduleExports,
@@ -279,6 +289,188 @@ describe("boundary check", { timeout: 30_000 }, () => {
             'import { drizzle } from "drizzle-orm/node-postgres";\nexport const ledgerServer = drizzle;\n',
         }),
       ).toEqual(["database-through-tenancy"]);
+    });
+  });
+
+  describe("rule 5: tables stay internal, SQL stays in the module's schema", () => {
+    /** sales owns its tables, reads them with its own SQL, and keys them to core.ledger. */
+    const owned: Tree = {
+      ...drizzle,
+      "modules/sales/src/server/schema.ts": [
+        'import { pgSchema, uuid } from "drizzle-orm/pg-core";',
+        "/** Mirrors core_ledger.entries by id only (FK in the migration). */",
+        'export const sales = pgSchema("sales");',
+        'export const invoices = sales.table("invoices", { id: uuid(), entryId: uuid() });',
+        "",
+      ].join("\n"),
+      "modules/sales/src/server/invoices.ts": [
+        'import { sql } from "drizzle-orm";',
+        'import { invoices } from "./schema.ts";',
+        "export const count = sql`select count(*) from sales.invoices where id = ${invoices}`;",
+        'export const action = "core_ledger.entry.posted";',
+        "",
+      ].join("\n"),
+      "modules/sales/src/server/index.ts": [
+        'import { ledgerServer } from "@mustawfi/core-ledger/server";',
+        'import { count } from "./invoices.ts";',
+        "export const salesServer = [ledgerServer, count];",
+        "",
+      ].join("\n"),
+      "modules/sales/src/client/local.ts": [
+        'import { sqliteTable, text } from "drizzle-orm/sqlite-core";',
+        'export const localInvoices = sqliteTable("sales_invoices", { id: text() });',
+        "",
+      ].join("\n"),
+      "modules/sales/migrations/0000_sales.sql": [
+        "-- Entries live in core_ledger.entries; the key only holds integrity.",
+        'CREATE TABLE "sales"."invoices" ("id" uuid PRIMARY KEY, "entry_id" uuid);',
+        'ALTER TABLE "sales"."invoices" ADD CONSTRAINT "invoices_entry_fk"',
+        '  FOREIGN KEY ("entry_id") REFERENCES "core_ledger"."entries"("id");',
+        'GRANT USAGE ON SCHEMA "sales" TO mustawfi_app;',
+        "",
+      ].join("\n"),
+    };
+
+    it("allows own-schema SQL, internal tables, and foreign keys toward dependsOn", async () => {
+      expect(await rulesBrokenBy(owned)).toEqual([]);
+    });
+
+    it("fails when an entry exports a table definition", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/index.ts": 'export { invoices } from "./schema.ts";\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when an entry re-exports a table under another name through another file", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/tables.ts":
+            'import { invoices } from "./schema.ts";\nexport const salesInvoices = invoices;\n',
+          "modules/sales/src/server/index.ts": 'export * from "./tables.ts";\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when an entry exports the schema file as a namespace", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/index.ts": 'export * as salesSchema from "./schema.ts";\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when an entry exports an object holding tables", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/index.ts":
+            'import { invoices } from "./schema.ts";\nexport const tables = { invoices };\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when an entry re-exports a default-exported table", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/flags.ts":
+            'import { pgTable } from "drizzle-orm/pg-core";\nexport default pgTable("flags", {});\n',
+          "modules/sales/src/server/index.ts": 'export { default as flags } from "./flags.ts";\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when an entry exports a table built through a namespace import", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/index.ts":
+            'import * as pg from "drizzle-orm/pg-core";\nexport const flags = pg.pgTable("flags", {});\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when a client entry exports a local SQLite table", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/client/index.ts": 'export { localInvoices } from "./local.ts";\n',
+        }),
+      ).toEqual(["no-table-export"]);
+    });
+
+    it("fails when a migration reads another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/migrations/0001_totals.sql":
+            'CREATE VIEW "sales"."totals" AS SELECT id FROM core_ledger.entries;\n',
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
+    it("fails when a migration grants on another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/migrations/0001_grant.sql": 'GRANT USAGE ON SCHEMA "core_ledger" TO x;\n',
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
+    it("fails on a foreign key toward a module outside dependsOn", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "core/ledger/migrations/0000_ledger.sql": [
+            'ALTER TABLE "core_ledger"."entries" ADD CONSTRAINT "entries_invoice_fk"',
+            '  FOREIGN KEY ("invoice_id") REFERENCES "sales"."invoices"("id");',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
+    it("fails when a sql template reads another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/invoices.ts": [
+            'import { sql } from "drizzle-orm";',
+            "export const count = sql`select count(*) from core_ledger.entries`;",
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
+    it("fails when a plain SQL string reads another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/invoices.ts":
+            "export const count = 'select count(*) from \"core_ledger\".entries';\n",
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
+    it("fails when a Drizzle schema puts tables in another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/ledger-tables.ts": [
+            'import { pgSchema } from "drizzle-orm/pg-core";',
+            'const ledger = pgSchema("core_ledger");',
+            'export const entries = ledger.table("entries", {});',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["own-schema-only"]);
     });
   });
 });
