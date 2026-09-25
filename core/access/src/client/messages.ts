@@ -8,6 +8,20 @@ export const accessMessages = {
   audit: {
     role: {
       created: "إنشاء دور",
+      changed: "تعديل دور",
+      archived: "أرشفة دور",
+    },
+    user: {
+      created: "إنشاء مستخدم",
+      changed: "تعديل اسم مستخدم أو اسم دخوله",
+      roleChanged: "تغيير دور مستخدم",
+      scopeChanged: "تغيير أقسام مستخدم",
+      deactivated: "إيقاف مستخدم",
+      reactivated: "إعادة تفعيل مستخدم",
+      pinSet: "تعيين الرمز السري لمستخدم",
+      passwordSet: "تعيين كلمة مرور مستخدم",
+      pinChanged: "تغيير المستخدم رمزه السري",
+      passwordChanged: "تغيير المستخدم كلمة مروره",
     },
   },
   login: {

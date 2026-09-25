@@ -1,6 +1,23 @@
+import {
+  limitIdSchema,
+  limitValueSchema,
+  permissionIdSchema,
+  ROLE_TEMPLATES,
+} from "@mustawfi/core-config/shared";
 import { z } from "zod";
+import { pinSchema } from "./pin.ts";
 
-export { accessGrant, type AccessGrant, type LimitValue, type RoleAccess } from "./grant.ts";
+export {
+  accessGrant,
+  type AccessGrant,
+  type LimitValue,
+  type RoleAccess,
+  type RoleHoldings,
+  roleHoldings,
+  type StoredRole,
+  templateGrants,
+} from "./grant.ts";
+export { isPinAllowed, pinSchema } from "./pin.ts";
 
 /** A user's login name: lower case after trimming, letters, digits, `.`, `_`, `-`. */
 export const loginSchema = z
@@ -15,13 +32,6 @@ export const passwordSchema = z.string().min(10).max(256);
 export const userNameSchema = z.string().trim().min(1).max(200);
 
 export const roleNameSchema = z.string().trim().min(1).max(100);
-
-export const newOwnerSchema = z.object({
-  name: userNameSchema,
-  login: loginSchema,
-});
-
-export type NewOwnerInput = z.input<typeof newOwnerSchema>;
 
 /** A device's role (ADR-0022): the main POS, or a mobile companion. */
 export const deviceTypeSchema = z.enum(["mainPos", "companion"]);
@@ -53,7 +63,7 @@ export type DepartmentScope = z.infer<typeof departmentScopeSchema>;
 export const sessionUserSchema = z.object({
   id: z.uuid(),
   name: z.string(),
-  login: z.string(),
+  login: z.string().nullable(),
   role: z.object({ id: z.uuid(), name: z.string(), isOwner: z.boolean() }),
   departmentScope: departmentScopeSchema,
   /** The active departments of a `listed` scope; empty for `all`. */
@@ -77,6 +87,164 @@ export const currentSessionSchema = z.object({
   tenantId: z.uuid(),
   expiresAt: z.iso.datetime(),
   user: sessionUserSchema,
+});
+
+/** A user's status: users are deactivated, never deleted. */
+export const userStatusSchema = z.enum(["active", "deactivated"]);
+export type UserStatus = z.infer<typeof userStatusSchema>;
+
+const departmentIdsSchema = z.array(z.uuid()).max(100);
+
+/** A listed scope names at least one department; `all` names none. */
+function checkScope(
+  value: {
+    readonly departmentScope?: DepartmentScope | undefined;
+    readonly departments?: readonly string[] | undefined;
+  },
+  context: z.RefinementCtx,
+): void {
+  if (value.departmentScope === undefined) {
+    if (value.departments !== undefined) {
+      context.addIssue({ code: "custom", message: "departments come with a departmentScope" });
+    }
+    return;
+  }
+  const count = value.departments?.length ?? 0;
+  if (value.departmentScope === "listed" && count === 0) {
+    context.addIssue({ code: "custom", message: "a listed scope names at least one department" });
+  }
+  if (value.departmentScope === "all" && count > 0) {
+    context.addIssue({ code: "custom", message: "the scope of every department lists none" });
+  }
+}
+
+/**
+ * `POST /api/v1/access/users` (flow 8): a login and a password are optional, the first PIN is
+ * not (rule 19). A password needs a login to sign in with.
+ */
+export const newUserRequestSchema = z
+  .object({
+    name: userNameSchema,
+    login: loginSchema.nullable().default(null),
+    password: passwordSchema.nullable().default(null),
+    roleId: z.uuid(),
+    departmentScope: departmentScopeSchema,
+    departments: departmentIdsSchema.default([]),
+    pin: pinSchema,
+  })
+  .superRefine((value, context) => {
+    checkScope(value, context);
+    if (value.password !== null && value.login === null) {
+      context.addIssue({ code: "custom", message: "a password needs a login", path: ["login"] });
+    }
+  });
+
+export type NewUserRequest = z.input<typeof newUserRequestSchema>;
+
+/**
+ * `PATCH /api/v1/access/users/:id`: what changes, the rest stays. `departments` comes with
+ * `departmentScope`; a `null` login removes it (refused while the user has a password).
+ */
+export const userChangeRequestSchema = z
+  .object({
+    name: userNameSchema.optional(),
+    login: loginSchema.nullable().optional(),
+    roleId: z.uuid().optional(),
+    departmentScope: departmentScopeSchema.optional(),
+    departments: departmentIdsSchema.optional(),
+  })
+  .superRefine(checkScope);
+
+export type UserChangeRequest = z.input<typeof userChangeRequestSchema>;
+
+/** `POST /api/v1/access/users/:id/deactivate`: the reason is kept in the audit log. */
+export const deactivateUserRequestSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
+/** `PUT /api/v1/access/users/:id/pin`: a manager sets or resets someone's PIN. */
+export const setPinRequestSchema = z.object({ pin: pinSchema });
+
+/** `PUT /api/v1/access/users/:id/password`: a manager sets or resets someone's password. */
+export const setPasswordRequestSchema = z.object({ password: passwordSchema });
+
+/**
+ * `PUT /api/v1/access/me/pin`: the user's own PIN, proved with the current PIN — or, while
+ * they have none (a tenant's first owner), with their password.
+ */
+export const changeOwnPinRequestSchema = z.object({
+  currentPin: z.string().max(6).optional(),
+  currentPassword: z.string().max(256).optional(),
+  pin: pinSchema,
+});
+
+/**
+ * `PUT /api/v1/access/me/password`: the user's own password, proved with the current
+ * password — or, while they have none, with their PIN.
+ */
+export const changeOwnPasswordRequestSchema = z.object({
+  currentPassword: z.string().max(256).optional(),
+  currentPin: z.string().max(6).optional(),
+  password: passwordSchema,
+});
+
+/** A user as the users screen shows them; secrets are never sent, only whether they are set. */
+export const userViewSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  login: z.string().nullable(),
+  role: z.object({ id: z.uuid(), name: z.string(), isOwner: z.boolean() }),
+  departmentScope: departmentScopeSchema,
+  /** The active departments of a `listed` scope; empty for `all`. */
+  departments: z.array(z.uuid()),
+  status: userStatusSchema,
+  hasPassword: z.boolean(),
+  hasPin: z.boolean(),
+  createdAt: z.iso.datetime(),
+});
+
+export type UserView = z.infer<typeof userViewSchema>;
+
+/**
+ * `POST /api/v1/access/roles` (a copy the editor starts from another role) and
+ * `PUT /api/v1/access/roles/:id`: the whole role but its template.
+ */
+export const roleRequestSchema = z.object({
+  name: roleNameSchema,
+  permissions: z.array(permissionIdSchema).max(1000),
+  /** Limit values by limit id; a limit left out is zero for the role (rule 16). */
+  limits: z.record(limitIdSchema, limitValueSchema).default({}),
+});
+
+export type RoleRequest = z.input<typeof roleRequestSchema>;
+
+/** A role as the roles screen shows it. */
+export const roleViewSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  /** `owner`, the template it was seeded from, or null for a copy. */
+  template: z.enum(["owner", ...ROLE_TEMPLATES]).nullable(),
+  isOwner: z.boolean(),
+  archivedAt: z.iso.datetime().nullable(),
+  /** What the role holds; the owner role holds every declared permission. */
+  permissions: z.array(z.string()),
+  /** Limit values by limit id; the owner role has none because it is unlimited. */
+  limits: z.record(z.string(), z.string()),
+  activeUsers: z.int().min(0),
+});
+
+export type RoleView = z.infer<typeof roleViewSchema>;
+
+/** `GET /api/v1/access/catalogue`: what a role can hold, for the permission matrix. */
+export const permissionCatalogueSchema = z.object({
+  permissions: z.array(z.object({ id: z.string(), moduleId: z.string(), scoped: z.boolean() })),
+  limits: z.array(
+    z.object({
+      id: z.string(),
+      moduleId: z.string(),
+      kind: z.enum(["percent", "amount", "count"]),
+    }),
+  ),
 });
 
 export const registrationCodeResponseSchema = z.object({
@@ -132,4 +300,38 @@ export const accessProblemCodes = {
   deviceRequired: "access.device.required",
   /** A cookie-authenticated change sent from another origin (CSRF, ADR-0022). */
   crossOrigin: "access.request.crossOrigin",
+  /** No user with this id in the tenant. */
+  userNotFound: "access.user.notFound",
+  /** Another user of the tenant has this login. */
+  loginTaken: "access.user.loginTaken",
+  /** A password needs a login: the user has, or would have, a password and no login. */
+  loginRequired: "access.user.loginRequired",
+  /** A listed department is unknown or archived. */
+  unknownDepartment: "access.user.unknownDepartment",
+  /** Managing an owner, or granting or removing the owner role, takes an owner (rule 14). */
+  ownersOnly: "access.user.ownersOnly",
+  /** The change would leave the tenant with no active owner (rule 14). */
+  lastOwner: "access.user.lastOwner",
+  /** The user is already deactivated. */
+  userDeactivated: "access.user.deactivated",
+  /** The user is already active. */
+  userActive: "access.user.active",
+  /** The current PIN or password given to prove a change of one's own is wrong. */
+  currentSecretWrong: "access.user.currentSecretWrong",
+  /** No role with this id in the tenant. */
+  roleNotFound: "access.role.notFound",
+  /** Another active role has this name. */
+  roleNameTaken: "access.role.nameTaken",
+  /** The role is archived: it cannot be edited, archived again, or given to a user. */
+  roleArchived: "access.role.archived",
+  /** The owner role cannot be edited or archived (rule 14). */
+  ownerRoleFixed: "access.role.ownerFixed",
+  /** Active users hold the role; give them another before archiving it. */
+  roleInUse: "access.role.inUse",
+  /** A non-owner granting a permission or limit value beyond their own (slice 6 decision). */
+  beyondOwnGrant: "access.role.beyondOwnGrant",
+  /** A non-owner changing their own role or department scope (slice 6 decision). */
+  ownAccessChange: "access.user.ownAccessChange",
+  /** One's own PIN or password is changed from one's account, proved by the current one. */
+  useOwnAccount: "access.user.useOwnAccount",
 } as const;

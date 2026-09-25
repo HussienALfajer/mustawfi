@@ -19,6 +19,7 @@ export {
   defaultDepartment,
   type DepartmentChange,
   activeDepartments,
+  lockTenant,
   knownDepartments,
   listDepartments,
   type NewDepartment,

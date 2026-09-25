@@ -21,6 +21,8 @@ export type DepartmentView = z.infer<typeof departmentSchema>;
 export const tenancyProblemCodes = {
   /** A new active department would exceed the license's `departments` limit (rule 4). */
   departmentLimit: "tenancy.limit.departments",
+  /** A new or reactivated user would exceed the license's `users` limit (rule 4). */
+  userLimit: "tenancy.limit.users",
   /** Another active department has this name. */
   departmentNameTaken: "tenancy.department.nameTaken",
   /** No department with this id in the tenant. */

@@ -60,6 +60,7 @@ export async function logIn(
             name: users.name,
             login: users.login,
             passwordHash: users.passwordHash,
+            status: users.status,
           })
           .from(users)
           .where(eq(users.login, login.data))
@@ -68,10 +69,12 @@ export async function logIn(
   });
 
   const { user } = found;
+  // A deactivated user, or one without a password (PIN only), fails like a wrong password.
+  const passwordHash = user?.status === "active" ? user.passwordHash : null;
   const verified =
-    user === undefined
+    passwordHash === null
       ? await verifyNothing(input.password).then(() => false)
-      : await verifyPassword(user.passwordHash, input.password);
+      : await verifyPassword(passwordHash, input.password);
 
   const now = dependencies.clock.now();
   if (user === undefined || !verified) {
@@ -106,7 +109,7 @@ export async function logIn(
       entity: { type: "access.session", id: opened.sessionId },
       after: { login: user.login },
     });
-    const access = await userAccess(tx, user.id);
+    const access = await userAccess(tx, user.id, dependencies.permissionCatalogue);
     if (access === undefined) throw new Error(`user ${user.id} vanished during sign-in`);
     return { ...opened, access };
   });

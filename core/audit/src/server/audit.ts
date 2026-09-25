@@ -16,6 +16,8 @@ export interface AuditEntry {
   readonly entity?: { readonly type: string; readonly id: string };
   readonly before?: AuditValues;
   readonly after?: AuditValues;
+  /** Why, as the person who acted typed it, when the action asks for one. */
+  readonly reason?: string;
 }
 
 /**
@@ -35,5 +37,6 @@ export async function recordAudit(tx: TenantTransaction, entry: AuditEntry): Pro
     entityId: entry.entity?.id ?? null,
     before: entry.before ?? null,
     after: entry.after ?? null,
+    reason: entry.reason ?? null,
   });
 }

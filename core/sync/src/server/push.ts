@@ -180,7 +180,7 @@ async function processOperation(
       `${operation.type} has no payload version ${String(operation.payloadVersion)} here`,
     );
   }
-  const user = await userAccess(tx, operation.userId);
+  const user = await userAccess(tx, operation.userId, dependencies.operations.permissionCatalogue);
   if (user === undefined) throw new OperationRejected(syncProblemCodes.unknownUser);
   const { access } = definition;
   if (access !== "device") {
