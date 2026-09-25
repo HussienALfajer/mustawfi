@@ -16,6 +16,7 @@
     "@mustawfi/core-audit": "workspace:*",
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/core-ledger": "workspace:*",
+    "@mustawfi/core-organization": "workspace:*",
     "@mustawfi/core-sync": "workspace:*",
     "@mustawfi/core-tenancy": "workspace:*",
     "@mustawfi/inventory": "workspace:*",

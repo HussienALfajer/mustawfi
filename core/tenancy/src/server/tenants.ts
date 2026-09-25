@@ -1,5 +1,11 @@
 import { eq } from "drizzle-orm";
-import { newTenantSchema, storeCodeSchema, type NewTenantInput } from "../shared/index.ts";
+import {
+  DEFAULT_DEPARTMENT_NAME,
+  newTenantSchema,
+  storeCodeSchema,
+  type NewTenantInput,
+} from "../shared/index.ts";
+import { insertDefaultDepartment } from "./departments.ts";
 import { branches, tenants } from "./schema.ts";
 import type { TenantTransaction } from "./tenant-database.ts";
 
@@ -8,6 +14,8 @@ export interface NewTenant extends NewTenantInput {
   readonly tenantId: string;
   /** The id of the hidden default branch created with the tenant. */
   readonly branchId: string;
+  /** The id of the default department created with the tenant («المتجر», rule 28). */
+  readonly defaultDepartmentId: string;
   /** A fresh store code (ADR-0029); a code another tenant holds fails the insert (`23505`). */
   readonly storeCode: string;
   readonly createdAt: Date;
@@ -22,12 +30,19 @@ export interface Tenant {
   readonly defaultBranchId: string;
 }
 
+export interface CreatedTenant extends Tenant {
+  readonly defaultDepartmentId: string;
+}
+
 /**
- * Creates a tenant and its hidden default branch in `tx`, a `withTenant` transaction for the
+ * Creates a tenant, its hidden default branch, and its default department in `tx`, a `withTenant` transaction for the
  * new tenant's id. The caller adds what else a new tenant needs (its owner, its accounts) in
  * the same transaction.
  */
-export async function createTenant(tx: TenantTransaction, tenant: NewTenant): Promise<Tenant> {
+export async function createTenant(
+  tx: TenantTransaction,
+  tenant: NewTenant,
+): Promise<CreatedTenant> {
   const { name, baseCurrency } = newTenantSchema.parse(tenant);
   const { tenantId, branchId, createdAt, createdBy } = tenant;
   const storeCode = storeCodeSchema.parse(tenant.storeCode);
@@ -53,7 +68,22 @@ export async function createTenant(tx: TenantTransaction, tenant: NewTenant): Pr
     name,
     isDefault: true,
   });
-  return { id: tenantId, name, baseCurrency, storeCode, defaultBranchId: branchId };
+  await insertDefaultDepartment(tx, {
+    id: tenant.defaultDepartmentId,
+    tenantId,
+    branchId,
+    name: DEFAULT_DEPARTMENT_NAME,
+    createdAt,
+    createdBy,
+  });
+  return {
+    id: tenantId,
+    name,
+    baseCurrency,
+    storeCode,
+    defaultBranchId: branchId,
+    defaultDepartmentId: tenant.defaultDepartmentId,
+  };
 }
 
 /** The tenant of the current `withTenant` context. */

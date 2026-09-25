@@ -1,19 +1,11 @@
-import { accessLocalMigrations } from "@mustawfi/core-access/client";
-import { createSyncEngine, type SyncEngine, syncLocalMigrations } from "@mustawfi/core-sync/client";
-import { inventoryLocalMigrations, inventoryPullAppliers } from "@mustawfi/inventory/client";
+import { organizationPullAppliers } from "@mustawfi/core-organization/client";
+import { createSyncEngine, type SyncEngine } from "@mustawfi/core-sync/client";
+import { inventoryPullAppliers } from "@mustawfi/inventory/client";
 import { systemClock } from "@mustawfi/kernel";
-import { salesLocalMigrations } from "@mustawfi/sales/client";
 import { type LocalDb, migrateLocalDb, touchesLocalTables } from "@mustawfi/local-db";
 import type { QueryClient } from "@tanstack/react-query";
+import { LOCAL_MIGRATIONS } from "./local-migrations.ts";
 import type { ClientPlatform } from "./platform.ts";
-
-/** Every module's local schema, in dependency order (ADR-0019). */
-const LOCAL_MIGRATIONS = [
-  ...accessLocalMigrations,
-  ...syncLocalMigrations,
-  ...inventoryLocalMigrations,
-  ...salesLocalMigrations,
-];
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -63,7 +55,7 @@ export async function startLocalRuntime(
   });
   const sync = createSyncEngine({
     db,
-    appliers: [...inventoryPullAppliers],
+    appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
     clock: systemClock,
   });
   // A round on each change of connectivity: "offline" shows at once, "online" sends the outbox.

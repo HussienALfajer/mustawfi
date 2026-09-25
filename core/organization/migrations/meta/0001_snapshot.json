@@ -1,0 +1,147 @@
+{
+  "id": "cfe97cc1-7d5b-4a22-8865-f7f56a5acf8e",
+  "prevId": "e5c737c7-122f-4565-99e2-3bde4b013314",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core_organization.store_profiles": {
+      "name": "store_profiles",
+      "schema": "core_organization",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phones": {
+          "name": "phones",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_number": {
+          "name": "tax_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "commercial_register": {
+          "name": "commercial_register",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo": {
+          "name": "logo",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_type": {
+          "name": "logo_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_sha256": {
+          "name": "logo_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_size": {
+          "name": "logo_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "store_profiles_one_per_tenant": {
+          "name": "store_profiles_one_per_tenant",
+          "columns": [
+            "tenant_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "store_profiles_phones": {
+          "name": "store_profiles_phones",
+          "value": "cardinality(\"core_organization\".\"store_profiles\".\"phones\") <= 3"
+        },
+        "store_profiles_logo": {
+          "name": "store_profiles_logo",
+          "value": "(\"core_organization\".\"store_profiles\".\"logo\" is null and \"core_organization\".\"store_profiles\".\"logo_type\" is null and \"core_organization\".\"store_profiles\".\"logo_sha256\" is null and \"core_organization\".\"store_profiles\".\"logo_size\" is null)\n        or (\"core_organization\".\"store_profiles\".\"logo_type\" in ('image/png', 'image/jpeg') and \"core_organization\".\"store_profiles\".\"logo_sha256\" ~ '^[0-9a-f]{64}$'\n          and \"core_organization\".\"store_profiles\".\"logo_size\" = octet_length(\"core_organization\".\"store_profiles\".\"logo\") and \"core_organization\".\"store_profiles\".\"logo_size\" between 1 and 262144)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core_organization": "core_organization"
+  },
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

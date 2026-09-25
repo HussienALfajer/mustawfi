@@ -698,11 +698,13 @@ describe("GET /api/v1/sync/pull", () => {
   });
 
   it("returns product changes in commit order, in pages, with a resumable cursor", async () => {
+    // What the store was created with (its department and profile) comes first.
+    const seeded = await pull(device);
     const created = [await newProduct(store), await newProduct(store), await newProduct(store)];
     const rival = await newStore("متجر آخر");
     const theirs = await newProduct(rival);
 
-    const first = await pull(device, "?limit=2");
+    const first = await pull(device, `?limit=2&cursor=${seeded.cursor}`);
     expect(first.changes).toEqual(
       created.slice(0, 2).map((p) => ({ entity: "inventory.product", id: p.id, row: p })),
     );
@@ -719,7 +721,10 @@ describe("GET /api/v1/sync/pull", () => {
 
     // Another device of the store starts from the beginning and sees the same log.
     const other = await newDevice(store);
-    expect((await pull(other)).changes.map((c) => c.id)).toEqual(created.map((p) => p.id));
+    expect((await pull(other)).changes.map((c) => c.id)).toEqual([
+      ...seeded.changes.map((c) => c.id),
+      ...created.map((p) => p.id),
+    ]);
   });
 
   it("never lets a device skip a change whose transaction commits late", async () => {

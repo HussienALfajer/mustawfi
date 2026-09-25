@@ -26,6 +26,14 @@ export const storeCodeSchema = z
   .pipe(z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, "a store code is six letters and digits"));
 
 export {
+  DEFAULT_DEPARTMENT_NAME,
+  departmentNameSchema,
+  departmentSchema,
+  type DepartmentView,
+  type TenancyProblemCode,
+  tenancyProblemCodes,
+} from "./departments.ts";
+export {
   EXPIRING_DAYS,
   LICENSE_ALGORITHM,
   LICENSE_STATES,

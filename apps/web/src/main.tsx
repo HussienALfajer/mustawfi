@@ -9,6 +9,7 @@ import "./styles.css";
 import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
 import { TENANCY_NAMESPACE, tenancyMessages } from "@mustawfi/core-tenancy/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
+import { ORGANIZATION_NAMESPACE, organizationMessages } from "@mustawfi/core-organization/client";
 import { ApiProblem, ClientRuntimeProvider, configureApi } from "@mustawfi/core-config/client";
 import { SYNC_NAMESPACE, SyncEngineProvider, syncMessages } from "@mustawfi/core-sync/client";
 import { createI18n, DIRECTION, LANGUAGE } from "@mustawfi/i18n";
@@ -42,6 +43,7 @@ const i18n = createI18n({
   [UI_NAMESPACE]: uiMessages,
   [ACCESS_NAMESPACE]: accessMessages,
   [TENANCY_NAMESPACE]: tenancyMessages,
+  [ORGANIZATION_NAMESPACE]: organizationMessages,
   [INVENTORY_NAMESPACE]: inventoryMessages,
   [SYNC_NAMESPACE]: syncMessages,
   [SALES_NAMESPACE]: salesMessages,
