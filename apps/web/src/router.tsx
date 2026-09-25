@@ -41,7 +41,7 @@ import {
   ShoppingCart,
   Store,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SHELL_NAMESPACE } from "./messages.ts";
 import { PrinterScreen, ReceiptActions } from "./printing.tsx";
@@ -162,50 +162,57 @@ function navLink(to: NavPath) {
 }
 
 /**
- * The side navigation's groups. An entry appears only when the user may open it: until
- * roles and permissions (slice 5), administration is the owner's.
+ * The side navigation's groups. An entry appears only when the user's role holds the
+ * permission its screen needs (`core-foundation` slice 5); a group left empty is not shown.
  */
-function useNavigationGroups(isOwner: boolean): NavGroup[] {
+function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
   const { t } = useTranslation(SHELL_NAMESPACE);
-  const item = (id: string, to: NavPath, icon: ReactNode) => ({
-    id,
-    label: t(`nav.${id}`),
-    icon,
-    link: navLink(to),
-  });
-  return [
+  const item = (id: string, to: NavPath, icon: ReactNode, permission?: string) =>
+    permission === undefined || permissions.has(permission)
+      ? [{ id, label: t(`nav.${id}`), icon, link: navLink(to) }]
+      : [];
+  const groups: NavGroup[] = [
     {
       id: "sales",
       label: t("nav.group.sales"),
       items: [
-        item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />),
-        item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />),
+        ...item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />),
+        ...item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />, "sales.invoices.view"),
       ],
     },
     {
       id: "inventory",
       label: t("nav.group.inventory"),
-      items: [item("products", "/products", <Package {...ICON_PROPS} />)],
+      items: item("products", "/products", <Package {...ICON_PROPS} />, "inventory.products.view"),
     },
     {
       id: "administration",
       label: t("nav.group.administration"),
-      items: isOwner
-        ? [
-            item("profile", "/admin/profile", <Store {...ICON_PROPS} />),
-            item("departments", "/admin/departments", <Layers {...ICON_PROPS} />),
-          ]
-        : [],
+      items: [
+        ...item(
+          "profile",
+          "/admin/profile",
+          <Store {...ICON_PROPS} />,
+          "organization.profile.edit",
+        ),
+        ...item(
+          "departments",
+          "/admin/departments",
+          <Layers {...ICON_PROPS} />,
+          "organization.departments.manage",
+        ),
+      ],
     },
     {
       id: "device",
       label: t("nav.group.device"),
       items: [
-        item("device", "/device", <MonitorSmartphone {...ICON_PROPS} />),
-        item("printer", "/printer", <Printer {...ICON_PROPS} />),
+        ...item("device", "/device", <MonitorSmartphone {...ICON_PROPS} />),
+        ...item("printer", "/printer", <Printer {...ICON_PROPS} />),
       ],
     },
   ];
+  return groups.filter((group) => group.items.length > 0);
 }
 
 /** The page title and layout of the deepest matched route. */
@@ -225,7 +232,8 @@ function AppShell() {
   const navigate = useNavigate();
   const session = useQuery(sessionQueryOptions()).data;
   const [collapsed, setCollapsed] = useNavigationCollapsed(NAVIGATION_STORAGE_KEY);
-  const groups = useNavigationGroups(session?.user.isOwner === true);
+  const permissions = useMemo(() => new Set(session?.user.permissions ?? []), [session]);
+  const groups = useNavigationGroups(permissions);
   const page = usePage();
   return (
     <div
@@ -262,9 +270,7 @@ function AppShell() {
             {session ? (
               <span className="flex flex-col text-sm leading-tight">
                 <span className="text-text">{session.user.name}</span>
-                <span className="text-xs text-text-secondary">
-                  {t(session.user.isOwner ? "role.owner" : "role.user")}
-                </span>
+                <span className="text-xs text-text-secondary">{session.user.role.name}</span>
               </span>
             ) : null}
             <SignOutButton

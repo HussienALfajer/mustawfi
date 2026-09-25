@@ -10,6 +10,13 @@ import { inventoryRoutes } from "./routes.ts";
 export const inventoryModule = defineModule<InventoryContext>({
   id: "inventory",
   dependsOn: ["core.access", "core.audit", "core.config", "core.sync", "core.tenancy"],
+  permissions: [
+    {
+      id: "inventory.products.view",
+      grants: ["accountant", "sectionCashier", "repairTechnician", "topUpOperator"],
+    },
+    { id: "inventory.products.manage", grants: ["accountant"] },
+  ],
   migrations: fileURLToPath(new URL("../../migrations", import.meta.url)),
   routes: inventoryRoutes,
 });

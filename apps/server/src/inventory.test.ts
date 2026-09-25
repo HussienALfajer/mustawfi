@@ -7,10 +7,10 @@ import { createTestDatabase, type TestDatabase } from "@mustawfi/testing";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildServer } from "./app.ts";
+import { buildHostServer } from "./host-server.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
-import { createServerRegistry, hostSyncOperations } from "./modules.ts";
+import { createServerRegistry } from "./modules.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
@@ -44,14 +44,13 @@ beforeAll(async () => {
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   superuser = await database.connect("superuser");
   const registry = createServerRegistry();
-  server = await buildServer({
+  server = await buildHostServer({
     registry,
-    context: {
+    services: {
       tenants,
       clock,
       newId,
       random: cryptoRandom,
-      syncOperations: hostSyncOperations(registry),
     },
   });
   const input = {

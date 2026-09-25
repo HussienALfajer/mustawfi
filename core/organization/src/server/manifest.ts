@@ -11,6 +11,7 @@ import { organizationRoutes } from "./routes.ts";
 export const organizationModule = defineModule<OrganizationContext>({
   id: "core.organization",
   dependsOn: ["core.access", "core.audit", "core.config", "core.sync", "core.tenancy"],
+  permissions: [{ id: "organization.profile.edit" }, { id: "organization.departments.manage" }],
   migrations: fileURLToPath(new URL("../../migrations", import.meta.url)),
   routes: organizationRoutes,
 });

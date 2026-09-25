@@ -4,6 +4,12 @@ import type { Messages } from "@mustawfi/i18n";
 export const ACCESS_NAMESPACE = "access";
 
 export const accessMessages = {
+  /** Labels of this module's audit actions: `access.role.created` → `audit.role.created`. */
+  audit: {
+    role: {
+      created: "إنشاء دور",
+    },
+  },
   login: {
     title: "تسجيل الدخول",
     storeCode: "رمز المتجر",

@@ -1,3 +1,4 @@
+import { installRouteAccess, routeAccessTable } from "@mustawfi/core-access/server";
 import {
   createModuleRegistry,
   defineModule,
@@ -5,6 +6,8 @@ import {
   type ModuleManifest,
 } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
+import type { TenantDatabase } from "@mustawfi/core-tenancy/server";
+import { systemClock } from "@mustawfi/kernel";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -27,6 +30,7 @@ const fixtureModule: ModuleManifest<FixtureContext> = defineModule<FixtureContex
     app.post(
       "/widgets",
       {
+        config: { access: "public" },
         schema: {
           body: z.object({ name: z.string().min(1).max(40) }),
           response: { 201: widgetSchema, 409: problemDetailsSchema },
@@ -44,13 +48,17 @@ const fixtureModule: ModuleManifest<FixtureContext> = defineModule<FixtureContex
           .send({ id: "0199a5c4-7b1e-7000-8000-000000000001", name: request.body.name });
       },
     );
-    app.get("/explode", () => {
+    app.get("/explode", { config: { access: "public" } }, () => {
       throw new Error("secret connection string in a message");
     });
-    app.get("/badly-shaped", { schema: { response: { 200: widgetSchema } } }, () => ({
-      id: "not a uuid",
-      name: "x",
-    }));
+    app.get(
+      "/badly-shaped",
+      { config: { access: "public" }, schema: { response: { 200: widgetSchema } } },
+      () => ({
+        id: "not a uuid",
+        name: "x",
+      }),
+    );
   },
 });
 
@@ -58,16 +66,33 @@ const disabledModule = defineModule<FixtureContext>({
   id: "disabled",
   dependsOn: [],
   routes(app) {
-    app.get("/here", () => ({ here: true }));
+    app.get("/here", { config: { access: "public" } }, () => ({ here: true }));
   },
 });
 
 let app: FastifyInstance;
 
+/** Public routes only: the guard never reaches the database here. */
+const noDatabase = new Proxy({} as TenantDatabase, {
+  get() {
+    throw new Error("the host tests use no database");
+  },
+});
+
 beforeAll(async () => {
+  const registry = createModuleRegistry([fixtureModule, disabledModule], {
+    disabled: ["disabled"],
+  });
   app = await buildServer({
-    registry: createModuleRegistry([fixtureModule, disabledModule], { disabled: ["disabled"] }),
+    registry,
     context: { taken: new Set(["taken"]) },
+    guard: (server) => {
+      installRouteAccess(server, {
+        tenants: noDatabase,
+        clock: systemClock,
+        permissionCatalogue: registry.permissions,
+      });
+    },
     clientOrigins: ["http://tauri.localhost"],
   });
 });
@@ -100,6 +125,17 @@ describe("server host", () => {
     });
     expect(response.statusCode).toBe(201);
     expect(response.json()).toMatchObject({ name: "bolt" });
+  });
+
+  it("puts every route it adds behind the guard, health and OpenAPI as public", () => {
+    const routes = routeAccessTable(app).filter((route) => route.method !== "HEAD");
+    expect(routes.map((r) => `${r.method} ${r.url} ${JSON.stringify(r.access)}`)).toEqual([
+      'GET /api/v1/health "public"',
+      'GET /api/v1/openapi.json "public"',
+      'POST /api/v1/fixture/widgets "public"',
+      'GET /api/v1/fixture/explode "public"',
+      'GET /api/v1/fixture/badly-shaped "public"',
+    ]);
   });
 
   it("does not mount a disabled module", async () => {

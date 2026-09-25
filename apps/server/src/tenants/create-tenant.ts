@@ -1,5 +1,5 @@
 import { loginSchema, passwordSchema, userNameSchema } from "@mustawfi/core-access/shared";
-import { createOwner, hashPassword } from "@mustawfi/core-access/server";
+import { createUser, hashPassword, seedRoles } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { seedAccounts } from "@mustawfi/core-ledger/server";
 import { seedOrganization } from "@mustawfi/core-organization/server";
@@ -17,6 +17,7 @@ import {
 } from "@mustawfi/core-tenancy/server";
 import { randomCode, type RandomSource } from "@mustawfi/kernel";
 import { z } from "zod";
+import { serverPermissions } from "../modules.ts";
 import { installAuditedLicense, type LicenseDependencies } from "./install-license.ts";
 
 export const createTenantInputSchema = z.object({
@@ -70,7 +71,8 @@ function isStoreCodeTaken(error: unknown): boolean {
 /**
  * Flow 1 of the walking skeleton, licensed (`core-foundation` rule 2): a tenant whose id is the
  * license's tenant claim, its installed license, its hidden default branch, its base currency,
- * its store code, its owner, and its seeded accounts, in one `withTenant` transaction for the
+ * its store code, its roles (the owner role and one per template, with the permissions the
+ * server's modules grant them), its owner, and its seeded accounts, in one `withTenant` transaction for the
  * new tenant — all or nothing, and audited in the same transaction. Runs as `mustawfi_app`
  * under RLS like every other write. A store code another tenant already holds is drawn again.
  */
@@ -124,16 +126,28 @@ export async function createTenantWithOwner(
       createdBy,
     });
     await installAuditedLicense(tx, parsed.license, dependencies);
-    await createOwner(tx, {
-      id: created.ownerId,
-      tenantId: created.tenantId,
-      branchId: created.branchId,
-      name: parsed.ownerName,
-      login: parsed.ownerLogin,
-      passwordHash,
-      createdAt,
-      createdBy,
-    });
+    const { ownerRoleId } = await seedRoles(
+      tx,
+      { tenantId: created.tenantId, branchId: created.branchId, userId: createdBy, at: createdAt },
+      serverPermissions(),
+      dependencies,
+    );
+    await createUser(
+      tx,
+      {
+        id: created.ownerId,
+        tenantId: created.tenantId,
+        branchId: created.branchId,
+        name: parsed.ownerName,
+        login: parsed.ownerLogin,
+        passwordHash,
+        roleId: ownerRoleId,
+        departmentScope: "all",
+        createdAt,
+        createdBy,
+      },
+      dependencies,
+    );
     await recordAudit(tx, {
       ...audit,
       id: dependencies.newId(),
@@ -154,7 +168,12 @@ export async function createTenantWithOwner(
       userId: createdBy,
       action: "access.user.created",
       entity: { type: "access.user", id: created.ownerId },
-      after: { name: parsed.ownerName, login: parsed.ownerLogin, isOwner: true },
+      after: {
+        name: parsed.ownerName,
+        login: parsed.ownerLogin,
+        roleId: ownerRoleId,
+        departmentScope: "all",
+      },
     });
     await seedOrganization(
       tx,

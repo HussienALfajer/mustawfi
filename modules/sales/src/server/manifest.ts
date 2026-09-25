@@ -23,6 +23,11 @@ export const salesModule = defineModule<SalesContext>({
     "inventory",
   ],
   documentCodes: [INVOICE_DOC_CODE],
+  permissions: [
+    { id: "sales.invoices.view", grants: ["accountant"] },
+    /** Checked at ingest in the invoice's department; a miss flags `permissionMissing`. */
+    { id: "sales.invoice.create", scoped: true, grants: ["sectionCashier"] },
+  ],
   migrations: fileURLToPath(new URL("../../migrations", import.meta.url)),
   routes: salesRoutes,
 });

@@ -1,12 +1,14 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
+import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import { currentTenant, type TenantDatabase } from "@mustawfi/core-tenancy/server";
 import { eq } from "drizzle-orm";
 import { accessProblemCodes, loginSchema } from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { verifyNothing, verifyPassword } from "./passwords.ts";
 import { users } from "./schema.ts";
-import { openSession, type SessionUser } from "./sessions.ts";
+import { openSession, sessionUser, type SessionUser } from "./sessions.ts";
+import { userAccess } from "./users.ts";
 
 export interface LoginInput {
   readonly storeCode: string;
@@ -38,7 +40,7 @@ function loginFailed(): ProblemError {
 export async function logIn(
   tenants: TenantDatabase,
   input: LoginInput,
-  dependencies: AccessDependencies,
+  dependencies: AccessDependencies & { readonly permissionCatalogue: PermissionCatalogue },
 ): Promise<LoggedIn> {
   const tenantId = await tenants.resolveStoreCode(input.storeCode);
   if (tenantId === undefined) {
@@ -57,7 +59,6 @@ export async function logIn(
             branchId: users.branchId,
             name: users.name,
             login: users.login,
-            isOwner: users.isOwner,
             passwordHash: users.passwordHash,
           })
           .from(users)
@@ -105,12 +106,14 @@ export async function logIn(
       entity: { type: "access.session", id: opened.sessionId },
       after: { login: user.login },
     });
-    return opened;
+    const access = await userAccess(tx, user.id);
+    if (access === undefined) throw new Error(`user ${user.id} vanished during sign-in`);
+    return { ...opened, access };
   });
 
   return {
     tenantId,
-    user: { id: user.id, name: user.name, login: user.login, isOwner: user.isOwner },
+    user: sessionUser(user, session.access, dependencies.permissionCatalogue).user,
     token: session.token,
     expiresAt: session.expiresAt,
   };

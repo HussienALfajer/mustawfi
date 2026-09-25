@@ -23,12 +23,13 @@ import { sql, type SQL } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildServer } from "./app.ts";
+import { buildHostServer } from "./host-server.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
-import { createServerRegistry, hostSyncOperations } from "./modules.ts";
+import { createServerRegistry, serverPermissions } from "./modules.ts";
 import { invoiceOperation, type InvoiceLineSpec } from "./sales-operations.test-helpers.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
+import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -61,9 +62,9 @@ beforeAll(async () => {
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   superuser = await database.connect("superuser");
   const registry = createServerRegistry();
-  server = await buildServer({
+  server = await buildHostServer({
     registry,
-    context: { ...dependencies, tenants, syncOperations: hostSyncOperations(registry) },
+    services: { ...dependencies, tenants },
   });
 });
 
@@ -155,6 +156,14 @@ function sale(
     deviceSeq,
     lines,
     ...extra,
+  });
+}
+
+function invoicesOf(store: Store | null) {
+  return server.inject({
+    method: "GET",
+    url: "/api/v1/sales/invoices",
+    ...(store === null ? {} : { headers: { authorization: `Bearer ${store.token}` } }),
   });
 }
 
@@ -356,20 +365,24 @@ describe("POST /api/v1/sync/push", () => {
     const inFlight = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    const operations = createSyncOperationTable([
-      {
-        type: "test.hold.post",
-        versions: {
-          1: async (_, operation) => {
-            if (operation.payload.hold === true) {
-              entered();
-              await held;
-            }
-            return { held: operation.payload.hold === true };
+    const operations = createSyncOperationTable(
+      [
+        {
+          type: "test.hold.post",
+          access: "device",
+          versions: {
+            1: async (_, operation) => {
+              if (operation.payload.hold === true) {
+                entered();
+                await held;
+              }
+              return { held: operation.payload.hold === true };
+            },
           },
         },
-      },
-    ]);
+      ],
+      serverPermissions(),
+    );
     const deviceOf = await authenticateDevice(tenants, device.credential);
     if (deviceOf === undefined) throw new Error("the test device does not authenticate");
     const operation = (hold: boolean): SyncOperation => ({
@@ -860,24 +873,28 @@ describe("document numbers on ingest (core-foundation rule 31)", () => {
 
   it("keeps one flag per code when an operation is flagged twice, and records it", async () => {
     const device = await newDevice(store);
-    const operations = createSyncOperationTable([
-      {
-        type: "test.flag.post",
-        versions: {
-          1: async (tx, operation, handlerDependencies) => {
-            for (const detail of [{ first: true }, { first: false }]) {
-              await flagOperation(
-                tx,
-                operation,
-                { code: "numberGap", detail },
-                handlerDependencies,
-              );
-            }
-            return {};
+    const operations = createSyncOperationTable(
+      [
+        {
+          type: "test.flag.post",
+          access: "device",
+          versions: {
+            1: async (tx, operation, handlerDependencies) => {
+              for (const detail of [{ first: true }, { first: false }]) {
+                await flagOperation(
+                  tx,
+                  operation,
+                  { code: "numberGap", detail },
+                  handlerDependencies,
+                );
+              }
+              return {};
+            },
           },
         },
-      },
-    ]);
+      ],
+      serverPermissions(),
+    );
     const deviceOf = await authenticateDevice(tenants, device.credential);
     if (deviceOf === undefined) throw new Error("the test device does not authenticate");
     const operation: SyncOperation = {
@@ -904,6 +921,110 @@ describe("document numbers on ingest (core-foundation rule 31)", () => {
     accepted((await push(second, [opening])).results[0]);
     expect(await flagsOf(opening.opId)).toEqual([]);
     expect(await sequencesOf(second)).toEqual([{ doc_code: "INV", last_seq: "1" }]);
+  });
+});
+
+describe("permissions on ingest (core-foundation rule 17)", () => {
+  let store: Store;
+  let product: ProductView;
+  let device: TestDevice;
+  let otherDepartmentId: string;
+
+  beforeAll(async () => {
+    store = await newStore("متجر الصلاحيات");
+    product = await newProduct(store);
+    await receiveStock(store, product.id, "100");
+    device = await newDevice(store);
+    const added = await server.inject({
+      method: "POST",
+      url: "/api/v1/organization/departments",
+      headers: { authorization: `Bearer ${store.token}` },
+      payload: { name: "الإكسسوارات" },
+    });
+    expect(added.statusCode).toBe(201);
+    otherDepartmentId = added.json<{ id: string }>().id;
+  });
+
+  const line = () => ({ productId: product.id, quantity: "1", unitPrice: "100" });
+
+  async function permissionFlagsOf(opId: string): Promise<unknown[]> {
+    const { rows } = await superuser.query<Record<string, unknown>>(
+      "select code, detail from core_sync.operation_flags where op_id = $1 and code = 'permissionMissing'",
+      [opId],
+    );
+    return rows;
+  }
+
+  it("records every sale, and flags one sold outside the seller's permission or departments", async () => {
+    const cashier = await createStaffUser(
+      tenants,
+      store.tenant,
+      {
+        login: "section.cashier",
+        permissions: ["sales.invoice.create"],
+        departments: [store.tenant.defaultDepartmentId],
+      },
+      dependencies,
+    );
+    const viewer = await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "viewer", permissions: ["inventory.products.view"] },
+      dependencies,
+    );
+    const inScope = sale(device, [line()], { userId: cashier.userId });
+    const outOfScope = sale(device, [line()], {
+      userId: cashier.userId,
+      departmentId: otherDepartmentId,
+    });
+    const withoutPermission = sale(device, [line()], { userId: viewer.userId });
+    const byOwner = sale(device, [line()], { departmentId: otherDepartmentId });
+
+    const pushed = await push(device, [inScope, outOfScope, withoutPermission, byOwner]);
+    expect(pushed.results.map((r) => r.status)).toEqual([
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+    ]);
+    expect(await permissionFlagsOf(inScope.opId)).toEqual([]);
+    expect(await permissionFlagsOf(byOwner.opId)).toEqual([]);
+    expect(await permissionFlagsOf(outOfScope.opId)).toEqual([
+      {
+        code: "permissionMissing",
+        detail: {
+          permission: "sales.invoice.create",
+          departmentId: otherDepartmentId,
+          roleId: cashier.roleId,
+        },
+      },
+    ]);
+    expect(await permissionFlagsOf(withoutPermission.opId)).toEqual([
+      {
+        code: "permissionMissing",
+        detail: {
+          permission: "sales.invoice.create",
+          departmentId: store.tenant.defaultDepartmentId,
+          roleId: viewer.roleId,
+        },
+      },
+    ]);
+    const invoices = await invoicesOf(store);
+    expect(invoices.json<{ items: unknown[] }>().items).toHaveLength(4);
+  });
+
+  it("does not flag again when a flagged operation is pushed again", async () => {
+    const viewer = await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "viewer.again", permissions: [] },
+      dependencies,
+    );
+    const operation = sale(device, [line()], { userId: viewer.userId });
+    await push(device, [operation]);
+    const again = await push(device, [operation]);
+    expect(again.results.map((r) => r.status)).toEqual(["duplicate"]);
+    expect(await permissionFlagsOf(operation.opId)).toHaveLength(1);
   });
 });
 
@@ -1007,14 +1128,6 @@ describe("GET /api/v1/sync/pull", () => {
 });
 
 describe("GET /api/v1/sales/invoices", () => {
-  function invoicesOf(store: Store | null) {
-    return server.inject({
-      method: "GET",
-      url: "/api/v1/sales/invoices",
-      ...(store === null ? {} : { headers: { authorization: `Bearer ${store.token}` } }),
-    });
-  }
-
   it("shows the owner each recorded sale, newest first, with its flags and balanced entry", async () => {
     const store = await newStore("متجر الفواتير");
     const device = await newDevice(store);
@@ -1088,12 +1201,16 @@ describe("GET /api/v1/sales/invoices", () => {
     expectProblem(await invoicesOf(null), 401, accessProblemCodes.sessionRequired);
   });
 
-  it("refuses a user who is not the owner", async () => {
-    const store = await newStore("متجر الموظف");
-    await superuser.query("update core_access.users set is_owner = false where id = $1", [
-      store.tenant.ownerId,
-    ]);
-    expectProblem(await invoicesOf(store), 403, accessProblemCodes.ownerRequired);
+  it("are listed only with sales.invoices.view", async () => {
+    const owner = await newStore("متجر الموظف");
+    const staff = async (login: string, permissions: string[]): Promise<Store> => {
+      await createStaffUser(tenants, owner.tenant, { login, permissions }, dependencies);
+      return { tenant: owner.tenant, token: await signInAs(server, owner.tenant, login) };
+    };
+    const cashier = await staff("cashier", ["sales.invoice.create"]);
+    expectProblem(await invoicesOf(cashier), 403, accessProblemCodes.permissionDenied);
+    const accountant = await staff("accountant", ["sales.invoices.view"]);
+    expect((await invoicesOf(accountant)).statusCode).toBe(200);
   });
 });
 

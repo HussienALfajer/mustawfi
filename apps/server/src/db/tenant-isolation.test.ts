@@ -1,10 +1,11 @@
 import {
   authenticateDevice,
-  createOwner,
+  createUser,
   hashPassword,
   issueRegistrationCode,
   openSession,
   registerDevice,
+  seedRoles,
 } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { addDepartment, seedOrganization } from "@mustawfi/core-organization/server";
@@ -35,7 +36,7 @@ import {
 import { issueTestLicense, testLicenseKeys } from "@mustawfi/tools-license/testing";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createServerRegistry, hostSyncOperations } from "../modules.ts";
+import { createServerRegistry, hostSyncOperations, serverPermissions } from "../modules.ts";
 import { invoiceOperation } from "../sales-operations.test-helpers.ts";
 import { applyMigrations } from "./migrate.ts";
 import { migrationSets } from "./migration-sets.ts";
@@ -106,18 +107,68 @@ const seeds: readonly Seed[] = [
     },
   },
   {
-    tables: ["core_access.users"],
-    seed: (tx, tenant) =>
-      createOwner(tx, {
-        id: tenant.userId,
+    tables: [
+      "core_access.roles",
+      "core_access.role_permissions",
+      "core_access.role_limits",
+      "core_access.users",
+      "core_access.user_departments",
+    ],
+    seed: async (tx, tenant) => {
+      // The server declares no limit yet; a fixture one gives the accountant role a value.
+      const catalogue = {
+        permissions: serverPermissions().permissions,
+        limits: new Map([
+          [
+            "fixture.isolation.max",
+            {
+              id: "fixture.isolation.max",
+              moduleId: "fixture",
+              kind: "count" as const,
+              grants: { accountant: "5" },
+            },
+          ],
+        ]),
+      };
+      const at = systemClock.now();
+      const { ownerRoleId, templateRoleIds } = await seedRoles(
+        tx,
+        { ...tenant, at },
+        catalogue,
+        dependencies,
+      );
+      const user = {
         tenantId: tenant.tenantId,
         branchId: tenant.branchId,
-        name: "owner",
-        login: "owner",
         passwordHash: ownerPasswordHash,
-        createdAt: systemClock.now(),
+        createdAt: at,
         createdBy: tenant.userId,
-      }),
+      };
+      await createUser(
+        tx,
+        {
+          ...user,
+          id: tenant.userId,
+          name: "owner",
+          login: "owner",
+          roleId: ownerRoleId,
+          departmentScope: "all",
+        },
+        dependencies,
+      );
+      await createUser(
+        tx,
+        {
+          ...user,
+          id: newId(),
+          name: "cashier",
+          login: "cashier",
+          roleId: templateRoleIds.sectionCashier,
+          departmentScope: { listed: [tenant.departmentId] },
+        },
+        dependencies,
+      );
+    },
   },
   {
     tables: ["core_access.sessions"],

@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, pgSchema, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  check,
+  numeric,
+  pgSchema,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /**
  * `core_access` tables (ADR-0016, ADR-0022). Internal to the module: no entry exports them.
@@ -9,6 +19,82 @@ import { boolean, check, pgSchema, text, timestamp, unique, uuid } from "drizzle
 export const coreAccess = pgSchema("core_access");
 
 const SHA256_HEX = "'^[0-9a-f]{64}$'";
+
+/**
+ * Roles (`core-foundation` rules 13–16): one fixed owner role per tenant, and editable roles
+ * seeded from the templates or copied from another role. Archived, never deleted.
+ */
+export const roles = coreAccess.table(
+  "roles",
+  {
+    id: uuid().primaryKey(),
+    /** References `core_tenancy.tenants` (FK in `0005_roles_rules.sql`). */
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    name: text().notNull(),
+    /** `owner`, a template the role was seeded from, or null for a copy; never changes. */
+    template: text(),
+    /** Holds every permission, no scope, no limit; never changes, never archived. */
+    isOwner: boolean().notNull(),
+    archivedAt: timestamp({ withTimezone: true }),
+    archivedBy: uuid(),
+  },
+  (t) => [
+    unique("roles_id_per_tenant").on(t.tenantId, t.id),
+    check(
+      "roles_template",
+      sql`${t.template} in ('owner', 'accountant', 'sectionCashier', 'repairTechnician', 'topUpOperator')`,
+    ),
+    check("roles_owner_template", sql`${t.isOwner} = (${t.template} is not distinct from 'owner')`),
+    check("roles_owner_not_archived", sql`not (${t.isOwner} and ${t.archivedAt} is not null)`),
+    check("roles_archived_by", sql`(${t.archivedAt} is null) = (${t.archivedBy} is null)`),
+    uniqueIndex("roles_one_owner_per_tenant")
+      .on(t.tenantId)
+      .where(sql`${t.isOwner}`),
+    uniqueIndex("roles_active_name_per_tenant")
+      .on(t.tenantId, t.name)
+      .where(sql`${t.archivedAt} is null`),
+  ],
+);
+
+/** The permissions a role holds (the owner role holds all, with no rows). */
+export const rolePermissions = coreAccess.table(
+  "role_permissions",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    /** Tenant-scoped FK to `roles` in `0005_roles_rules.sql`. */
+    roleId: uuid().notNull(),
+    /** A permission some module declares; checked when written, not by the database. */
+    permission: text().notNull(),
+  },
+  (t) => [unique("role_permissions_once").on(t.tenantId, t.roleId, t.permission)],
+);
+
+/** A role's limit values; a limit without a row is zero for that role (rule 16). */
+export const roleLimits = coreAccess.table(
+  "role_limits",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    roleId: uuid().notNull(),
+    /** A limit some module declares (`limit` is a reserved word in SQL). */
+    limitId: text().notNull(),
+    value: numeric({ precision: 20, scale: 4 }).notNull(),
+  },
+  (t) => [
+    unique("role_limits_once").on(t.tenantId, t.roleId, t.limitId),
+    check("role_limits_value", sql`${t.value} >= 0`),
+  ],
+);
 
 export const users = coreAccess.table(
   "users",
@@ -24,9 +110,32 @@ export const users = coreAccess.table(
     login: text().notNull(),
     /** Argon2id PHC string; the password itself is never stored. */
     passwordHash: text().notNull(),
-    isOwner: boolean().notNull(),
+    /** Exactly one role per user (rule 15); tenant-scoped FK in `0005_roles_rules.sql`. */
+    roleId: uuid().notNull(),
+    /** `all` departments, or those `listed` in `user_departments`. */
+    departmentScope: text().notNull(),
   },
-  (t) => [unique("users_login_per_tenant").on(t.tenantId, t.login)],
+  (t) => [
+    unique("users_login_per_tenant").on(t.tenantId, t.login),
+    unique("users_id_per_tenant").on(t.tenantId, t.id),
+    check("users_department_scope", sql`${t.departmentScope} in ('all', 'listed')`),
+  ],
+);
+
+/** The departments of a user whose scope is `listed`. */
+export const userDepartments = coreAccess.table(
+  "user_departments",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    /** Tenant-scoped FKs to `users` and `core_tenancy.departments` in `0005_roles_rules.sql`. */
+    userId: uuid().notNull(),
+    departmentId: uuid().notNull(),
+  },
+  (t) => [unique("user_departments_once").on(t.tenantId, t.userId, t.departmentId)],
 );
 
 /** One-time codes an owner issues so a new device can register (ADR-0022). */

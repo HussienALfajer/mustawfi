@@ -1,24 +1,29 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
+import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import type { TenantDatabase, TenantTransaction } from "@mustawfi/core-tenancy/server";
 import type { Clock } from "@mustawfi/kernel";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { accessProblemCodes } from "../shared/index.ts";
+import type { z } from "zod";
+import {
+  accessGrant,
+  accessProblemCodes,
+  type AccessGrant,
+  sessionUserSchema,
+} from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { sessions, users } from "./schema.ts";
 import { issueBearer, readBearer } from "./secrets.ts";
+import type { UserAccess } from "./users.ts";
+import { userAccess } from "./users.ts";
 
 /** A session lasts seven days from sign-in; a setting later. Revocation ends it sooner. */
 export const SESSION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
-export interface SessionUser {
-  readonly id: string;
-  readonly name: string;
-  readonly login: string;
-  readonly isOwner: boolean;
-}
+/** The signed-in user as the session answer shows them. */
+export type SessionUser = z.infer<typeof sessionUserSchema>;
 
-/** An authenticated session: who is acting, in which tenant, until when. */
+/** An authenticated session: who is acting, in which tenant, until when, allowed to do what. */
 export interface Session {
   readonly sessionId: string;
   readonly tenantId: string;
@@ -26,6 +31,29 @@ export interface Session {
   readonly deviceId: string | null;
   readonly expiresAt: Date;
   readonly user: SessionUser;
+  /** The user's resolved permissions and limits, as of this request. */
+  readonly grant: AccessGrant;
+}
+
+/** The session view of a user and their grant. */
+export function sessionUser(
+  user: { readonly id: string; readonly name: string; readonly login: string },
+  access: UserAccess,
+  catalogue: PermissionCatalogue,
+): { readonly user: SessionUser; readonly grant: AccessGrant } {
+  const grant = accessGrant(catalogue, access.access);
+  return {
+    grant,
+    user: {
+      id: user.id,
+      name: user.name,
+      login: user.login,
+      role: access.role,
+      departmentScope: access.access.departmentScope,
+      departments: [...access.access.departments],
+      permissions: [...grant.permissions],
+    },
+  };
 }
 
 export interface OpenedSession {
@@ -66,26 +94,26 @@ export async function openSession(
 
 /**
  * The session a bearer token opens, or `undefined` when the token is malformed, unknown,
- * expired, or revoked. Checked against the database on every request, so a revocation takes
- * effect on the next one (ADR-0022).
+ * expired, or revoked. Checked against the database on every request, with the user's role
+ * and scope, so a revocation or a role change takes effect on the next one (ADR-0022).
  */
 export async function authenticateSession(
   tenants: TenantDatabase,
   token: string,
-  clock: Clock,
+  context: { readonly clock: Clock; readonly permissionCatalogue: PermissionCatalogue },
 ): Promise<Session | undefined> {
   const bearer = readBearer("session", token);
   if (bearer === undefined) return undefined;
-  const now = clock.now();
-  const [row] = await tenants.withTenant({ tenantId: bearer.tenantId }, (tx) =>
-    tx
+  const now = context.clock.now();
+  return tenants.withTenant({ tenantId: bearer.tenantId }, async (tx) => {
+    const [row] = await tx
       .select({
         sessionId: sessions.id,
         tenantId: sessions.tenantId,
         branchId: sessions.branchId,
         deviceId: sessions.deviceId,
         expiresAt: sessions.expiresAt,
-        user: { id: users.id, name: users.name, login: users.login, isOwner: users.isOwner },
+        user: { id: users.id, name: users.name, login: users.login },
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
@@ -95,9 +123,12 @@ export async function authenticateSession(
           isNull(sessions.revokedAt),
           gt(sessions.expiresAt, now),
         ),
-      ),
-  );
-  return row;
+      );
+    if (row === undefined) return undefined;
+    const access = await userAccess(tx, row.user.id);
+    if (access === undefined) throw new Error(`session ${row.sessionId} has no user`);
+    return { ...row, ...sessionUser(row.user, access, context.permissionCatalogue) };
+  });
 }
 
 /** Ends `session` now, as its own user signing out; audited. */
@@ -196,12 +227,16 @@ export function bearerToken(authorization: string | undefined): string | undefin
  * The session of a request's `Authorization: Bearer` header or, failing that, its session
  * cookie; otherwise a 401 `access.session.required` — the same refusal whatever was wrong with
  * it. A change (not GET, HEAD, OPTIONS) made with the cookie from another origin is a 403
- * `access.request.crossOrigin`. Other modules call this at the top of every handler that needs
- * a signed-in user.
+ * `access.request.crossOrigin`. The route guard (`installRouteAccess`) calls it for every
+ * route that needs a signed-in user.
  */
 export async function requireSession(
   request: SessionRequest,
-  context: { readonly tenants: TenantDatabase; readonly clock: Clock },
+  context: {
+    readonly tenants: TenantDatabase;
+    readonly clock: Clock;
+    readonly permissionCatalogue: PermissionCatalogue;
+  },
 ): Promise<Session> {
   let token = bearerToken(request.headers.authorization);
   if (token === undefined) {
@@ -211,9 +246,7 @@ export async function requireSession(
     }
   }
   const session =
-    token === undefined
-      ? undefined
-      : await authenticateSession(context.tenants, token, context.clock);
+    token === undefined ? undefined : await authenticateSession(context.tenants, token, context);
   if (session === undefined) {
     throw new ProblemError(accessProblemCodes.sessionRequired, 401, {
       title: "Sign in to continue",

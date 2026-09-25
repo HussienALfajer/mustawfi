@@ -1,5 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { routePrefix, type ModuleManifest } from "./module.ts";
+import type {
+  DeclaredLimit,
+  DeclaredPermission,
+  PermissionCatalogue,
+} from "../shared/permissions.ts";
+import { checkAccessDeclarations, routePrefix, type ModuleManifest } from "./module.ts";
 
 export class ModuleRegistryError extends Error {
   override name = "ModuleRegistryError";
@@ -17,6 +22,11 @@ export interface ModuleRegistry<Context> {
   readonly migrationSets: readonly { readonly moduleId: string; readonly dir: string }[];
   /** Every declared document code with the module that declared it, enabled or not. */
   readonly documentCodes: ReadonlyMap<string, string>;
+  /**
+   * Every declared permission and limit, enabled or not: a disabled module's permissions stay
+   * on the roles that hold them, ready for when it is enabled again.
+   */
+  readonly permissions: PermissionCatalogue;
   /** Registers the routes of every enabled module, each in its own scope. */
   mount(app: FastifyInstance, context: Context): Promise<void>;
 }
@@ -51,11 +61,56 @@ function dependencyOrder<Context>(
   return ordered;
 }
 
+/** The permissions and limits of `modules`; refuses what `checkAccessDeclarations` refuses. */
+function permissionCatalogue<Context>(
+  modules: readonly ModuleManifest<Context>[],
+): PermissionCatalogue {
+  const permissions = new Map<string, DeclaredPermission>();
+  const limits = new Map<string, DeclaredLimit>();
+  for (const module of modules) {
+    try {
+      checkAccessDeclarations(module);
+    } catch (error) {
+      throw new ModuleRegistryError((error as Error).message, { cause: error });
+    }
+    for (const permission of module.permissions ?? []) {
+      const owner = permissions.get(permission.id)?.moduleId ?? limits.get(permission.id)?.moduleId;
+      if (owner !== undefined) {
+        throw new ModuleRegistryError(
+          `permission ${permission.id} is declared by both ${owner} and ${module.id}`,
+        );
+      }
+      permissions.set(permission.id, {
+        id: permission.id,
+        moduleId: module.id,
+        scoped: permission.scoped ?? false,
+        grants: [...(permission.grants ?? [])],
+      });
+    }
+    for (const limit of module.limits ?? []) {
+      const owner = limits.get(limit.id)?.moduleId ?? permissions.get(limit.id)?.moduleId;
+      if (owner !== undefined) {
+        throw new ModuleRegistryError(
+          `limit ${limit.id} is declared by both ${owner} and ${module.id}`,
+        );
+      }
+      limits.set(limit.id, {
+        id: limit.id,
+        moduleId: module.id,
+        kind: limit.kind,
+        grants: { ...limit.grants },
+      });
+    }
+  }
+  return { permissions, limits };
+}
+
 /**
  * Validates the modules a server runs and orders them. Refuses to start — throws — on a
  * module registered twice, a dependency that is not registered, a dependency cycle, an
  * enabled module whose dependency is disabled (a module cannot be disabled while an enabled
- * module depends on it), or a document code two modules declare.
+ * module depends on it), a document code two modules declare, or a malformed, repeated, or
+ * wrongly granted permission or limit (`core-foundation` rule 13).
  */
 export function createModuleRegistry<Context>(
   modules: readonly ModuleManifest<Context>[],
@@ -92,6 +147,8 @@ export function createModuleRegistry<Context>(
     }
   }
 
+  const permissions = permissionCatalogue(modules);
+
   const disabled = new Set(options.disabled ?? []);
   for (const id of disabled) {
     if (!byId.has(id)) throw new ModuleRegistryError(`cannot disable ${id}: it is not registered`);
@@ -116,6 +173,7 @@ export function createModuleRegistry<Context>(
       module.migrations === undefined ? [] : [{ moduleId: module.id, dir: module.migrations }],
     ),
     documentCodes,
+    permissions,
     async mount(app, context) {
       for (const module of enabled) {
         if (module.routes === undefined) continue;

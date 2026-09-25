@@ -144,4 +144,117 @@ describe("module registry", () => {
       );
     });
   });
+
+  describe("permissions and limits (core-foundation rule 13)", () => {
+    const inventory = () =>
+      module("inventory", [], {
+        permissions: [
+          { id: "inventory.products.view", grants: ["accountant", "sectionCashier"] },
+          { id: "inventory.stock.adjust", scoped: true },
+        ],
+        limits: [{ id: "inventory.adjust.maxCount", kind: "count", grants: { accountant: "5" } }],
+      });
+
+    it("catalogues every declaration with its module, disabled modules included", () => {
+      const registry = createModuleRegistry(
+        [inventory(), module("core.audit", [], { permissions: [{ id: "audit.view" }] })],
+        { disabled: ["inventory"] },
+      );
+      expect([...registry.permissions.permissions.values()]).toEqual([
+        {
+          id: "inventory.products.view",
+          moduleId: "inventory",
+          scoped: false,
+          grants: ["accountant", "sectionCashier"],
+        },
+        { id: "inventory.stock.adjust", moduleId: "inventory", scoped: true, grants: [] },
+        { id: "audit.view", moduleId: "core.audit", scoped: false, grants: [] },
+      ]);
+      expect([...registry.permissions.limits.values()]).toEqual([
+        {
+          id: "inventory.adjust.maxCount",
+          moduleId: "inventory",
+          kind: "count",
+          grants: { accountant: "5" },
+        },
+      ]);
+    });
+
+    it("refuses a permission or limit two modules declare", () => {
+      // `core.sales` and `sales` share the prefix `sales.`.
+      expect(() =>
+        createModuleRegistry([
+          module("sales", [], { permissions: [{ id: "sales.invoice.create" }] }),
+          module("core.sales", [], { permissions: [{ id: "sales.invoice.create" }] }),
+        ]),
+      ).toThrow(
+        new ModuleRegistryError(
+          "permission sales.invoice.create is declared by both sales and core.sales",
+        ),
+      );
+      expect(() =>
+        createModuleRegistry([
+          module("sales", [], { permissions: [{ id: "sales.discount.max" }] }),
+          module("core.sales", [], { limits: [{ id: "sales.discount.max", kind: "percent" }] }),
+        ]),
+      ).toThrow(
+        new ModuleRegistryError(
+          "limit sales.discount.max is declared by both sales and core.sales",
+        ),
+      );
+    });
+
+    it("refuses a declaration repeated within one module", () => {
+      expect(() =>
+        module("inventory", [], {
+          permissions: [{ id: "inventory.products.view" }, { id: "inventory.products.view" }],
+        }),
+      ).toThrow(
+        new TypeError("module inventory declares permission inventory.products.view twice"),
+      );
+    });
+
+    it("refuses a grant naming an unknown template, also from a manifest not built by defineModule", () => {
+      const permission = { id: "inventory.products.view", grants: ["cashier"] } as never;
+      expect(() => module("inventory", [], { permissions: [permission] })).toThrow(
+        new TypeError(
+          'permission inventory.products.view of module inventory names unknown template "cashier"',
+        ),
+      );
+      const raw: ModuleManifest = { id: "inventory", dependsOn: [], permissions: [permission] };
+      expect(() => createModuleRegistry([raw])).toThrow(ModuleRegistryError);
+      const limit = { id: "inventory.adjust.max", kind: "count", grants: { owner: "1" } } as never;
+      expect(() => module("inventory", [], { limits: [limit] })).toThrow(
+        new TypeError(
+          'limit inventory.adjust.max of module inventory names unknown template "owner"',
+        ),
+      );
+    });
+
+    it("refuses an id outside the module's prefix, a malformed id, kind, or value", () => {
+      expect(() =>
+        module("inventory", [], { permissions: [{ id: "sales.invoice.create" }] }),
+      ).toThrow(
+        new TypeError(
+          'permission sales.invoice.create of module inventory must start with "inventory."',
+        ),
+      );
+      expect(() => module("core.audit", [], { permissions: [{ id: "core.audit.view" }] })).toThrow(
+        TypeError,
+      );
+      for (const id of ["inventory", "inventory.Products", "inventory.a.b.c.d", "inventory..x"]) {
+        expect(() => module("inventory", [], { permissions: [{ id }] })).toThrow(TypeError);
+      }
+      expect(() =>
+        module("inventory", [], { limits: [{ id: "inventory.max", kind: "ratio" as never }] }),
+      ).toThrow(TypeError);
+      for (const value of ["-1", "1.23456", "1e3", ""]) {
+        expect(() =>
+          module("inventory", [], {
+            limits: [{ id: "inventory.max", kind: "count", grants: { accountant: value } }],
+          }),
+        ).toThrow(TypeError);
+      }
+    });
+  });
 });

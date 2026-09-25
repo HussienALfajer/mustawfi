@@ -9,16 +9,32 @@ export {
   REGISTRATION_CODE_LIFETIME_MS,
   registerDevice,
   type RegisteredDevice,
-  requireDevice,
 } from "./devices.ts";
 export { type LoggedIn, logIn, type LoginInput } from "./login.ts";
 export { accessModule } from "./manifest.ts";
 export { hashPassword } from "./passwords.ts";
 export {
+  createRole,
+  type NewRole,
+  type RoleActor,
+  SEEDED_ROLE_NAMES,
+  type SeededRoles,
+  seedRoles,
+} from "./roles.ts";
+export {
+  deviceOf,
+  installRouteAccess,
+  permissionDenied,
+  type RouteAccess,
+  type RouteAccessContext,
+  type RouteAccessEntry,
+  routeAccessTable,
+  sessionOf,
+} from "./route-access.ts";
+export {
   authenticateSession,
   openSession,
   type OpenedSession,
-  requireSession,
   revokeSession,
   type Session,
   SESSION_LIFETIME_MS,
@@ -26,4 +42,4 @@ export {
   type SessionRequest,
   type SessionUser,
 } from "./sessions.ts";
-export { createOwner, isTenantUser, type NewOwner } from "./users.ts";
+export { createUser, type NewUser, userAccess, type UserAccess } from "./users.ts";

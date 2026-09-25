@@ -29,6 +29,27 @@
       "when": 1790311740802,
       "tag": "0003_sessions_devices_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790372688874,
+      "tag": "0004_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790372699975,
+      "tag": "0005_users_without_is_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790372700730,
+      "tag": "0006_roles_rules",
+      "breakpoints": true
     }
   ]
 }

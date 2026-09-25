@@ -69,10 +69,10 @@ import {
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { buildServer } from "../src/app.ts";
+import { buildHostServer } from "../src/host-server.ts";
 import { applyMigrations } from "../src/db/migrate.ts";
 import { migrationSets } from "../src/db/migration-sets.ts";
-import { createServerRegistry, hostSyncOperations } from "../src/modules.ts";
+import { createServerRegistry } from "../src/modules.ts";
 import type { CreatedTenant } from "../src/tenants/create-tenant.ts";
 import { createLicensedTenant } from "../src/tenants/licensed-tenant.test-helpers.ts";
 
@@ -111,9 +111,9 @@ beforeAll(async () => {
   await applyMigrations(database.url("owner"), migrationSets);
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   const registry = createServerRegistry();
-  server = await buildServer({
+  server = await buildHostServer({
     registry,
-    context: { ...serverDependencies, tenants, syncOperations: hostSyncOperations(registry) },
+    services: { ...serverDependencies, tenants },
   });
   baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   // The client code calls the API by path, as it does from the web app's origin; device

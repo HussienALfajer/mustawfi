@@ -8,7 +8,10 @@ const user = {
   id: "01a0d90e-748c-76c0-b21b-4d7397dd2705",
   name: "سامر",
   login: "owner",
-  isOwner: true,
+  role: { id: "01a0d90e-748c-76c0-b21b-4d7397dd2706", name: "المالك", isOwner: true },
+  departmentScope: "all",
+  departments: [],
+  permissions: ["organization.profile.edit"],
 };
 const session = {
   tenantId: "01a0d90e-759f-7223-90eb-cee31ed7e07c",

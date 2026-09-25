@@ -121,9 +121,9 @@ describe("StoreProfileScreen", () => {
       Response.json(
         {
           type: "about:blank",
-          title: "owner",
+          title: "denied",
           status: 403,
-          code: "access.permission.ownerRequired",
+          code: "access.permission.denied",
         },
         { status: 403 },
       ),
@@ -133,7 +133,7 @@ describe("StoreProfileScreen", () => {
     await userEvent.clear(name);
     await userEvent.type(name, "اسم جديد");
     await userEvent.click(screen.getByRole("button", { name: /حفظ/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("مالك المتجر وحده");
+    expect(await screen.findByRole("alert")).toHaveTextContent("لا يسمح لك دورك");
     expect(name).toHaveValue("اسم جديد");
   });
 

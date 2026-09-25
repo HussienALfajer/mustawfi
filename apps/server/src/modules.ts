@@ -1,5 +1,6 @@
 import { accessModule } from "@mustawfi/core-access/server";
 import { auditModule } from "@mustawfi/core-audit/server";
+import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
   configModule,
   createModuleRegistry,
@@ -28,6 +29,8 @@ export interface HostContext {
   readonly random: RandomSource;
   /** The sync operations of the enabled modules (`hostSyncOperations`). */
   readonly syncOperations: SyncOperationTable;
+  /** Every permission and limit the registered modules declare (`registry.permissions`). */
+  readonly permissionCatalogue: PermissionCatalogue;
 }
 
 /** Every module this server runs. A module missing here fails `modules.test.ts`. */
@@ -61,5 +64,29 @@ export function createServerRegistry(
 export function hostSyncOperations(registry: ModuleRegistry<HostContext>): SyncOperationTable {
   return createSyncOperationTable(
     registry.enabled.flatMap((module) => moduleSyncOperations[module.id] ?? []),
+    registry.permissions,
   );
+}
+
+/**
+ * The context every module's routes receive, from the registry and the host's services: the
+ * sync operations of its enabled modules and the permissions of all its modules.
+ */
+export function hostContext(
+  registry: ModuleRegistry<HostContext>,
+  services: Omit<HostContext, "syncOperations" | "permissionCatalogue">,
+): HostContext {
+  return {
+    ...services,
+    syncOperations: hostSyncOperations(registry),
+    permissionCatalogue: registry.permissions,
+  };
+}
+
+let permissions: PermissionCatalogue | undefined;
+
+/** The permissions and limits of every module this server runs, disabled or not. */
+export function serverPermissions(): PermissionCatalogue {
+  permissions ??= createServerRegistry().permissions;
+  return permissions;
 }

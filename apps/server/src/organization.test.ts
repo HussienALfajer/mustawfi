@@ -14,11 +14,12 @@ import { createTestDatabase, type TestDatabase } from "@mustawfi/testing";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildServer } from "./app.ts";
+import { buildHostServer } from "./host-server.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
-import { createServerRegistry, hostSyncOperations } from "./modules.ts";
+import { createServerRegistry } from "./modules.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
+import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -57,9 +58,9 @@ beforeAll(async () => {
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   superuser = await database.connect("superuser");
   const registry = createServerRegistry();
-  server = await buildServer({
+  server = await buildHostServer({
     registry,
-    context: { ...dependencies, tenants, syncOperations: hostSyncOperations(registry) },
+    services: { ...dependencies, tenants },
   });
 });
 
@@ -295,27 +296,44 @@ describe("departments", () => {
     );
   });
 
-  it("are changed only by the owner, like the store profile", async () => {
-    const store = await newStore("متجر الموظف");
-    const repairs = await addDepartment(store, "الصيانة");
-    await superuser.query("update core_access.users set is_owner = false where id = $1", [
-      store.tenant.ownerId,
-    ]);
+  it("are changed only with organization.departments.manage and organization.profile.edit", async () => {
+    const owner = await newStore("متجر الموظف");
+    const repairs = await addDepartment(owner, "الصيانة");
+    const staff = async (login: string, permissions: string[]): Promise<Store> => {
+      await createStaffUser(tenants, owner.tenant, { login, permissions }, dependencies);
+      return { tenant: owner.tenant, token: await signInAs(server, owner.tenant, login) };
+    };
     const png = { data: Buffer.from(PNG).toString("base64") };
-    const writes = [
+    const departmentWrites = (store: Store) => [
       call(store, "POST", "/departments", { name: "الإكسسوارات" }),
       call(store, "PATCH", `/departments/${repairs.id}`, { name: "الورشة" }),
       call(store, "POST", `/departments/${repairs.id}/archive`),
+    ];
+    const profileWrites = (store: Store) => [
       call(store, "PUT", "/profile", { name: "متجر" }),
       call(store, "PUT", "/profile/logo", png),
       call(store, "DELETE", "/profile/logo"),
     ];
-    for (const response of await Promise.all(writes)) {
-      expectProblem(response, 403, accessProblemCodes.ownerRequired);
+
+    const profileEditor = await staff("editor", ["organization.profile.edit"]);
+    for (const response of await Promise.all(departmentWrites(profileEditor))) {
+      expectProblem(response, 403, accessProblemCodes.permissionDenied);
     }
-    // Reading stays open to every signed-in user.
-    expect((await call(store, "GET", "/departments")).statusCode).toBe(200);
-    expect((await call(store, "GET", "/profile")).statusCode).toBe(200);
+    for (const response of await Promise.all(profileWrites(profileEditor))) {
+      expect(response.statusCode).toBe(200);
+    }
+    const manager = await staff("manager", ["organization.departments.manage"]);
+    for (const response of await Promise.all(profileWrites(manager))) {
+      expectProblem(response, 403, accessProblemCodes.permissionDenied);
+    }
+    expect((await call(manager, "POST", "/departments", { name: "الإكسسوارات" })).statusCode).toBe(
+      201,
+    );
+
+    // Reading stays open to every signed-in user, whatever their role.
+    const nobody = await staff("nobody", []);
+    expect((await call(nobody, "GET", "/departments")).statusCode).toBe(200);
+    expect((await call(nobody, "GET", "/profile")).statusCode).toBe(200);
   });
 
   it("needs a session, and a valid name", async () => {
