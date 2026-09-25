@@ -260,6 +260,9 @@ function sqlInTypeScript(file: string, content: string) {
   const visit = (node: ts.Node): void => {
     if (ts.isTaggedTemplateExpression(node) && calleeName(node.tag) === "sql") {
       fragments.push({ text: templateText(node.template), line: lineOf(node) });
+      // Substitutions can hold more SQL: `sql.raw(...)`, nested `sql` templates, strings.
+      if (ts.isTemplateExpression(node.template))
+        for (const span of node.template.templateSpans) visit(span.expression);
       return;
     }
     if (ts.isCallExpression(node)) {
@@ -269,7 +272,8 @@ function sqlInTypeScript(file: string, content: string) {
         fragments.push({ text: first.text, line: lineOf(first) });
         return;
       }
-      if (name === "pgSchema" && first !== undefined && ts.isStringLiteralLike(first))
+      const isPgSchema = name === "pgSchema" || name?.endsWith(".pgSchema") === true;
+      if (isPgSchema && first !== undefined && ts.isStringLiteralLike(first))
         schemas.push({ name: first.text, line: lineOf(first) });
     }
     if (ts.isStringLiteralLike(node) && SQL_START.test(node.text))
@@ -320,9 +324,14 @@ export function checkSchemaOwnership(rootDir: string, modules: readonly ModuleIn
     for (const [schema, owner] of ownerBySchema) {
       if (schema === own) continue;
       const name = escapeRegExp(schema);
-      // `"schema".object`, `schema.object`, or `SCHEMA "schema"` (GRANT, CREATE, search_path…).
+      // `"schema".object`, `schema.object`, `SCHEMA [IF [NOT] EXISTS] "schema"` (GRANT, CREATE,
+      // DROP, SET SCHEMA…), or the schema anywhere in a `search_path` list.
       const reference = new RegExp(
-        `(?<![\\w$".])("?)${name}\\1(?=\\s*\\.)|\\bschema\\s+("?)${name}\\2(?![\\w$])`,
+        [
+          `(?<![\\w$".])("?)${name}\\1(?=\\s*\\.)`,
+          `\\bschema\\s+(?:if\\s+(?:not\\s+)?exists\\s+)?(["']?)${name}\\2(?![\\w$])`,
+          `\\bsearch_path\\s*(?:to|=)\\s*(?:["']?[\\w$]+["']?\\s*,\\s*)*(["']?)${name}\\3(?![\\w$])`,
+        ].join("|"),
         "gi",
       );
       for (const fragment of fragments) {
