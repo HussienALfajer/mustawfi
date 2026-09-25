@@ -29,7 +29,7 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 | `core.organization` | Store profile, departments, numbering | Core | core.access | No |
 | `core.currency` | Currencies & exchange rates | Core | — | No |
 | `core.ledger` | Accounting engine | Core | core.currency, core.organization | No |
-| `core.audit` | Audit log | Core | core.access | No |
+| `core.audit` | Audit log | Core | core.tenancy | No |
 | `core.sync` | Offline storage & sync | Core | all core | No |
 | `core.config` | Module registry, entitlements, settings, custom fields, templates | Core | core.tenancy | No |
 | `core.notifications` | In-app notifications, WhatsApp links | Core | core.config | No |

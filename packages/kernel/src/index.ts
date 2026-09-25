@@ -1,3 +1,4 @@
+export { randomCode, randomIndex, UNAMBIGUOUS_ALPHABET } from "./code.ts";
 export { type Clock, type ManualClock, manualClock, systemClock } from "./clock.ts";
 export {
   Decimal,

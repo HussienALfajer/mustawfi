@@ -1,0 +1,250 @@
+{
+  "id": "f3912574-bc12-4f4c-9347-60e39482c404",
+  "prevId": "0e01cda6-1a8c-4eca-bf7d-a25aa94def52",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core_tenancy.branches": {
+      "name": "branches",
+      "schema": "core_tenancy",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "branches_one_default_per_tenant": {
+          "name": "branches_one_default_per_tenant",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "where": "\"core_tenancy\".\"branches\".\"is_default\"",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "branches_tenant_id_tenants_id_fk": {
+          "name": "branches_tenant_id_tenants_id_fk",
+          "tableFrom": "branches",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "tableTo": "tenants",
+          "schemaTo": "core_tenancy",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "branches_branch_id_is_id": {
+          "name": "branches_branch_id_is_id",
+          "value": "\"core_tenancy\".\"branches\".\"branch_id\" = \"core_tenancy\".\"branches\".\"id\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_tenancy.store_codes": {
+      "name": "store_codes",
+      "schema": "core_tenancy",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "store_codes_tenant_id_tenants_id_fk": {
+          "name": "store_codes_tenant_id_tenants_id_fk",
+          "tableFrom": "store_codes",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "tableTo": "tenants",
+          "schemaTo": "core_tenancy",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "store_codes_tenantId_unique": {
+          "name": "store_codes_tenantId_unique",
+          "columns": [
+            "tenant_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core_tenancy.tenants": {
+      "name": "tenants",
+      "schema": "core_tenancy",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_currency": {
+          "name": "base_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "store_code": {
+          "name": "store_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tenants_tenantId_unique": {
+          "name": "tenants_tenantId_unique",
+          "columns": [
+            "tenant_id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "tenants_storeCode_unique": {
+          "name": "tenants_storeCode_unique",
+          "columns": [
+            "store_code"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "tenants_tenant_id_is_id": {
+          "name": "tenants_tenant_id_is_id",
+          "value": "\"core_tenancy\".\"tenants\".\"tenant_id\" = \"core_tenancy\".\"tenants\".\"id\""
+        },
+        "tenants_base_currency_code": {
+          "name": "tenants_base_currency_code",
+          "value": "\"core_tenancy\".\"tenants\".\"base_currency\" ~ '^[A-Z]{3}$'"
+        },
+        "tenants_store_code_format": {
+          "name": "tenants_store_code_format",
+          "value": "\"core_tenancy\".\"tenants\".\"store_code\" ~ '^[A-HJ-NP-Z2-9]{6}$'"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core_tenancy": "core_tenancy"
+  },
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

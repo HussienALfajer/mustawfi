@@ -8,6 +8,7 @@
   },
   "mustawfi": {
     "dependsOn": [
+      "core.audit",
       "core.config",
       "core.tenancy"
     ]
@@ -16,15 +17,18 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@mustawfi/core-audit": "workspace:*",
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/core-tenancy": "workspace:*",
+    "@mustawfi/kernel": "workspace:*",
     "@node-rs/argon2": "2.2.1",
     "drizzle-orm": "0.45.3",
+    "fastify": "5.12.5",
+    "fastify-type-provider-zod": "7.0.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@mustawfi/config": "workspace:*",
-    "@mustawfi/kernel": "workspace:*",
     "@mustawfi/testing": "workspace:*",
     "@types/node": "24.13.6",
     "typescript": "6.0.3",

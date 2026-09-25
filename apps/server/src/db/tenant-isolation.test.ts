@@ -1,11 +1,18 @@
-import { createOwner, hashPassword } from "@mustawfi/core-access/server";
+import {
+  createOwner,
+  hashPassword,
+  issueRegistrationCode,
+  openSession,
+  registerDevice,
+} from "@mustawfi/core-access/server";
+import { recordAudit } from "@mustawfi/core-audit/server";
 import {
   createTenant,
   openTenantDatabase,
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
-import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
+import { cryptoRandom, randomCode, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import {
   assertTenantIsolation,
   createTestDatabase,
@@ -20,6 +27,7 @@ import { rlsFixtureMigrations } from "./test-fixtures/index.ts";
 import { items } from "./test-fixtures/rls-fixture/schema.ts";
 
 const newId = uuidV7Generator({ clock: systemClock, random: cryptoRandom });
+const dependencies = { clock: systemClock, newId, random: cryptoRandom };
 
 interface SeedTenant {
   readonly tenantId: string;
@@ -58,6 +66,7 @@ const seeds: readonly Seed[] = [
         branchId: tenant.branchId,
         name: `tenant ${tenant.tenantId}`,
         baseCurrency: "SYP",
+        storeCode: randomCode(cryptoRandom, 6),
         createdAt: systemClock.now(),
         createdBy: tenant.userId,
       }),
@@ -74,6 +83,33 @@ const seeds: readonly Seed[] = [
         passwordHash: ownerPasswordHash,
         createdAt: systemClock.now(),
         createdBy: tenant.userId,
+      }),
+  },
+  {
+    tables: ["core_access.sessions"],
+    seed: (tx, tenant) => openSession(tx, { ...tenant, userId: tenant.userId }, dependencies),
+  },
+  {
+    tables: ["core_access.registration_codes", "core_access.devices"],
+    seed: async (tx, tenant) => {
+      const { code } = await issueRegistrationCode(tx, tenant, dependencies);
+      await registerDevice(
+        tx,
+        { tenantId: tenant.tenantId, registrationCode: code, type: "mainPos", name: "till" },
+        dependencies,
+      );
+    },
+  },
+  {
+    tables: ["core_audit.entries"],
+    seed: (tx, tenant) =>
+      recordAudit(tx, {
+        id: newId(),
+        tenantId: tenant.tenantId,
+        branchId: tenant.branchId,
+        occurredAt: systemClock.now(),
+        userId: tenant.userId,
+        action: "fixture.isolation.seeded",
       }),
   },
   { tables: ["rls_fixture.items"], seed: seedFixtureItem },

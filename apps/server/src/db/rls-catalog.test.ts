@@ -19,6 +19,10 @@ describe("RLS catalog", () => {
       const catalog = await inspectRlsCatalog(superuser);
       expect(catalog.tables).toContain("rls_fixture.items");
       expect(catalog.problems).toEqual([]);
+      // ADR-0029: the store-code directory is the one table outside row-level security, and
+      // the app role reaches it only through this lookup. Adding to either list is a decision.
+      expect(catalog.sealed).toEqual(["core_tenancy.store_codes"]);
+      expect(catalog.definerFunctions).toEqual(["core_tenancy.tenant_for_store_code(code text)"]);
     } finally {
       await superuser.end();
     }
@@ -95,6 +99,8 @@ describe("RLS catalog", () => {
     };
 
     let problemsByTable: Map<string, string[]>;
+    let sealed: string[];
+    let definerFunctions: string[];
 
     beforeAll(async () => {
       const database = await createTestDatabase("catalog_violations");
@@ -102,12 +108,26 @@ describe("RLS catalog", () => {
       try {
         await owner.query("create schema bad");
         for (const { sql } of Object.values(violations)) await owner.query(sql);
+        // The app role can reach every violation, so each one is checked, not sealed.
+        await owner.query("grant select on all tables in schema bad to mustawfi_app");
+        // Unreachable by the app role: sealed, whatever it lacks. A definer function the app
+        // role may run (PUBLIC keeps EXECUTE by default) is listed.
+        await owner.query(`create table bad.sealed (id int);
+          create table bad.sealed_but_one_column (id int, secret text);
+          grant select (id) on bad.sealed_but_one_column to mustawfi_app;
+          create function bad.peek() returns bigint language sql security definer
+            as 'select count(*) from bad.sealed';
+          create function bad.private_peek() returns bigint language sql security definer
+            as 'select count(*) from bad.sealed';
+          revoke execute on function bad.private_peek() from public;`);
       } finally {
         await owner.end();
       }
       const superuser = await database.connect("superuser");
       try {
         const catalog = await inspectRlsCatalog(superuser);
+        sealed = catalog.sealed.filter((table) => table.startsWith("bad."));
+        definerFunctions = catalog.definerFunctions.filter((name) => name.startsWith("bad."));
         problemsByTable = new Map();
         for (const { table, problem } of catalog.problems) {
           problemsByTable.set(table, [...(problemsByTable.get(table) ?? []), problem]);
@@ -119,6 +139,22 @@ describe("RLS catalog", () => {
 
     it.each(Object.entries(violations))("reports bad.%s", (table, { problems }) => {
       expect(problemsByTable.get(`bad.${table}`)).toEqual(problems);
+    });
+
+    it("seals a table the app role holds no privilege on, even on a single column", () => {
+      expect(sealed).toEqual(["bad.sealed"]);
+      expect(problemsByTable.get("bad.sealed")).toBeUndefined();
+      expect(problemsByTable.get("bad.sealed_but_one_column")).toEqual([
+        "tenant_id must be uuid not null",
+        "branch_id must be uuid not null",
+        "row-level security is not enabled",
+        "row-level security is not forced",
+        NO_TENANT_POLICY,
+      ]);
+    });
+
+    it("lists the security-definer functions the app role may execute", () => {
+      expect(definerFunctions).toEqual(["bad.peek()"]);
     });
   });
 });

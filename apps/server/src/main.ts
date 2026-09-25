@@ -13,6 +13,7 @@ const app = await buildServer({
   context: {
     tenants,
     clock: systemClock,
+    random: cryptoRandom,
     newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
   },
   logger: true,

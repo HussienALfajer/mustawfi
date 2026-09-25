@@ -1,3 +1,26 @@
+export type { AccessContext, AccessDependencies } from "./dependencies.ts";
+export {
+  authenticateDevice,
+  DEVICE_PREFIXES,
+  type Device,
+  issueRegistrationCode,
+  type IssuedRegistrationCode,
+  type NewDevice,
+  REGISTRATION_CODE_LIFETIME_MS,
+  registerDevice,
+  type RegisteredDevice,
+} from "./devices.ts";
+export { type LoggedIn, logIn, type LoginInput } from "./login.ts";
 export { accessModule } from "./manifest.ts";
 export { hashPassword } from "./passwords.ts";
+export {
+  authenticateSession,
+  openSession,
+  type OpenedSession,
+  requireSession,
+  revokeSession,
+  type Session,
+  SESSION_LIFETIME_MS,
+  type SessionUser,
+} from "./sessions.ts";
 export { createOwner, type NewOwner } from "./users.ts";

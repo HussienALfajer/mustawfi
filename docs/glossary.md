@@ -173,6 +173,8 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | صفحات الزبون | Customer portal | `customerPortal` |
 | بادئة الجهاز | Device prefix | `devicePrefix` |
 | رمز تسجيل الجهاز | Device registration code | `registrationCode` |
+| رمز المتجر | Store code (names the tenant at sign-in, ADR-0029) | `storeCode` |
+| قيد تدقيق | Audit entry | `auditEntry` |
 | اعتماد الجهاز | Device credential | `deviceCredential` |
 | رمز PIN | PIN | `pin` |
 | جلسة | Session | `session` |

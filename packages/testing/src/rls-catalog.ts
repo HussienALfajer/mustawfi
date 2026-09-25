@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { APP_ROLE } from "./postgres-server.ts";
 
 /**
  * The tenant policy of ADR-0017 as PostgreSQL deparses it. `nullif` turns the empty string a
@@ -17,12 +18,23 @@ export interface CatalogProblem {
 export interface RlsCatalog {
   /** Every table the check covered, as `schema.table`, sorted by code unit like `Array#sort`. */
   readonly tables: string[];
+  /**
+   * Tables `mustawfi_app` holds no privilege on (ADR-0029): it cannot reach them except
+   * through a `SECURITY DEFINER` function, so they need no row-level security. Sorted.
+   */
+  readonly sealed: string[];
+  /**
+   * `SECURITY DEFINER` functions `mustawfi_app` may execute, as `schema.name(argument
+   * types)`: each one runs past the app role's rights, so the list is checked exactly. Sorted.
+   */
+  readonly definerFunctions: string[];
   readonly problems: CatalogProblem[];
 }
 
 interface TableRow {
   table: string;
   kind: string;
+  app_access: boolean;
   rls_enabled: boolean;
   rls_forced: boolean;
   tenant_id: string | null;
@@ -42,11 +54,17 @@ interface TableRow {
  * forced, the tenant policy for all commands, and no other permissive policy (permissive
  * policies are OR-ed, so any other one widens access). Materialized views and foreign tables
  * cannot carry row-level security, so any in a module schema is a problem.
+ *
+ * A table `mustawfi_app` holds no privilege on is sealed rather than checked (ADR-0029);
+ * the `SECURITY DEFINER` functions the app role may run are listed so a test can pin them.
  */
 export async function inspectRlsCatalog(client: pg.Client): Promise<RlsCatalog> {
-  const { rows } = await client.query<TableRow>(`
+  const { rows } = await client.query<TableRow>(
+    `
     select n.nspname || '.' || c.relname as table,
       c.relkind as kind,
+      has_table_privilege($1, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
+        or has_any_column_privilege($1, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES') as app_access,
       c.relrowsecurity as rls_enabled,
       c.relforcerowsecurity as rls_forced,
       (select format_type(a.atttypid, a.atttypmod) || case when a.attnotnull then ' not null' else '' end
@@ -68,11 +86,20 @@ export async function inspectRlsCatalog(client: pg.Client): Promise<RlsCatalog> 
     where c.relkind in ('r', 'p', 'm', 'f')
       and n.nspname not in ('information_schema', 'mustawfi_migrations')
       and n.nspname not like 'pg\\_%'
-    order by 1`);
+    order by 1`,
+    [APP_ROLE],
+  );
   rows.sort((x, y) => (x.table < y.table ? -1 : x.table > y.table ? 1 : 0));
 
   const problems: CatalogProblem[] = [];
+  const sealed: string[] = [];
+  const covered: TableRow[] = [];
   for (const row of rows) {
+    if ((row.kind === "r" || row.kind === "p") && !row.app_access) {
+      sealed.push(row.table);
+      continue;
+    }
+    covered.push(row);
     const report = (problem: string) => problems.push({ table: row.table, problem });
     if (row.kind === "m" || row.kind === "f") {
       report("materialized views and foreign tables cannot enforce row-level security");
@@ -97,5 +124,22 @@ export async function inspectRlsCatalog(client: pg.Client): Promise<RlsCatalog> 
       }
     }
   }
-  return { tables: rows.map((r) => r.table), problems };
+
+  const functions = await client.query<{ signature: string }>(
+    `select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as signature
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where p.prosecdef
+      and has_function_privilege($1, p.oid, 'EXECUTE')
+      and n.nspname not in ('information_schema', 'mustawfi_migrations')
+      and n.nspname not like 'pg\\_%'`,
+    [APP_ROLE],
+  );
+  const bySortOrder = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  return {
+    tables: covered.map((r) => r.table),
+    sealed: sealed.sort(bySortOrder),
+    definerFunctions: functions.rows.map((r) => r.signature).sort(bySortOrder),
+    problems,
+  };
 }
