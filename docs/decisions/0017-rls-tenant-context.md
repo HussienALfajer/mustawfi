@@ -38,7 +38,7 @@ No role used by a running app has `BYPASSRLS`.
 
 ## Amendments
 
-- 2026-09-25 (walking-skeleton slice 4, *Proposed* until the user accepts it): the policy wraps the setting in `nullif(…, '')`. Once a connection has run a transaction with `set_config(…, true)`, `current_setting('app.tenant_id', true)` returns an empty string instead of `NULL` after that transaction ends, so the original `current_setting(…)::uuid` raised `invalid input syntax for type uuid` on every reused pooled connection without a context — failing, but not with the "nothing" this ADR requires. Verified on PostgreSQL 18.6; the isolation test covers it.
+- 2026-09-25 (walking-skeleton slice 4, accepted by the user on 2026-09-25): the policy wraps the setting in `nullif(…, '')`. Once a connection has run a transaction with `set_config(…, true)`, `current_setting('app.tenant_id', true)` returns an empty string instead of `NULL` after that transaction ends, so the original `current_setting(…)::uuid` raised `invalid input syntax for type uuid` on every reused pooled connection without a context — failing, but not with the "nothing" this ADR requires. Verified on PostgreSQL 18.6; the isolation test covers it.
 
 ## Alternatives considered
 
