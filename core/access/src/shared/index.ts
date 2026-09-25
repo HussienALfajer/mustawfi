@@ -328,4 +328,10 @@ export const accessProblemCodes = {
   ownerRoleFixed: "access.role.ownerFixed",
   /** Active users hold the role; give them another before archiving it. */
   roleInUse: "access.role.inUse",
+  /** A non-owner granting a permission or limit value beyond their own (slice 6 decision). */
+  beyondOwnGrant: "access.role.beyondOwnGrant",
+  /** A non-owner changing their own role or department scope (slice 6 decision). */
+  ownAccessChange: "access.user.ownAccessChange",
+  /** One's own PIN or password is changed from one's account, proved by the current one. */
+  useOwnAccount: "access.user.useOwnAccount",
 } as const;

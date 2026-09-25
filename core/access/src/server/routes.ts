@@ -1,4 +1,4 @@
-import { problemDetailsSchema } from "@mustawfi/core-config/shared";
+import { type PermissionCatalogue, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import { currentTenant, type TenantTransaction } from "@mustawfi/core-tenancy/server";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -71,8 +71,16 @@ const manageRoles: { readonly access: RouteAccess } = {
   access: { permission: "access.roles.manage" },
 };
 
-/** The session's user as the one managing users and roles, at `at`. */
-function managerOf(session: Session, at: Date): Manager {
+/**
+ * The session's user as the one managing users and roles, at `at`, with what they hold:
+ * their permissions and the value of each declared limit.
+ */
+function managerOf(session: Session, at: Date, catalogue: PermissionCatalogue): Manager {
+  const limits: Record<string, string> = {};
+  for (const limit of catalogue.limits.keys()) {
+    const value = session.grant.limitFor(limit);
+    if (!value.unlimited) limits[limit] = value.value;
+  }
   return {
     tenantId: session.tenantId,
     branchId: session.branchId,
@@ -80,6 +88,8 @@ function managerOf(session: Session, at: Date): Manager {
     ...(session.deviceId === null ? {} : { deviceId: session.deviceId }),
     at,
     isOwner: session.user.role.isOwner,
+    permissions: session.grant.permissions,
+    limits,
   };
 }
 
@@ -227,7 +237,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     session: Session,
     fn: (tx: TenantTransaction, manager: Manager) => Promise<T>,
   ): Promise<T> {
-    const manager = managerOf(session, context.clock.now());
+    const manager = managerOf(session, context.clock.now(), context.permissionCatalogue);
     return context.tenants.withTenant(
       { tenantId: session.tenantId, userId: session.user.id },
       (tx) => fn(tx, manager),
@@ -343,7 +353,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request, reply) => {
       const user = await asManager(sessionOf(request), (tx, manager) =>
-        addUser(tx, manager, request.body, context),
+        addUser(tx, manager, request.body, context.permissionCatalogue, context),
       );
       return reply.status(201).send(user);
     },
@@ -362,7 +372,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request) =>
       asManager(sessionOf(request), (tx, manager) =>
-        changeUser(tx, manager, request.params.id, request.body, context),
+        changeUser(
+          tx,
+          manager,
+          request.params.id,
+          request.body,
+          context.permissionCatalogue,
+          context,
+        ),
       ),
   );
 

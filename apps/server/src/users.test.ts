@@ -383,6 +383,8 @@ describe("owners (rule 14)", () => {
             userId: manager,
             at: clock.now(),
             isOwner: true,
+            permissions: [],
+            limits: {},
           },
           target,
           "race",
@@ -898,6 +900,9 @@ describe("permissions declared after a tenant exists (slice 6 decision)", () => 
             branchId: store.tenant.branchId,
             userId: store.tenant.ownerId,
             at: clock.now(),
+            isOwner: true,
+            permissions: [],
+            limits: {},
           },
           {
             id: cashier.id,
@@ -932,6 +937,181 @@ describe("permissions declared after a tenant exists (slice 6 decision)", () => 
   });
 });
 
+describe("a non-owner grants nothing beyond their own (slice 6 decision)", () => {
+  /** A store with a non-owner manager whose role holds the manage permissions and one more. */
+  async function withManager() {
+    const store = await newStore();
+    const staff = await createStaffUser(
+      tenants,
+      store.tenant,
+      {
+        login: "deputy",
+        permissions: [
+          "access.users.view",
+          "access.users.manage",
+          "access.roles.manage",
+          "inventory.products.view",
+        ],
+      },
+      dependencies,
+    );
+    return { store, staff, deputy: await signInAs(server, store.tenant, "deputy") };
+  }
+
+  it("copies and edits roles only within the permissions the manager holds", async () => {
+    const { store, deputy } = await withManager();
+    expectProblem(
+      await call(deputy, "POST", "/roles", { name: "مراقب", permissions: ["audit.view"] }),
+      403,
+      accessProblemCodes.beyondOwnGrant,
+    );
+    const created = await call(deputy, "POST", "/roles", {
+      name: "مخزن",
+      permissions: ["inventory.products.view"],
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const role = created.json<RoleView>();
+    expectProblem(
+      await call(deputy, "PUT", `/roles/${role.id}`, {
+        name: "مخزن",
+        permissions: ["inventory.products.view", "sales.invoices.view"],
+      }),
+      403,
+      accessProblemCodes.beyondOwnGrant,
+    );
+    // What a role already holds may stay, and may be removed, even if the manager lacks it.
+    const accountant = await roleNamed(store, "المحاسب");
+    expect(accountant.permissions).toContain("audit.view");
+    const renamed = await call(deputy, "PUT", `/roles/${accountant.id}`, {
+      name: "محاسب المتجر",
+      permissions: accountant.permissions,
+    });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+    const trimmed = await call(deputy, "PUT", `/roles/${accountant.id}`, {
+      name: "محاسب المتجر",
+      permissions: accountant.permissions.filter((p) => p !== "audit.view"),
+    });
+    expect(trimmed.statusCode, trimmed.body).toBe(200);
+  });
+
+  it("gives users only roles within what the manager holds", async () => {
+    const { store, deputy } = await withManager();
+    const accountant = await roleNamed(store, "المحاسب");
+    expectProblem(
+      await postUser(deputy, { name: "x", roleId: accountant.id }),
+      403,
+      accessProblemCodes.beyondOwnGrant,
+    );
+    const small = (
+      await call(deputy, "POST", "/roles", {
+        name: "عرض المنتجات",
+        permissions: ["inventory.products.view"],
+      })
+    ).json<RoleView>();
+    const user = await postUser(deputy, { name: "عامل", roleId: small.id });
+    expect(user.statusCode, user.body).toBe(201);
+    expectProblem(
+      await call(deputy, "PATCH", `/users/${user.json<UserView>().id}`, {
+        roleId: accountant.id,
+      }),
+      403,
+      accessProblemCodes.beyondOwnGrant,
+    );
+  });
+
+  it("does not let a non-owner change their own role or departments", async () => {
+    const { store, staff, deputy } = await withManager();
+    const small = (
+      await call(deputy, "POST", "/roles", { name: "أصغر", permissions: [] })
+    ).json<RoleView>();
+    expectProblem(
+      await call(deputy, "PATCH", `/users/${staff.userId}`, { roleId: small.id }),
+      403,
+      accessProblemCodes.ownAccessChange,
+    );
+    expectProblem(
+      await call(deputy, "PATCH", `/users/${staff.userId}`, {
+        departmentScope: "listed",
+        departments: [store.tenant.defaultDepartmentId],
+      }),
+      403,
+      accessProblemCodes.ownAccessChange,
+    );
+    const renamed = await call(deputy, "PATCH", `/users/${staff.userId}`, { name: "النائب" });
+    expect(renamed.statusCode, renamed.body).toBe(200);
+  });
+
+  it("changes one's own PIN or password only from one's account, owners included", async () => {
+    const { store, staff, deputy } = await withManager();
+    expectProblem(
+      await call(deputy, "PUT", `/users/${staff.userId}/pin`, { pin: "2580" }),
+      409,
+      accessProblemCodes.useOwnAccount,
+    );
+    expectProblem(
+      await call(store.owner, "PUT", `/users/${store.tenant.ownerId}/password`, {
+        password: STAFF_PASSWORD,
+      }),
+      409,
+      accessProblemCodes.useOwnAccount,
+    );
+    expectProblem(
+      await call(store.owner, "PUT", `/users/${store.tenant.ownerId}/pin`, { pin: "2580" }),
+      409,
+      accessProblemCodes.useOwnAccount,
+    );
+  });
+
+  it("raises no limit value beyond the manager's own", async () => {
+    const store = await newStore();
+    const catalogue: PermissionCatalogue = {
+      permissions: serverPermissions().permissions,
+      limits: new Map([
+        [
+          "fixture.discount.max",
+          { id: "fixture.discount.max", moduleId: "fixture", kind: "percent" as const, grants: {} },
+        ],
+      ]),
+    };
+    const role = (
+      await call(store.owner, "POST", "/roles", { name: "خصومات", permissions: [] })
+    ).json<RoleView>();
+    const edit = (manager: { isOwner: boolean; limits: Record<string, string> }, value: string) =>
+      tenants.withTenant({ tenantId: store.tenant.tenantId, userId: store.tenant.ownerId }, (tx) =>
+        editRole(
+          tx,
+          {
+            tenantId: store.tenant.tenantId,
+            branchId: store.tenant.branchId,
+            userId: store.tenant.ownerId,
+            at: clock.now(),
+            permissions: [],
+            ...manager,
+          },
+          {
+            id: role.id,
+            name: "خصومات",
+            permissions: [],
+            limits: { "fixture.discount.max": value },
+          },
+          catalogue,
+          dependencies,
+        ),
+      );
+    const deputy = { isOwner: false, limits: { "fixture.discount.max": "10" } };
+    await expect(edit(deputy, "10.5")).rejects.toMatchObject({
+      code: accessProblemCodes.beyondOwnGrant,
+    });
+    expect((await edit(deputy, "10")).limits).toEqual({ "fixture.discount.max": "10" });
+    // An owner set it higher; the deputy may lower it, though not to above their own.
+    await edit({ isOwner: true, limits: {} }, "20");
+    expect((await edit(deputy, "15")).limits).toEqual({ "fixture.discount.max": "15" });
+    await expect(edit({ isOwner: false, limits: {} }, "16")).rejects.toMatchObject({
+      code: accessProblemCodes.beyondOwnGrant,
+    });
+  });
+});
+
 describe("limit values on roles", () => {
   it("reads a value back in one spelling and audits no change for another spelling of it", async () => {
     const store = await newStore();
@@ -961,6 +1141,9 @@ describe("limit values on roles", () => {
             branchId: store.tenant.branchId,
             userId: store.tenant.ownerId,
             at: clock.now(),
+            isOwner: true,
+            permissions: [],
+            limits: {},
           },
           { id: role.id, name: "خصم", permissions: [], limits: { "fixture.discount.max": value } },
           catalogue,

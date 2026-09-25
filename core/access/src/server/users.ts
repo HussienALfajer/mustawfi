@@ -18,7 +18,7 @@ import {
   type UserStatus,
   type UserView,
 } from "../shared/index.ts";
-import { auditAs, type Manager, type RoleActor, violates } from "./actor.ts";
+import { auditAs, checkGrantable, type Manager, type RoleActor, violates } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { hashPassword, hashPin, verifyPassword } from "./passwords.ts";
 import { activeRole, holdingsOf } from "./roles.ts";
@@ -240,6 +240,12 @@ function ownersOnly(): ProblemError {
   });
 }
 
+function useOwnAccount(): ProblemError {
+  return new ProblemError(accessProblemCodes.useOwnAccount, 409, {
+    title: "Change your own PIN or password from your account, with the current one",
+  });
+}
+
 function loginRequired(): ProblemError {
   return new ProblemError(accessProblemCodes.loginRequired, 422, {
     title: "A password needs a login",
@@ -344,12 +350,14 @@ export interface AddUser {
  * audited `access.user.created`. Refused beyond the license's user limit (409
  * `tenancy.limit.users`), with the owner role unless `manager` is an owner (403
  * `access.user.ownersOnly`), with an archived or unknown role or department, or a login
- * another user has (409 `access.user.loginTaken`).
+ * another user has (409 `access.user.loginTaken`). A non-owner gives only a role within what
+ * they hold (403 `access.role.beyondOwnGrant`).
  */
 export async function addUser(
   tx: TenantTransaction,
   manager: Manager,
   request: AddUser,
+  catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
   const passwordHash = request.password === null ? null : await hashPassword(request.password);
@@ -357,6 +365,7 @@ export async function addUser(
   await lockTenant(tx);
   const role = await activeRole(tx, request.roleId);
   if (role.isOwner && !manager.isOwner) throw ownersOnly();
+  checkGrantable(manager, await holdingsOf(tx, role, catalogue));
   checkOwnerScope(role, request.departmentScope);
   const listed =
     request.departmentScope === "listed" ? await checkDepartments(tx, request.departments) : [];
@@ -415,13 +424,16 @@ export interface ChangeUser {
  * changes — `access.user.changed`, `access.user.roleChanged`, `access.user.scopeChanged` —
  * with both sides. Owners are managed by owners only, and so is the owner role, given or taken
  * (rule 14); taking it from the last active owner is refused (409 `access.user.lastOwner`).
- * Moving a user to the owner role gives them every department.
+ * Moving a user to the owner role gives them every department. A non-owner gives only a role
+ * within what they hold (403 `access.role.beyondOwnGrant`) and does not change their own role
+ * or scope (403 `access.user.ownAccessChange`).
  */
 export async function changeUser(
   tx: TenantTransaction,
   manager: Manager,
   id: string,
   change: ChangeUser,
+  catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
   await lockTenant(tx);
@@ -433,6 +445,7 @@ export async function changeUser(
   if (change.roleId !== undefined && change.roleId !== target.role.id) {
     role = await activeRole(tx, change.roleId);
     if (role.isOwner && !manager.isOwner) throw ownersOnly();
+    checkGrantable(manager, await holdingsOf(tx, role, catalogue));
     if (target.role.isOwner && !role.isOwner && target.user.status === "active") {
       await checkAnotherOwner(tx, id);
     }
@@ -450,6 +463,16 @@ export async function changeUser(
         : await checkDepartments(tx, change.departments)
       : [];
 
+  const sameDepartments =
+    listed.length === before.departments.length &&
+    listed.every((department) => before.departments.includes(department));
+  const scopeChanged = scope !== before.departmentScope || !sameDepartments;
+  if (id === manager.userId && !manager.isOwner && (role.id !== target.role.id || scopeChanged)) {
+    throw new ProblemError(accessProblemCodes.ownAccessChange, 403, {
+      title: "Another manager changes your role or departments",
+    });
+  }
+
   const login = change.login === undefined ? target.user.login : change.login;
   if (login === null && target.user.passwordHash !== null) throw loginRequired();
   const name = change.name ?? target.user.name;
@@ -461,10 +484,6 @@ export async function changeUser(
   } catch (error) {
     throw loginTaken(error);
   }
-  const sameDepartments =
-    listed.length === before.departments.length &&
-    listed.every((department) => before.departments.includes(department));
-  const scopeChanged = scope !== before.departmentScope || !sameDepartments;
   if (scopeChanged || change.departments !== undefined) {
     await tx.delete(userDepartments).where(eq(userDepartments.userId, id));
     await insertListed(
@@ -600,8 +619,8 @@ async function setStatus(tx: TenantTransaction, id: string, status: UserStatus):
 }
 
 /**
- * Sets or resets another user's PIN, or the manager's own (rule 19), audited
- * `access.user.pinSet`. Owners' PINs are set by owners only.
+ * Sets or resets another user's PIN (rule 19), audited `access.user.pinSet`. Owners' PINs are
+ * set by owners only; one's own goes through `changeOwnPin` (409 `access.user.useOwnAccount`).
  */
 export async function setUserPin(
   tx: TenantTransaction,
@@ -610,6 +629,7 @@ export async function setUserPin(
   pin: string,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
+  if (id === manager.userId) throw useOwnAccount();
   const pinVerifier = await hashPin(pin);
   const target = await lockedUser(tx, id);
   checkManages(manager, target);
@@ -625,7 +645,7 @@ export async function setUserPin(
 
 /**
  * Sets or resets another user's password, audited `access.user.passwordSet`; the user's
- * sessions end with it, unless the manager sets their own. The user needs a login (422
+ * sessions end with it; one's own goes through `changeOwnPassword`. The user needs a login (422
  * `access.user.loginRequired`). Owners' passwords are set by owners only.
  */
 export async function setUserPassword(
@@ -635,6 +655,7 @@ export async function setUserPassword(
   password: string,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
+  if (id === manager.userId) throw useOwnAccount();
   const passwordHash = await hashPassword(password);
   const target = await lockedUser(tx, id);
   checkManages(manager, target);
@@ -646,7 +667,7 @@ export async function setUserPassword(
     before: { hasPassword: target.user.passwordHash !== null },
     after: { hasPassword: true },
   });
-  if (id !== manager.userId) await revokeUserSessions(tx, manager, id, dependencies);
+  await revokeUserSessions(tx, manager, id, dependencies);
   return viewOf(tx, id);
 }
 

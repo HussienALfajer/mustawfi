@@ -16,7 +16,7 @@ import {
   type StoredRole,
   templateGrants,
 } from "../shared/index.ts";
-import { auditAs, type RoleActor, violates } from "./actor.ts";
+import { auditAs, checkGrantable, type Manager, type RoleActor, violates } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { roleLimits, rolePermissions, roles, roleTemplateGrants, users } from "./schema.ts";
 
@@ -418,11 +418,12 @@ const auditedRole = (name: string, holdings: RoleHoldings) => ({
  */
 export async function copyRole(
   tx: TenantTransaction,
-  actor: RoleActor,
+  actor: Manager,
   role: Omit<NewRole, "id" | "template">,
   catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<RoleView> {
+  checkGrantable(actor, checkedHoldings(role, catalogue));
   const id = dependencies.newId();
   await createRole(tx, actor, { ...role, id }, catalogue, dependencies);
   const [row] = await tx.select().from(roles).where(eq(roles.id, id));
@@ -434,12 +435,13 @@ export async function copyRole(
  * Replaces an editable role's name, permissions, and limit values (flow 7), audited
  * `access.role.changed` with both sides when something changed. A role seeded from a template
  * records every current template grant as offered, so a permission the editor removed is not
- * brought back by its template. Refused for the owner role (409 `access.role.ownerFixed`) and
- * an archived role (409 `access.role.archived`).
+ * brought back by its template. Refused for the owner role (409 `access.role.ownerFixed`), an
+ * archived role (409 `access.role.archived`), and a non-owner adding what they do not hold
+ * (403 `access.role.beyondOwnGrant`).
  */
 export async function editRole(
   tx: TenantTransaction,
-  actor: RoleActor,
+  actor: Manager,
   change: Omit<NewRole, "template">,
   catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
@@ -448,6 +450,7 @@ export async function editRole(
   const holdings = checkedHoldings(change, catalogue);
   const row = await editableRole(tx, change.id);
   const before = await holdingsOf(tx, row, catalogue);
+  checkGrantable(actor, holdings, before);
   await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, row.id));
   await tx.delete(roleLimits).where(eq(roleLimits.roleId, row.id));
   await insertHoldings(tx, actor, row.id, holdings, dependencies);
