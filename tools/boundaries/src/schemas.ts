@@ -324,11 +324,12 @@ export function checkSchemaOwnership(rootDir: string, modules: readonly ModuleIn
     for (const [schema, owner] of ownerBySchema) {
       if (schema === own) continue;
       const name = escapeRegExp(schema);
-      // `"schema".object`, `schema.object`, `SCHEMA [IF [NOT] EXISTS] "schema"` (GRANT, CREATE,
-      // DROP, SET SCHEMA…), or the schema anywhere in a `search_path` list.
+      // `"schema".object` or `schema.object` (not a value like `'core_ledger.entry'`),
+      // `SCHEMA [IF [NOT] EXISTS] "schema"` (GRANT, CREATE, DROP, SET SCHEMA…), or the schema
+      // anywhere in a `search_path` list.
       const reference = new RegExp(
         [
-          `(?<![\\w$".])("?)${name}\\1(?=\\s*\\.)`,
+          `(?<![\\w$"'.])("?)${name}\\1(?=\\s*\\.)`,
           `\\bschema\\s+(?:if\\s+(?:not\\s+)?exists\\s+)?(["']?)${name}\\2(?![\\w$])`,
           `\\bsearch_path\\s*(?:to|=)\\s*(?:["']?[\\w$]+["']?\\s*,\\s*)*(["']?)${name}\\3(?![\\w$])`,
         ].join("|"),

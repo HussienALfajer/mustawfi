@@ -327,6 +327,7 @@ describe("boundary check", { timeout: 30_000 }, () => {
         'ALTER TABLE "sales"."invoices" ADD CONSTRAINT "invoices_entry_fk"',
         '  FOREIGN KEY ("entry_id") REFERENCES "core_ledger"."entries"("id");',
         'GRANT USAGE ON SCHEMA "sales" TO mustawfi_app;',
+        'ALTER TABLE "sales"."invoices" ADD CHECK ("kind" IN (\'core_ledger.entry\'));',
         "",
       ].join("\n"),
     };
