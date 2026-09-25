@@ -2,12 +2,17 @@ import type { DeviceType } from "@mustawfi/core-access/shared";
 import {
   DeviceScreen,
   LoginScreen,
+  roleFiltersSchema,
+  RolesScreen,
   sessionQueryOptions,
   SignOutButton,
+  userFiltersSchema,
+  UsersScreen,
 } from "@mustawfi/core-access/client";
 import {
   departmentFiltersSchema,
   DepartmentsScreen,
+  departmentsQueryOptions,
   StoreProfileScreen,
 } from "@mustawfi/core-organization/client";
 import { SyncStatusIndicator } from "@mustawfi/core-sync/client";
@@ -38,8 +43,10 @@ import {
   Package,
   Printer,
   ReceiptText,
+  ShieldCheck,
   ShoppingCart,
   Store,
+  Users,
 } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -142,6 +149,8 @@ type NavPath =
   | "/products"
   | "/admin/profile"
   | "/admin/departments"
+  | "/admin/users"
+  | "/admin/roles"
   | "/device"
   | "/printer";
 
@@ -201,6 +210,8 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
           <Layers {...ICON_PROPS} />,
           "organization.departments.manage",
         ),
+        ...item("users", "/admin/users", <Users {...ICON_PROPS} />, "access.users.view"),
+        ...item("roles", "/admin/roles", <ShieldCheck {...ICON_PROPS} />, "access.users.view"),
       ],
     },
     {
@@ -371,6 +382,51 @@ const departmentsRoute = createRoute({
   component: DepartmentsPage,
 });
 
+function UsersPage() {
+  const filters = usersRoute.useSearch();
+  const navigate = usersRoute.useNavigate();
+  // Departments come from `core.organization`; the users screen only reads them.
+  const departments = useQuery(departmentsQueryOptions()).data;
+  return (
+    <UsersScreen
+      filters={filters}
+      departments={departments}
+      onFiltersChange={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  );
+}
+
+const usersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/users",
+  staticData: { title: "pages.users", fill: true },
+  validateSearch: userFiltersSchema,
+  component: UsersPage,
+});
+
+function RolesPage() {
+  const filters = rolesRoute.useSearch();
+  const navigate = rolesRoute.useNavigate();
+  return (
+    <RolesScreen
+      filters={filters}
+      onFiltersChange={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  );
+}
+
+const rolesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/roles",
+  staticData: { title: "pages.roles", fill: true },
+  validateSearch: roleFiltersSchema,
+  component: RolesPage,
+});
+
 function StoreProfilePage() {
   const [dirty, setDirty] = useState(false);
   const blocker = useBlocker({
@@ -423,6 +479,8 @@ const routeTree = rootRoute.addChildren([
     productsRoute,
     invoicesRoute,
     departmentsRoute,
+    usersRoute,
+    rolesRoute,
     storeProfileRoute,
     deviceRoute,
     printerRoute,

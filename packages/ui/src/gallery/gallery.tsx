@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "../components/badge.tsx";
 import { Button } from "../components/button.tsx";
+import { Checkbox, CheckboxGroup } from "../components/checkbox.tsx";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { DataTable } from "../components/data-table.tsx";
 import { Kbd } from "../components/kbd.tsx";
@@ -11,6 +12,7 @@ import { MoneyInput } from "../components/money-input.tsx";
 import { Money } from "../components/money.tsx";
 import { SearchField } from "../components/search-field.tsx";
 import { SegmentedControl } from "../components/segmented-control.tsx";
+import { Select } from "../components/select.tsx";
 import { FormFooter, FormSection } from "../components/settings-form.tsx";
 import { NAV_LINK_CLASS, SideNavigation } from "../components/side-navigation.tsx";
 import { SidePanel } from "../components/side-panel.tsx";
@@ -41,6 +43,8 @@ const USD = Currency.of("USD", 2);
 export const GALLERY_COMPONENTS = [
   "Badge",
   "Button",
+  "Checkbox",
+  "CheckboxGroup",
   "ConfirmDialog",
   "DataTable",
   "FormFooter",
@@ -50,6 +54,7 @@ export const GALLERY_COMPONENTS = [
   "MoneyInput",
   "SearchField",
   "SegmentedControl",
+  "Select",
   "SideNavigation",
   "SidePanel",
   "TextArea",
@@ -94,6 +99,9 @@ function Specimens() {
   const [selected, setSelected] = useState<string | null>("repairs");
   const [collapsed, setCollapsed] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [role, setRole] = useState<"cashier" | "accountant" | null>("cashier");
+  const [allowed, setAllowed] = useState(true);
+  const [scope, setScope] = useState<string[]>(["repairs"]);
   const rows: DepartmentRow[] = [
     { id: "store", name: t("sample.rows.store"), users: 2, active: true },
     { id: "repairs", name: t("sample.rows.repairs"), users: 3, active: true },
@@ -145,6 +153,46 @@ function Specimens() {
       </Specimen>
       <Specimen name="TextArea">
         <TextArea label={t("sample.address")} value={address} onChange={setAddress} rows={2} />
+      </Specimen>
+      <Specimen name="Select">
+        <Select
+          label={t("sample.role")}
+          value={role}
+          onChange={setRole}
+          options={[
+            { id: "cashier", label: t("sample.roleCashier") },
+            { id: "accountant", label: t("sample.roleAccountant") },
+          ]}
+        />
+        <Select
+          label={t("sample.role")}
+          placeholder={t("sample.choose")}
+          errorMessage={t("sample.required")}
+          value={null}
+          onChange={() => undefined}
+          options={[{ id: "cashier", label: t("sample.roleCashier") }]}
+        />
+      </Specimen>
+      <Specimen name="Checkbox">
+        <Checkbox
+          isSelected={allowed}
+          onChange={setAllowed}
+          description={t("sample.permissionHelp")}
+        >
+          {t("sample.permission")}
+        </Checkbox>
+        <Checkbox isSelected={false} isReadOnly>
+          {t("sample.permissionOff")}
+        </Checkbox>
+      </Specimen>
+      <Specimen name="CheckboxGroup">
+        <CheckboxGroup label={t("sample.scope")} value={scope} onChange={setScope}>
+          {rows.map((row) => (
+            <Checkbox key={row.id} value={row.id}>
+              {row.name}
+            </Checkbox>
+          ))}
+        </CheckboxGroup>
       </Specimen>
       <Specimen name="MoneyInput">
         <MoneyInput

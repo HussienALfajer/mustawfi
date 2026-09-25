@@ -6,6 +6,13 @@ import { storeProfileMessages } from "./store-profile/messages.ts";
 export const ORGANIZATION_NAMESPACE = "organization";
 
 export const organizationMessages = {
+  /** The module's name over its permissions in the roles screen's matrix. */
+  moduleName: "المتجر والأقسام",
+  /** Labels of this module's permissions: `organization.profile.edit` → `permission.profile.edit`. */
+  permission: {
+    profile: { edit: "تعديل بيانات المتجر" },
+    departments: { manage: "إدارة الأقسام" },
+  },
   /** Labels of this module's audit actions: `organization.department.created` → `audit.department.created`. */
   audit: {
     department: {

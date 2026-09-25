@@ -1,28 +1,5 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import type { Page, TestInfo } from "@playwright/test";
-import { signIn, tabTo } from "./steps.ts";
+import { attachScreens, signIn, tabTo } from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
-
-/** Screenshots of a screen in both themes, attached to the report for the slice review. */
-async function attachScreens(page: Page, testInfo: TestInfo, name: string): Promise<void> {
-  // No colour transition between the themes: axe measures the final colours.
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  for (const theme of ["light", "dark"]) {
-    await page.evaluate((value) => {
-      document.documentElement.dataset["theme"] = value;
-    }, theme);
-    await expectAccessible(page);
-    const body = await page.screenshot();
-    await testInfo.attach(`${name}-${theme}`, { body, contentType: "image/png" });
-    // For the slice report: `MUSTAWFI_E2E_SCREENSHOTS=<dir>` keeps them after a passing run.
-    const dir = process.env["MUSTAWFI_E2E_SCREENSHOTS"];
-    if (dir !== undefined) writeFileSync(join(dir, `${name}-${theme}.png`), body);
-  }
-  await page.evaluate(() => {
-    document.documentElement.dataset["theme"] = "light";
-  });
-}
 
 test("keyboard only: edit the store profile and add a department", async ({ page }, testInfo) => {
   await signIn(page);

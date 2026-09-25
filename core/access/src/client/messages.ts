@@ -1,9 +1,23 @@
 import type { Messages } from "@mustawfi/i18n";
+import { rolesMessages } from "./roles/messages.ts";
+import { usersMessages } from "./users/messages.ts";
 
 /** The `access` namespace (ADR-0023: one namespace per module, shipped in its client entry). */
 export const ACCESS_NAMESPACE = "access";
 
 export const accessMessages = {
+  /** The module's name over its permissions in the roles screen's matrix. */
+  moduleName: "المستخدمون والأجهزة",
+  /** Labels of this module's permissions: `access.users.view` → `permission.users.view`. */
+  permission: {
+    users: {
+      view: "عرض المستخدمين والأدوار",
+      manage: "إضافة المستخدمين وتعديلهم وإيقافهم",
+      unlock: "فك قفل مستخدم على الجهاز",
+    },
+    roles: { manage: "إدارة الأدوار والصلاحيات" },
+    devices: { manage: "إدارة الأجهزة" },
+  },
   /** Labels of this module's audit actions: `access.role.created` → `audit.role.created`. */
   audit: {
     role: {
@@ -78,4 +92,6 @@ export const accessMessages = {
       companion: "جهاز مساعد",
     },
   },
+  users: usersMessages,
+  roles: rolesMessages,
 } satisfies Messages;
