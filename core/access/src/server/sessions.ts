@@ -37,7 +37,7 @@ export interface Session {
 
 /** The session view of a user and their grant. */
 export function sessionUser(
-  user: { readonly id: string; readonly name: string; readonly login: string },
+  user: { readonly id: string; readonly name: string; readonly login: string | null },
   access: UserAccess,
   catalogue: PermissionCatalogue,
 ): { readonly user: SessionUser; readonly grant: AccessGrant } {
@@ -122,10 +122,12 @@ export async function authenticateSession(
           eq(sessions.tokenHash, bearer.hash),
           isNull(sessions.revokedAt),
           gt(sessions.expiresAt, now),
+          // Deactivating a user revokes their sessions; this holds even if one was missed.
+          eq(users.status, "active"),
         ),
       );
     if (row === undefined) return undefined;
-    const access = await userAccess(tx, row.user.id);
+    const access = await userAccess(tx, row.user.id, context.permissionCatalogue);
     if (access === undefined) throw new Error(`session ${row.sessionId} has no user`);
     return { ...row, ...sessionUser(row.user, access, context.permissionCatalogue) };
   });

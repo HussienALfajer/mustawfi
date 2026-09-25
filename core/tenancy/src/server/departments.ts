@@ -36,10 +36,13 @@ function nameTaken(error: unknown): unknown {
 }
 
 /**
- * Department changes of one tenant run one at a time: the limit and the last-active rule
- * count rows another transaction could be changing.
+ * Serializes the changes of the tenant `tx` runs in that count rows under a rule: another
+ * transaction calling it waits until this one ends. Department changes (the limit and the
+ * last-active rule) and user changes (the user limit, at least one active owner) take it.
  */
-async function lockTenant(tx: TenantTransaction): Promise<{ tenantId: string; branchId: string }> {
+export async function lockTenant(
+  tx: TenantTransaction,
+): Promise<{ tenantId: string; branchId: string }> {
   await tx.select({ id: tenants.id }).from(tenants).for("update");
   const tenant = await currentTenant(tx);
   if (tenant === undefined) throw new Error("no tenant in this context");

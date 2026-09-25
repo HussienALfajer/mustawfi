@@ -1,4 +1,75 @@
-import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
+import type { PermissionCatalogue, RoleTemplate } from "@mustawfi/core-config/shared";
+
+/** An editable role as stored: its own rows, and the template grants it has received. */
+export interface StoredRole {
+  /** The template it was seeded from; null for a copy. */
+  readonly template: RoleTemplate | null;
+  readonly permissions: readonly string[];
+  readonly limits: Readonly<Record<string, string>>;
+  /** The template grants recorded for it: received at seeding or at an edit, kept or removed. */
+  readonly offered: {
+    readonly permissions: readonly string[];
+    readonly limits: readonly string[];
+  };
+}
+
+/** What an editable role holds. */
+export interface RoleHoldings {
+  /** Sorted. */
+  readonly permissions: readonly string[];
+  /** By limit id, in id order. */
+  readonly limits: Readonly<Record<string, string>>;
+}
+
+/**
+ * What an editable role holds (`core-foundation` slice 6, user decision 2026-09-26): its own
+ * permissions and limit values, plus every grant `catalogue`'s modules make to its template that
+ * was never recorded for it — a permission or limit declared after the tenant was created. A
+ * recorded grant the role no longer has was removed by an editor and stays removed. A copy
+ * (no template) holds only its own rows. Grants of permissions and limits no module declares
+ * any more are dropped.
+ */
+export function roleHoldings(catalogue: PermissionCatalogue, role: StoredRole): RoleHoldings {
+  const permissions = new Set(role.permissions.filter((id) => catalogue.permissions.has(id)));
+  const limits = new Map(Object.entries(role.limits).filter(([id]) => catalogue.limits.has(id)));
+  const template = role.template;
+  if (template !== null) {
+    const offeredPermissions = new Set(role.offered.permissions);
+    for (const permission of catalogue.permissions.values()) {
+      if (permission.grants.includes(template) && !offeredPermissions.has(permission.id)) {
+        permissions.add(permission.id);
+      }
+    }
+    const offeredLimits = new Set(role.offered.limits);
+    for (const limit of catalogue.limits.values()) {
+      const value = limit.grants[template];
+      if (value !== undefined && !offeredLimits.has(limit.id) && !limits.has(limit.id)) {
+        limits.set(limit.id, value);
+      }
+    }
+  }
+  return {
+    permissions: [...permissions].sort(),
+    limits: Object.fromEntries([...limits].sort(([a], [b]) => (a < b ? -1 : 1))),
+  };
+}
+
+/** Every grant `catalogue`'s modules make to `template`: what an edit records as offered. */
+export function templateGrants(
+  catalogue: PermissionCatalogue,
+  template: RoleTemplate,
+): { readonly permissions: readonly string[]; readonly limits: readonly string[] } {
+  return {
+    permissions: [...catalogue.permissions.values()]
+      .filter((permission) => permission.grants.includes(template))
+      .map((permission) => permission.id)
+      .sort(),
+    limits: [...catalogue.limits.values()]
+      .filter((limit) => limit.grants[template] !== undefined)
+      .map((limit) => limit.id)
+      .sort(),
+  };
+}
 
 /** What a user holds through their role and scope, as stored. */
 export interface RoleAccess {

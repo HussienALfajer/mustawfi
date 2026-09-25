@@ -111,6 +111,7 @@ const seeds: readonly Seed[] = [
       "core_access.roles",
       "core_access.role_permissions",
       "core_access.role_limits",
+      "core_access.role_template_grants",
       "core_access.users",
       "core_access.user_departments",
     ],

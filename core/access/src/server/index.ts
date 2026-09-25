@@ -1,3 +1,4 @@
+export type { Manager } from "./actor.ts";
 export type { AccessContext, AccessDependencies } from "./dependencies.ts";
 export {
   authenticateDevice,
@@ -12,9 +13,13 @@ export {
 } from "./devices.ts";
 export { type LoggedIn, logIn, type LoginInput } from "./login.ts";
 export { accessModule } from "./manifest.ts";
-export { hashPassword } from "./passwords.ts";
+export { hashPassword, hashPin } from "./passwords.ts";
 export {
+  archiveRole,
+  copyRole,
   createRole,
+  editRole,
+  listRoles,
   type NewRole,
   type RoleActor,
   SEEDED_ROLE_NAMES,
@@ -42,4 +47,20 @@ export {
   type SessionRequest,
   type SessionUser,
 } from "./sessions.ts";
-export { createUser, type NewUser, userAccess, type UserAccess } from "./users.ts";
+export {
+  addUser,
+  type AddUser,
+  changeOwnPassword,
+  changeOwnPin,
+  changeUser,
+  type ChangeUser,
+  createUser,
+  deactivateUser,
+  listUsers,
+  type NewUser,
+  reactivateUser,
+  setUserPassword,
+  setUserPin,
+  userAccess,
+  type UserAccess,
+} from "./users.ts";

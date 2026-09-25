@@ -1,6 +1,12 @@
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import { describe, expect, it } from "vitest";
-import { accessGrant, type RoleAccess } from "./grant.ts";
+import {
+  accessGrant,
+  type RoleAccess,
+  roleHoldings,
+  type StoredRole,
+  templateGrants,
+} from "./grant.ts";
 
 const REPAIRS = "01a0d90e-0000-7000-8000-000000000001";
 const ACCESSORIES = "01a0d90e-0000-7000-8000-000000000002";
@@ -99,5 +105,92 @@ describe("accessGrant (core-foundation rules 14–16)", () => {
       expect(() => grant.limitFor("sales.discount.max")).toThrow(TypeError);
       expect(() => grant.can("sales.invoice.create")).toThrow(TypeError);
     }
+  });
+});
+
+describe("roleHoldings: template grants declared after a tenant exists (slice 6 decision)", () => {
+  /** The catalogue once a later module grants the section cashier a permission and a limit. */
+  const later: PermissionCatalogue = {
+    permissions: new Map([
+      ...catalogue.permissions,
+      [
+        "repairs.job.close",
+        {
+          id: "repairs.job.close",
+          moduleId: "repairs",
+          scoped: true,
+          grants: ["sectionCashier", "repairTechnician"],
+        },
+      ],
+    ]),
+    limits: new Map([
+      ...catalogue.limits,
+      [
+        "repairs.discount.maxPercent",
+        {
+          id: "repairs.discount.maxPercent",
+          moduleId: "repairs",
+          kind: "percent",
+          grants: { sectionCashier: "5" },
+        },
+      ],
+    ]),
+  };
+
+  const seeded: StoredRole = {
+    template: "sectionCashier",
+    permissions: ["sales.invoice.create"],
+    limits: {},
+    offered: { permissions: ["sales.invoice.create"], limits: [] },
+  };
+
+  it("gives a template role the grants its template received since they were recorded", () => {
+    expect(roleHoldings(later, seeded)).toEqual({
+      permissions: ["repairs.job.close", "sales.invoice.create"],
+      limits: { "repairs.discount.maxPercent": "5" },
+    });
+  });
+
+  it("keeps a recorded grant the role no longer holds removed", () => {
+    const edited: StoredRole = {
+      ...seeded,
+      permissions: ["sales.invoice.create"],
+      offered: {
+        permissions: ["repairs.job.close", "sales.invoice.create"],
+        limits: ["repairs.discount.maxPercent"],
+      },
+    };
+    expect(roleHoldings(later, edited)).toEqual({
+      permissions: ["sales.invoice.create"],
+      limits: {},
+    });
+  });
+
+  it("keeps the role's own limit value over its template's", () => {
+    expect(
+      roleHoldings(later, { ...seeded, limits: { "repairs.discount.maxPercent": "2" } }).limits,
+    ).toEqual({ "repairs.discount.maxPercent": "2" });
+  });
+
+  it("gives a copy nothing it was not given", () => {
+    expect(roleHoldings(later, { ...seeded, template: null })).toEqual({
+      permissions: ["sales.invoice.create"],
+      limits: {},
+    });
+  });
+
+  it("drops what no module declares any more", () => {
+    expect(
+      roleHoldings(catalogue, { ...seeded, permissions: ["repairs.job.close", "audit.view"] })
+        .permissions,
+    ).toEqual(["audit.view"]);
+  });
+
+  it("records every grant of a template, which an edit marks as offered", () => {
+    expect(templateGrants(later, "sectionCashier")).toEqual({
+      permissions: ["repairs.job.close"],
+      limits: ["repairs.discount.maxPercent"],
+    });
+    expect(templateGrants(later, "accountant")).toEqual({ permissions: [], limits: [] });
   });
 });

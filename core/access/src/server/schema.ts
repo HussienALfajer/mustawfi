@@ -28,7 +28,7 @@ export const roles = coreAccess.table(
   "roles",
   {
     id: uuid().primaryKey(),
-    /** References `core_tenancy.tenants` (FK in `0005_roles_rules.sql`). */
+    /** References `core_tenancy.tenants` (FK in `0006_roles_rules.sql`). */
     tenantId: uuid().notNull(),
     branchId: uuid().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull(),
@@ -68,7 +68,7 @@ export const rolePermissions = coreAccess.table(
     branchId: uuid().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull(),
     createdBy: uuid().notNull(),
-    /** Tenant-scoped FK to `roles` in `0005_roles_rules.sql`. */
+    /** Tenant-scoped FK to `roles` in `0006_roles_rules.sql`. */
     roleId: uuid().notNull(),
     /** A permission some module declares; checked when written, not by the database. */
     permission: text().notNull(),
@@ -96,6 +96,34 @@ export const roleLimits = coreAccess.table(
   ],
 );
 
+/**
+ * The template grants a role seeded from a template has received or declined
+ * (`core-foundation` slice 6, user decision 2026-09-26). A permission or limit a module grants
+ * the role's template, and that has no row here, is held by the role although it has no
+ * `role_permissions` or `role_limits` row: that is how a permission declared after the tenant
+ * was created reaches its template's role. Editing the role records every current template
+ * grant here, so a permission the editor removed stays removed.
+ */
+export const roleTemplateGrants = coreAccess.table(
+  "role_template_grants",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    /** Tenant-scoped FK to `roles` in `0008_users_and_roles_rules.sql`. */
+    roleId: uuid().notNull(),
+    kind: text().notNull(),
+    /** A permission or limit id. */
+    grantId: text().notNull(),
+  },
+  (t) => [
+    unique("role_template_grants_once").on(t.tenantId, t.roleId, t.kind, t.grantId),
+    check("role_template_grants_kind", sql`${t.kind} in ('permission', 'limit')`),
+  ],
+);
+
 export const users = coreAccess.table(
   "users",
   {
@@ -106,19 +134,35 @@ export const users = coreAccess.table(
     createdAt: timestamp({ withTimezone: true }).notNull(),
     createdBy: uuid().notNull(),
     name: text().notNull(),
-    /** Normalized to lower case; unique within the tenant. */
-    login: text().notNull(),
-    /** Argon2id PHC string; the password itself is never stored. */
-    passwordHash: text().notNull(),
-    /** Exactly one role per user (rule 15); tenant-scoped FK in `0005_roles_rules.sql`. */
+    /**
+     * Normalized to lower case; unique within the tenant. Null for a user who signs in only by
+     * PIN on a registered device (flow 8).
+     */
+    login: text(),
+    /** Argon2id PHC string; the password itself is never stored. Optional (rule 19). */
+    passwordHash: text(),
+    /** Exactly one role per user (rule 15); tenant-scoped FK in `0006_roles_rules.sql`. */
     roleId: uuid().notNull(),
     /** `all` departments, or those `listed` in `user_departments`. */
     departmentScope: text().notNull(),
+    /** `active` or `deactivated`; users are deactivated, never deleted. */
+    status: text().notNull().default("active"),
+    /**
+     * Argon2id PHC string of the user's PIN (rule 19). Null only for a tenant's first owner
+     * until they set one: `tenant:create` takes no PIN.
+     */
+    pinVerifier: text(),
+    pinChangedAt: timestamp({ withTimezone: true }),
   },
   (t) => [
     unique("users_login_per_tenant").on(t.tenantId, t.login),
     unique("users_id_per_tenant").on(t.tenantId, t.id),
     check("users_department_scope", sql`${t.departmentScope} in ('all', 'listed')`),
+    check("users_status", sql`${t.status} in ('active', 'deactivated')`),
+    check("users_password_needs_login", sql`${t.passwordHash} is null or ${t.login} is not null`),
+    check("users_pin_changed_at", sql`(${t.pinVerifier} is null) = (${t.pinChangedAt} is null)`),
+    check("users_password_argon2id", sql`${t.passwordHash} like '$argon2id$%'`),
+    check("users_pin_argon2id", sql`${t.pinVerifier} like '$argon2id$%'`),
   ],
 );
 
@@ -131,7 +175,7 @@ export const userDepartments = coreAccess.table(
     branchId: uuid().notNull(),
     createdAt: timestamp({ withTimezone: true }).notNull(),
     createdBy: uuid().notNull(),
-    /** Tenant-scoped FKs to `users` and `core_tenancy.departments` in `0005_roles_rules.sql`. */
+    /** Tenant-scoped FKs to `users` and `core_tenancy.departments` in `0006_roles_rules.sql`. */
     userId: uuid().notNull(),
     departmentId: uuid().notNull(),
   },

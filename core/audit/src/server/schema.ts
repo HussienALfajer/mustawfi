@@ -28,6 +28,8 @@ export const entries = coreAudit.table(
     /** Snapshots of the values before and after, secrets left out. */
     before: jsonb(),
     after: jsonb(),
+    /** Why, as the person who acted typed it, when the action asks (deactivating a user). */
+    reason: text(),
   },
   (t) => [index("entries_by_time").on(t.tenantId, t.createdAt)],
 );
