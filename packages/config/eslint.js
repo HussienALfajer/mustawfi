@@ -2,6 +2,7 @@ import js from "@eslint/js";
 import globals from "globals";
 import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
+import { plugin } from "./eslint-plugin.js";
 
 /**
  * Browser and Node globals that code under a module's `src/shared/` must not touch:
@@ -30,6 +31,45 @@ export const sharedEntryRules = {
 };
 
 /**
+ * Domain code: modules and the kernel. Apps are composition roots — they pass the kernel's
+ * `systemClock`, `cryptoRandom`, and `uuidV7Generator` in.
+ */
+export const domainFiles = ["core/*/src/**", "modules/*/src/**", "packages/kernel/src/**"];
+
+/**
+ * ADR-0015 rule 6 and ADR-0018: no float money, no ambient clock, no ambient randomness in
+ * domain code. The kernel files that implement `Decimal`, `Clock`, and `RandomSource` are the
+ * only exceptions, each for its own rule.
+ * @type {import("eslint").Linter.Config[]}
+ */
+export const domainRules = [
+  {
+    files: domainFiles,
+    plugins: { mustawfi: plugin },
+    rules: {
+      "mustawfi/no-float-money": "error",
+      "mustawfi/no-ambient-clock": "error",
+      "mustawfi/no-ambient-randomness": "error",
+    },
+  },
+  {
+    files: ["packages/kernel/src/decimal.ts"],
+    plugins: { mustawfi: plugin },
+    rules: { "mustawfi/no-float-money": ["error", { allowDecimalLibrary: true }] },
+  },
+  {
+    files: ["packages/kernel/src/clock.ts"],
+    plugins: { mustawfi: plugin },
+    rules: { "mustawfi/no-ambient-clock": "off" },
+  },
+  {
+    files: ["packages/kernel/src/random.ts"],
+    plugins: { mustawfi: plugin },
+    rules: { "mustawfi/no-ambient-randomness": "off" },
+  },
+];
+
+/**
  * The project's ESLint flat config.
  * @param {{ tsconfigRootDir: string }} options
  */
@@ -49,5 +89,6 @@ export function mustawfi({ tsconfigRootDir }) {
       languageOptions: { globals: globals.node },
     },
     sharedEntryRules,
+    domainRules,
   );
 }
