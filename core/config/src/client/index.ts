@@ -33,6 +33,11 @@ export interface ApiRequest<T> {
    * carries the session cookie.
    */
   readonly bearer?: string;
+  /**
+   * How the request travels; the platform `fetch` by default. A shell or the sync simulation
+   * harness (ADR-0026) passes its own.
+   */
+  readonly fetch?: typeof fetch;
 }
 
 /**
@@ -42,7 +47,7 @@ export interface ApiRequest<T> {
 export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await (request.fetch ?? fetch)(path, {
       method: request.method ?? "GET",
       credentials: "same-origin",
       headers: {

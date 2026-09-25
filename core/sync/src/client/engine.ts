@@ -37,20 +37,32 @@ export interface SyncTransport {
   pull(credential: string, cursor: string): Promise<PullResponse>;
 }
 
-export const apiSyncTransport: SyncTransport = {
-  push: (credential, operations) =>
-    apiRequest("/api/v1/sync/push", {
-      method: "POST",
-      body: { operations },
-      schema: pushResponseSchema,
-      bearer: credential,
-    }),
-  pull: (credential, cursor) =>
-    apiRequest(
-      `/api/v1/sync/pull?${new URLSearchParams({ cursor, limit: String(PULL_PAGE_LIMIT) }).toString()}`,
-      { schema: pullResponseSchema, bearer: credential },
-    ),
-};
+export interface ApiSyncTransportOptions {
+  /** How requests travel; the platform `fetch` by default. */
+  readonly fetch?: typeof fetch;
+}
+
+/** The sync API over HTTP with the device credential (ADR-0020). */
+export function createApiSyncTransport(options: ApiSyncTransportOptions = {}): SyncTransport {
+  const via = options.fetch === undefined ? {} : { fetch: options.fetch };
+  return {
+    push: (credential, operations) =>
+      apiRequest("/api/v1/sync/push", {
+        method: "POST",
+        body: { operations },
+        schema: pushResponseSchema,
+        bearer: credential,
+        ...via,
+      }),
+    pull: (credential, cursor) =>
+      apiRequest(
+        `/api/v1/sync/pull?${new URLSearchParams({ cursor, limit: String(PULL_PAGE_LIMIT) }).toString()}`,
+        { schema: pullResponseSchema, bearer: credential, ...via },
+      ),
+  };
+}
+
+export const apiSyncTransport: SyncTransport = createApiSyncTransport();
 
 /**
  * - `unregistered`: this client is not a device yet; nothing syncs.
