@@ -68,7 +68,8 @@ import { buildServer } from "../src/app.ts";
 import { applyMigrations } from "../src/db/migrate.ts";
 import { migrationSets } from "../src/db/migration-sets.ts";
 import { createServerRegistry, hostSyncOperations } from "../src/modules.ts";
-import { type CreatedTenant, createTenantWithOwner } from "../src/tenants/create-tenant.ts";
+import type { CreatedTenant } from "../src/tenants/create-tenant.ts";
+import { createLicensedTenant } from "../src/tenants/licensed-tenant.test-helpers.ts";
 
 function envInteger(name: string, fallback: number): number {
   const value = process.env[name];
@@ -162,7 +163,7 @@ interface Store {
 }
 
 async function openStore(seed: number): Promise<Store> {
-  const tenant = await createTenantWithOwner(
+  const tenant = await createLicensedTenant(
     tenants,
     {
       name: `متجر المحاكاة ${String(seed)}`,

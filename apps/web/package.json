@@ -14,6 +14,7 @@
   "devDependencies": {
     "@mustawfi/config": "workspace:*",
     "@mustawfi/testing": "workspace:*",
+    "@mustawfi/tools-license": "workspace:*",
     "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "4.3.3",
     "@testcontainers/postgresql": "12.1.0",
@@ -36,6 +37,7 @@
     "@mustawfi/core-access": "workspace:*",
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/core-sync": "workspace:*",
+    "@mustawfi/core-tenancy": "workspace:*",
     "@mustawfi/i18n": "workspace:*",
     "@mustawfi/inventory": "workspace:*",
     "@mustawfi/kernel": "workspace:*",

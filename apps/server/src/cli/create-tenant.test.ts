@@ -9,33 +9,48 @@ import {
   uuidV7Generator,
 } from "@mustawfi/kernel";
 import { createTestDatabase, sqlState, type TestDatabase } from "@mustawfi/testing";
+import { generateLicenseKeyPair, issueLicense } from "@mustawfi/tools-license";
+import { issueTestLicense, testLicensePublicKeys } from "@mustawfi/tools-license/testing";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyMigrations } from "../db/migrate.ts";
 import { migrationSets } from "../db/migration-sets.ts";
-import { createTenantWithOwner } from "../tenants/create-tenant.ts";
+import { createLicensedTenant } from "../tenants/licensed-tenant.test-helpers.ts";
 import { createTenantCommand } from "./create-tenant.ts";
 
 const PASSWORD = "correct horse battery staple";
 
 let database: TestDatabase;
 let superuser: pg.Client;
+let appEnv: Record<string, string>;
 
 beforeAll(async () => {
   database = await createTestDatabase("create_tenant");
   await applyMigrations(database.url("owner"), migrationSets);
   superuser = await database.connect("superuser");
+  appEnv = {
+    DATABASE_URL: database.url("app"),
+    LICENSE_PUBLIC_KEYS: await testLicensePublicKeys(),
+  };
 });
 
 afterAll(() => superuser.end());
 
-async function run(args: string[], password = `${PASSWORD}\n`, env?: Record<string, string>) {
+interface RunOptions {
+  readonly password?: string;
+  readonly env?: Record<string, string>;
+  /** The license to pass: a fresh test-key license by default, none when `null`. */
+  readonly license?: string | null;
+}
+
+async function run(args: string[], options: RunOptions = {}) {
+  const license = options.license === undefined ? (await issueTestLicense()).jws : options.license;
   let stdout = "";
   let stderr = "";
   const code = await createTenantCommand({
-    argv: args,
-    env: env ?? { DATABASE_URL: database.url("app") },
-    stdin: Readable.from([password]),
+    argv: license === null ? args : [...args, "--license", license],
+    env: options.env ?? appEnv,
+    stdin: Readable.from([options.password ?? `${PASSWORD}\n`]),
     stdout: { write: (text: string) => (stdout += text) },
     stderr: { write: (text: string) => (stderr += text) },
   });
@@ -57,6 +72,7 @@ async function countRows(): Promise<Record<string, number>> {
     (select count(*)::int from core_tenancy.branches) as branches,
     (select count(*)::int from core_access.users) as users,
     (select count(*)::int from core_tenancy.store_codes) as store_codes,
+    (select count(*)::int from core_tenancy.licenses) as licenses,
     (select count(*)::int from core_ledger.accounts) as accounts,
     (select count(*)::int from core_audit.entries) as audit_entries`);
   return rows[0] ?? {};
@@ -167,7 +183,7 @@ describe("tenant:create", () => {
     ["a missing owner", args().slice(0, 4), `${PASSWORD}\n`],
   ])("refuses %s and writes nothing", async (_, argv, password) => {
     const before = await countRows();
-    const result = await run(argv, password);
+    const result = await run(argv, { password });
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("usage:");
     expect(await countRows()).toEqual(before);
@@ -209,13 +225,117 @@ describe("tenant:create", () => {
 
   it("refuses an unknown flag or a missing database URL as bad usage", async () => {
     expect((await run([...args(), "--tenant-id", "x"])).code).toBe(2);
-    expect((await run(args(), `${PASSWORD}\n`, {})).code).toBe(2);
+    const keysOnly = { LICENSE_PUBLIC_KEYS: appEnv["LICENSE_PUBLIC_KEYS"] ?? "" };
+    expect((await run(args(), { env: keysOnly })).code).toBe(2);
+    // No built-in license key: without configured keys, no tenant is created.
+    expect((await run(args(), { env: { DATABASE_URL: database.url("app") } })).code).toBe(2);
+    expect((await run(args(), { env: { ...appEnv, LICENSE_PUBLIC_KEYS: "test" } })).code).toBe(2);
   });
 
   it("refuses to run as a role that can bypass row-level security", async () => {
     await expect(
-      run(args(), `${PASSWORD}\n`, { DATABASE_URL: database.url("owner") }),
+      run(args(), { env: { ...appEnv, DATABASE_URL: database.url("owner") } }),
     ).rejects.toThrow(/row-level security/);
+  });
+});
+
+describe("tenant:create and its license", () => {
+  it("takes the tenant id from the license and installs it, audited as done by Vertex", async () => {
+    const license = await issueTestLicense({ plan: "basic", limits: { users: 8 } });
+    const result = await run(args({ name: "مرخّص" }), { license: license.jws });
+    expect(result).toMatchObject({ code: 0, stderr: "" });
+    const created = JSON.parse(result.stdout) as { tenantId: string; branchId: string };
+    expect(created.tenantId).toBe(license.claims.tenant);
+
+    const installed = await superuser.query<{ id: string }>(
+      `select id, branch_id, jws, kid, plan, issued_at, expires_at, grace_days, read_only_days,
+         max_offline_days, limits, entitlements, installed_by
+       from core_tenancy.licenses where tenant_id = $1`,
+      [created.tenantId],
+    );
+    expect(installed.rows).toEqual([
+      {
+        id: expect.any(String) as string,
+        branch_id: created.branchId,
+        jws: license.jws,
+        kid: "test",
+        plan: "basic",
+        issued_at: new Date(license.claims.issuedAt),
+        expires_at: new Date(license.claims.expiresAt),
+        grace_days: 7,
+        read_only_days: 30,
+        max_offline_days: 10,
+        limits: { users: 8, departments: 2, mainPosDevices: 1, companionDevices: 2 },
+        entitlements: license.claims.entitlements,
+        installed_by: null,
+      },
+    ]);
+    const audit = await superuser.query(
+      `select created_by, entity_type, entity_id, before, after from core_audit.entries
+       where tenant_id = $1 and action = 'tenancy.license.installed'`,
+      [created.tenantId],
+    );
+    expect(audit.rows).toEqual([
+      {
+        created_by: null,
+        entity_type: "tenancy.license",
+        entity_id: installed.rows[0]?.id,
+        before: null,
+        after: { kid: "test", ...license.claims },
+      },
+    ]);
+  });
+
+  it("refuses a tenant without a license and writes nothing", async () => {
+    const before = await countRows();
+    const result = await run(args(), { license: null });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("a tenant needs a license");
+    expect(await countRows()).toEqual(before);
+  });
+
+  it.each([
+    [
+      "a license signed by another key under the test key id",
+      async () => {
+        const forger = await generateLicenseKeyPair("test");
+        return issueLicense((await issueTestLicense()).claims, forger.privateKey);
+      },
+      /badSignature/,
+    ],
+    [
+      "a license signed by a key the server does not know",
+      async () => {
+        const unknown = await generateLicenseKeyPair("2031-1");
+        return issueLicense((await issueTestLicense()).claims, unknown.privateKey);
+      },
+      /unknownKey/,
+    ],
+    [
+      "a license not valid yet",
+      async () => {
+        const notBefore = new Date(systemClock.now().getTime() + 3_600_000);
+        return (await issueTestLicense({ notBefore })).jws;
+      },
+      /notYetValid/,
+    ],
+    ["text that is not a license", () => Promise.resolve("not-a-license"), /malformed/],
+  ])("refuses %s and writes nothing", async (_, license, reason) => {
+    const before = await countRows();
+    const result = await run(args(), { license: await license() });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(reason);
+    expect(await countRows()).toEqual(before);
+  });
+
+  it("refuses a license whose tenant exists: a renewal goes through license:install", async () => {
+    const license = await issueTestLicense();
+    expect((await run(args(), { license: license.jws })).code).toBe(0);
+    const before = await countRows();
+    const again = await run(args({ name: "مكرر" }), { license: license.jws });
+    expect(again.code).toBe(1);
+    expect(again.stderr).toContain("already exists");
+    expect(await countRows()).toEqual(before);
   });
 });
 
@@ -237,7 +357,7 @@ describe("store codes", () => {
   async function create(random: RandomSource) {
     const tenants = await openTenantDatabase({ connectionString: database.url("app") });
     try {
-      return await createTenantWithOwner(
+      return await createLicensedTenant(
         tenants,
         {
           name: "رمز",

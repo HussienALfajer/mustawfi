@@ -1,11 +1,18 @@
 import { parseArgs } from "node:util";
 import { openTenantDatabase } from "@mustawfi/core-tenancy/server";
+import { LicenseRefusedError } from "@mustawfi/core-tenancy/shared";
 import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import { z } from "zod";
-import { createTenantInputSchema, createTenantWithOwner } from "../tenants/create-tenant.ts";
+import {
+  createTenantInputSchema,
+  createTenantWithOwner,
+  TenantExistsError,
+} from "../tenants/create-tenant.ts";
+import { licenseKeysFromEnv } from "./license-keys.ts";
 
-const USAGE = `usage: DATABASE_URL=<mustawfi_app url> pnpm --filter @mustawfi/server tenant:create \\
-  --name <tenant name> --base-currency <ISO 4217 code> \\
+const USAGE = `usage: DATABASE_URL=<mustawfi_app url> LICENSE_PUBLIC_KEYS=<kid:key,…> \
+  pnpm --filter @mustawfi/server tenant:create --license <license JWS from license:issue> \
+  --name <tenant name> --base-currency <ISO 4217 code> \
   --owner-name <name> --owner-login <login>  < password-on-stdin`;
 
 export interface CommandIo {
@@ -27,8 +34,9 @@ async function readPassword(stdin: CommandIo["stdin"]): Promise<string> {
 }
 
 /**
- * `tenant:create`: creates a tenant with its hidden default branch, base currency, and owner.
- * Prints the new ids and the store code as JSON and returns the exit code: 0 done, 1 refused, 2 bad usage.
+ * `tenant:create`: creates a licensed tenant (`core-foundation` rule 2) with its hidden default
+ * branch, base currency, and owner; the tenant id is the license's claim. Prints the new ids
+ * and the store code as JSON and returns the exit code: 0 done, 1 refused, 2 bad usage.
  */
 export async function createTenantCommand(io: CommandIo): Promise<number> {
   let values;
@@ -36,6 +44,7 @@ export async function createTenantCommand(io: CommandIo): Promise<number> {
     ({ values } = parseArgs({
       args: [...io.argv],
       options: {
+        license: { type: "string" },
         name: { type: "string" },
         "base-currency": { type: "string" },
         "owner-name": { type: "string" },
@@ -52,8 +61,14 @@ export async function createTenantCommand(io: CommandIo): Promise<number> {
     io.stderr.write(`DATABASE_URL is not set\n${USAGE}\n`);
     return 2;
   }
+  const licenseKeys = licenseKeysFromEnv(io.env);
+  if (typeof licenseKeys === "string") {
+    io.stderr.write(`${licenseKeys}\n${USAGE}\n`);
+    return 2;
+  }
 
   const input = createTenantInputSchema.safeParse({
+    license: values.license,
     name: values.name,
     baseCurrency: values["base-currency"],
     ownerName: values["owner-name"],
@@ -71,9 +86,16 @@ export async function createTenantCommand(io: CommandIo): Promise<number> {
       clock: systemClock,
       random: cryptoRandom,
       newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
+      licenseKeys,
     });
     io.stdout.write(`${JSON.stringify(created)}\n`);
     return 0;
+  } catch (error) {
+    if (error instanceof LicenseRefusedError || error instanceof TenantExistsError) {
+      io.stderr.write(`${error.message}\n`);
+      return 1;
+    }
+    throw error;
   } finally {
     await tenants.close();
   }

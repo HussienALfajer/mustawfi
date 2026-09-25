@@ -1,0 +1,26 @@
+{
+  "name": "@mustawfi/tools-license",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "license:keygen": "node src/cli/keygen.ts",
+    "license:issue": "node src/cli/issue.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mustawfi/core-tenancy": "workspace:*",
+    "@mustawfi/kernel": "workspace:*",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@mustawfi/config": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

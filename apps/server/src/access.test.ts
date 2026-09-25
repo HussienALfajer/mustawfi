@@ -12,7 +12,8 @@ import { buildServer } from "./app.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
 import { createServerRegistry, hostSyncOperations } from "./modules.ts";
-import { createTenantWithOwner, type CreatedTenant } from "./tenants/create-tenant.ts";
+import type { CreatedTenant } from "./tenants/create-tenant.ts";
+import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
 const clock = manualClock(new Date("2026-09-25T08:00:00.000Z"));
@@ -28,7 +29,7 @@ let store: CreatedTenant;
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 function newTenant(name: string): Promise<CreatedTenant> {
-  return createTenantWithOwner(
+  return createLicensedTenant(
     tenants,
     {
       name,

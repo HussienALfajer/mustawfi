@@ -6,6 +6,7 @@
     "start": "node src/main.ts",
     "db:migrate": "node src/cli/migrate.ts",
     "tenant:create": "node src/cli/create-tenant.ts",
+    "license:install": "node src/cli/install-license.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p sync-sim/tsconfig.json"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "@mustawfi/config": "workspace:*",
     "@mustawfi/local-db": "workspace:*",
     "@mustawfi/testing": "workspace:*",
+    "@mustawfi/tools-license": "workspace:*",
     "@node-rs/argon2": "2.2.1",
     "@types/node": "24.13.6",
     "@types/pg": "8.23.1",

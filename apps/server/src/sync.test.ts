@@ -24,7 +24,8 @@ import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
 import { createServerRegistry, hostSyncOperations } from "./modules.ts";
 import { invoiceOperation, type InvoiceLineSpec } from "./sales-operations.test-helpers.ts";
-import { createTenantWithOwner, type CreatedTenant } from "./tenants/create-tenant.ts";
+import type { CreatedTenant } from "./tenants/create-tenant.ts";
+import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
 const clock = manualClock(new Date("2026-09-25T10:00:00.000Z"));
@@ -69,7 +70,7 @@ afterAll(async () => {
 });
 
 async function newStore(name: string): Promise<Store> {
-  const tenant = await createTenantWithOwner(
+  const tenant = await createLicensedTenant(
     tenants,
     { name, baseCurrency: "SYP", ownerName: "أحمد", ownerLogin: "ahmad", ownerPassword: PASSWORD },
     dependencies,

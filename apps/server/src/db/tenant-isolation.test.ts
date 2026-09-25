@@ -10,6 +10,7 @@ import { recordAudit } from "@mustawfi/core-audit/server";
 import { postJournalEntry, seedAccounts, systemAccounts } from "@mustawfi/core-ledger/server";
 import {
   createTenant,
+  installLicense,
   openTenantDatabase,
   type TenantDatabase,
   type TenantTransaction,
@@ -30,6 +31,7 @@ import {
   inspectRlsCatalog,
   type TestDatabase,
 } from "@mustawfi/testing";
+import { issueTestLicense, testLicenseKeys } from "@mustawfi/tools-license/testing";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServerRegistry, hostSyncOperations } from "../modules.ts";
@@ -91,6 +93,13 @@ const seeds: readonly Seed[] = [
         createdAt: systemClock.now(),
         createdBy: tenant.userId,
       }),
+  },
+  {
+    tables: ["core_tenancy.licenses"],
+    seed: async (tx, tenant) => {
+      const { jws } = await issueTestLicense({ tenant: tenant.tenantId });
+      await installLicense(tx, { jws }, { ...dependencies, licenseKeys: await testLicenseKeys() });
+    },
   },
   {
     tables: ["core_access.users"],
