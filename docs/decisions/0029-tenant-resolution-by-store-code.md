@@ -1,6 +1,6 @@
 # 0029. Name the tenant at sign-in with a store code resolved through a sealed directory, and route bearer secrets by tenant id
 
-- Status: Proposed
+- Status: Accepted (by the user on 2026-09-25)
 - Date: 2026-09-25
 
 ## Context
