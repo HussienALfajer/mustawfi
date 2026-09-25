@@ -8,6 +8,7 @@ import {
   POSTGRES_IMAGE,
   type PostgresServer,
 } from "@mustawfi/testing/postgres-server";
+import { issueTestLicense, testLicensePublicKeys } from "@mustawfi/tools-license/testing";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import pg from "pg";
 import { E2E_API_PORT, E2E_STORE_ENV, type E2eStore } from "./environment.ts";
@@ -65,7 +66,7 @@ async function waitForHealth(server: ChildProcess, output: () => string): Promis
 
 /**
  * Starts PostgreSQL 18 with the roles of ADR-0017, migrates as `mustawfi_owner`, creates a
- * store with the `tenant:create` CLI, and starts the API server as `mustawfi_app` — the same
+ * store with the `tenant:create` CLI and a license signed by the test key, and starts the API server as `mustawfi_app` — the same
  * commands a deployment runs.
  */
 export default async function globalSetup(): Promise<() => Promise<void>> {
@@ -113,8 +114,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         "سامر",
         "--owner-login",
         store.login,
+        "--license",
+        (await issueTestLicense()).jws,
       ],
-      { DATABASE_URL: appUrl },
+      { DATABASE_URL: appUrl, LICENSE_PUBLIC_KEYS: await testLicensePublicKeys() },
       `${store.password}\n`,
     );
     const { storeCode } = JSON.parse(created) as { storeCode: string };

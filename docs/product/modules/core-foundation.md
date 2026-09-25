@@ -1,6 +1,6 @@
 # Core foundation (`core-foundation`)
 
-- Status: Spec ready
+- Status: In progress
 - Modules covered: `core.tenancy`, `core.access`, `core.organization`, `core.audit` — plus the configuration-bundle mechanism in `core.config` and operation flags and bundle delivery in `core.sync` (ADR-0030)
 - Spec agreed with the user on: 2026-09-25
 
@@ -332,7 +332,7 @@ Screens ship with the feature they serve, so every milestone ends with something
 
 | # | Slice | Done when (3–5 checks) | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| 1 | License: issue, install, lifecycle function | `tools/license` generates Ed25519 key pairs and issues license JWS with ADR-0030's claims; `license:install` and `tenant:create` refuse a bad signature, an unknown `kid`, another tenant, an older license, a future `notBefore`, and a tenant without a license (integration tests); the pure lifecycle function passes property tests (state order, boundaries at each day count); `core_tenancy.licenses` is append-only and in the RLS tests; e2e and test setups create tenants with test-key licenses | high | — | Not started |
+| 1 | License: issue, install, lifecycle function | `tools/license` generates Ed25519 key pairs and issues license JWS with ADR-0030's claims; `license:install` and `tenant:create` refuse a bad signature, an unknown `kid`, another tenant, an older license, a future `notBefore`, and a tenant without a license (integration tests); the pure lifecycle function passes property tests (state order, boundaries at each day count); `core_tenancy.licenses` is append-only and in the RLS tests; e2e and test setups create tenants with test-key licenses | high | — | Done 2026-09-25 — see notes below |
 | 2 | Departments and store profile (server) | `core_tenancy.departments` and `core.organization` (store profile) exist with their migrations and RLS seeds; creating a tenant seeds the default department «المتجر» and a store profile named after the tenant (integration test); create, rename, archive departments with the default and last-active rules and the license's department limit (tests); store profile edit with logo size and type checks, before/after audited; departments and profile flow down through pull into local tables | medium | 1 | Not started |
 | 3 | Application frame, screen patterns, first screens | The user approved a preview of the frame and the list-with-side-panel pattern before code (recorded), and `docs/design/screen-patterns.md` is completed from it; the collapsible grouped side navigation replaces the top bar and carries the existing screens; the departments screen (list with side panel; always reachable under Administration, while department columns and pickers elsewhere stay hidden until a second active department exists) and the store profile screen (settings form with logo) work against the API; a component gallery replaces the token preview page and shows every `packages/ui` component in light and dark and the three densities; an axe check runs in every Playwright journey, the existing ones included, and a keyboard-only journey edits the profile and adds a department | medium | 2 | Not started |
 | 4 | Document codes, numbering, and real departments on documents | Modules declare document codes and the registry refuses duplicates (test); `formatDocumentNumber`/`parseDocumentNumber` in `core.organization/shared` replace `sales`' own format; `core_sync.operation_flags` exists (append-only, RLS), and ingest tracks the last sequence per device and code, flags `numberGap`, and audits the missing range (test); `SKELETON_DOCUMENT_DEFAULTS.departmentId` is gone, invoices carry the tenant's default department (rule 32 minus the scope part), and invoices and journal lines reference `core_tenancy.departments` by foreign key; the receipt template gets a new version that prints the store name, and invoices recorded with the skeleton version still reprint with it (non-negotiable 7) | high | 2 | Not started |
@@ -350,6 +350,19 @@ Screens ship with the feature they serve, so every milestone ends with something
 | 16 | Client permissions, scope, and supervisor override | `can(permission, department)` and `limitFor` on the client read the bundle's access part and match the server's resolution (shared tests); screens hide what the user may not do; the override dialog (supervisor name, PIN) grants only when the supervisor's role covers the action, value, and department, attaches approver and override id, and audits it through the device path; the server flags `overrideNotAuthorized` (test with a fixture limit); a user whose scope lists one department sells under it | high | 15 | Not started |
 | 17 | Audit log screen | `GET /api/v1/audit/entries` with filters (user, action, device, date range) and keyset pages, readable by owners and `audit.view` only (403 test); the screen shows entries in a compact table with Arabic labels, device and server times, and a side panel with before/after values; filters live in the URL; a Playwright journey filters by user and opens an entry; axe passes | medium | 3, 14 | Not started |
 | 18 | Windows keystore | The Windows app stores the device credential and session token in Windows Credential Manager through a Tauri command, moves an existing credential out of the local database and deletes it there (test on the native core); the session survives an app restart; the ADR-0022 amendment on the Windows deviation is closed; manual check on the release build recorded | high | 15 | Not started |
+
+### Slice notes and deviations
+
+- **Slice 1 (2026-09-25).**
+  - The license is a compact JWS with header `alg: EdDSA`, `typ: mustawfi-license`, `kid`; its payload holds the claims in camelCase (`tenant`, `plan`, `issuedAt`, `notBefore`, `expiresAt`, `graceDays`, `readOnlyDays`, `maxOfflineDays`, `limits`, `entitlements`), instants as UTC ISO 8601 with milliseconds. Entitlements are the non-core module ids of the plan (`tools/license/src/plans.ts`).
+  - `verifyLicense` and `licenseState` sit in `core.tenancy/shared` so devices can use them in slices 11 and 13. `jose` 6.2.12 (current release, checked 2026-09-25); `jwtVerify` decodes the payload because shared code may not use `TextDecoder`.
+  - Public keys are configured as `LICENSE_PUBLIC_KEYS=kid:x,…` (`x` the raw Ed25519 key in base64url, as `license:keygen` prints it). Only the two CLIs read it in this slice; the HTTP server does not need it until the bundle (slice 11).
+  - `license:install` is a server CLI (`pnpm --filter @mustawfi/server license:install --store <code> --license <jws>`); `installTenantLicense` is the interface `apps/admin-api` will call. `license:keygen --kid <kid> --out <file>` writes the private JWK without overwriting; `license:issue` prints the JWS on stdout and a summary on stderr, and takes instants only with an explicit offset.
+  - Default validity when `--expires` is omitted: one year from `notBefore` (not in the spec; the other defaults are the open question's).
+  - Installs by Vertex staff record `installed_by = null` and audit `tenancy.license.installed` with no user, the replaced license as `before`. The current license is the one issued last (installs must be newer), not the one with the latest `installed_at`, so a server clock stepping back cannot bring an older license back.
+  - `core_tenancy.licenses` is append-only by grants and by triggers (like the audit log), under forced RLS, seeded in the isolation test.
+  - The test key pair is generated once per test process by `@mustawfi/tools-license/testing` and never written to disk; `createLicensedTenant` (apps/server test helper) and the e2e global setup use it.
+  - `core.tenancy` gains a `client` entry with the `tenancy` i18n namespace, holding the Arabic label of `tenancy.license.installed` (rule 34), registered in `apps/web`. Audit labels map an action `<module>.<subject>.<event>` to the key `audit.<subject>.<event>` in the module's namespace (`tenancy:audit.license.installed`); slice 14's catalogue test uses the same mapping.
 
 ## Open questions
 
@@ -376,3 +389,5 @@ Screens ship with the feature they serve, so every milestone ends with something
   - the test license key kept out of production;
   - the offline journey split between the browser and the Windows app;
   - `v1-scope.md` module dependencies aligned.
+- 2026-09-25 — Unit base commit: 6b55b933f17e06c506e4458982b299ff628300ab.
+- 2026-09-25 — Slice 1 done (license issue, install, lifecycle function).

@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  check,
+  integer,
+  jsonb,
+  pgSchema,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /**
  * `core_tenancy` tables (ADR-0016). Internal to the module: no entry exports them.
@@ -68,5 +78,44 @@ export const branches = coreTenancy.table(
     uniqueIndex("branches_one_default_per_tenant")
       .on(t.tenantId)
       .where(sql`${t.isDefault}`),
+  ],
+);
+
+/**
+ * Installed licenses (ADR-0030), append-only: `mustawfi_app` may only insert and read, and a
+ * trigger refuses any change or deletion by anyone (`0005_licenses_rules.sql`). The current
+ * license is the newest installed. The claims are copied into columns for queries; `jws`, as
+ * issued, stays the source.
+ */
+export const licenses = coreTenancy.table(
+  "licenses",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid()
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid().notNull(),
+    jws: text().notNull(),
+    kid: text().notNull(),
+    plan: text().notNull(),
+    issuedAt: timestamp({ withTimezone: true, precision: 3 }).notNull(),
+    notBefore: timestamp({ withTimezone: true, precision: 3 }).notNull(),
+    expiresAt: timestamp({ withTimezone: true, precision: 3 }).notNull(),
+    graceDays: integer().notNull(),
+    readOnlyDays: integer().notNull(),
+    maxOfflineDays: integer().notNull(),
+    limits: jsonb().notNull(),
+    entitlements: jsonb().notNull(),
+    installedAt: timestamp({ withTimezone: true }).notNull(),
+    /** The user who installed it; null when Vertex staff did (CLI, later the control plane). */
+    installedBy: uuid(),
+  },
+  (t) => [
+    uniqueIndex("licenses_one_per_issue").on(t.tenantId, t.issuedAt),
+    check("licenses_expiry_after_validity", sql`${t.expiresAt} > ${t.notBefore}`),
+    check(
+      "licenses_days",
+      sql`${t.graceDays} >= 0 and ${t.readOnlyDays} >= 0 and ${t.maxOfflineDays} >= 1`,
+    ),
   ],
 );

@@ -7,3 +7,9 @@ export {
   type TenantTransaction,
 } from "./tenant-database.ts";
 export { createTenant, currentTenant, type NewTenant, type Tenant } from "./tenants.ts";
+export {
+  currentLicense,
+  installLicense,
+  type InstallLicenseDependencies,
+  type InstalledLicense,
+} from "./licenses.ts";

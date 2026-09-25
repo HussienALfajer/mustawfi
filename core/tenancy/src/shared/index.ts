@@ -24,3 +24,25 @@ export const storeCodeSchema = z
   .string()
   .transform((value) => value.replace(/[\s-]/g, "").toUpperCase())
   .pipe(z.string().regex(/^[A-HJ-NP-Z2-9]{6}$/, "a store code is six letters and digits"));
+
+export {
+  EXPIRING_DAYS,
+  LICENSE_ALGORITHM,
+  LICENSE_STATES,
+  LICENSE_TYPE,
+  type LicenseClaims,
+  licenseClaimsSchema,
+  licenseKeyIdSchema,
+  type LicenseLimits,
+  licenseLimitsSchema,
+  type LicensePublicKeys,
+  licensePublicKeysSchema,
+  type LicenseRefusal,
+  LicenseRefusedError,
+  type LicenseState,
+  licenseState,
+  licenseStateStarts,
+  type LicenseTerms,
+  type VerifiedLicense,
+  verifyLicense,
+} from "./license.ts";

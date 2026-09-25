@@ -29,6 +29,20 @@
       "when": 1790311508810,
       "tag": "0003_store_codes_directory",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790362507760,
+      "tag": "0004_licenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790362508682,
+      "tag": "0005_licenses_rules",
+      "breakpoints": true
     }
   ]
 }

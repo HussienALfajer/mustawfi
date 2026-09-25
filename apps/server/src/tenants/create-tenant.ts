@@ -6,14 +6,17 @@ import {
   currencyCodeSchema,
   STORE_CODE_LENGTH,
   tenantNameSchema,
+  verifyLicense,
 } from "@mustawfi/core-tenancy/shared";
 import {
   createTenant,
+  currentTenant,
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
-import { randomCode, type Clock, type IdGenerator, type RandomSource } from "@mustawfi/kernel";
+import { randomCode, type RandomSource } from "@mustawfi/kernel";
 import { z } from "zod";
+import { installAuditedLicense, type LicenseDependencies } from "./install-license.ts";
 
 export const createTenantInputSchema = z.object({
   name: tenantNameSchema,
@@ -21,6 +24,11 @@ export const createTenantInputSchema = z.object({
   ownerName: userNameSchema,
   ownerLogin: loginSchema,
   ownerPassword: passwordSchema,
+  /** The license issued for the new tenant (ADR-0030); the tenant id is its claim. */
+  license: z
+    .string({ error: "a tenant needs a license" })
+    .trim()
+    .min(1, "a tenant needs a license"),
 });
 
 export type CreateTenantInput = z.input<typeof createTenantInputSchema>;
@@ -33,10 +41,13 @@ export interface CreatedTenant {
   readonly storeCode: string;
 }
 
-export interface CreateTenantDependencies {
-  readonly clock: Clock;
-  readonly newId: IdGenerator;
+export interface CreateTenantDependencies extends LicenseDependencies {
   readonly random: RandomSource;
+}
+
+/** The license names a tenant that already exists: a renewal goes through `license:install`. */
+export class TenantExistsError extends Error {
+  override name = "TenantExistsError";
 }
 
 /** Draws of a store code before giving up; a clash is one in a hundred thousand at most. */
@@ -54,11 +65,11 @@ function isStoreCodeTaken(error: unknown): boolean {
 }
 
 /**
- * Flow 1 of the walking skeleton: a tenant, its hidden default branch, its base currency, its
- * store code, its owner, and its seeded accounts, in one `withTenant` transaction for the new tenant — all or
- * nothing, and audited in the same transaction. Runs as `mustawfi_app` under RLS like every
- * other write. A store code another tenant already holds is drawn again. The ledger's seeded
- * accounts are written in the same transaction.
+ * Flow 1 of the walking skeleton, licensed (`core-foundation` rule 2): a tenant whose id is the
+ * license's tenant claim, its installed license, its hidden default branch, its base currency,
+ * its store code, its owner, and its seeded accounts, in one `withTenant` transaction for the
+ * new tenant — all or nothing, and audited in the same transaction. Runs as `mustawfi_app`
+ * under RLS like every other write. A store code another tenant already holds is drawn again.
  */
 export async function createTenantWithOwner(
   tenants: TenantDatabase,
@@ -66,9 +77,11 @@ export async function createTenantWithOwner(
   dependencies: CreateTenantDependencies,
 ): Promise<CreatedTenant> {
   const parsed = createTenantInputSchema.parse(input);
+  // A bad license is refused before any work; `installLicense` checks it again in the transaction.
+  const { claims } = await verifyLicense(parsed.license, dependencies.licenseKeys);
   const passwordHash = await hashPassword(parsed.ownerPassword);
   const ids = {
-    tenantId: dependencies.newId(),
+    tenantId: claims.tenant,
     branchId: dependencies.newId(),
     ownerId: dependencies.newId(),
   };
@@ -93,6 +106,9 @@ export async function createTenantWithOwner(
 
   async function writeTenant(tx: TenantTransaction, created: CreatedTenant): Promise<void> {
     const audit = { tenantId: created.tenantId, branchId: created.branchId, occurredAt: createdAt };
+    if ((await currentTenant(tx)) !== undefined) {
+      throw new TenantExistsError(`tenant ${created.tenantId} already exists`);
+    }
     const tenant = await createTenant(tx, {
       tenantId: created.tenantId,
       branchId: created.branchId,
@@ -102,6 +118,7 @@ export async function createTenantWithOwner(
       createdAt,
       createdBy,
     });
+    await installAuditedLicense(tx, parsed.license, dependencies);
     await createOwner(tx, {
       id: created.ownerId,
       tenantId: created.tenantId,

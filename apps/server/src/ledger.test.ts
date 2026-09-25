@@ -26,7 +26,8 @@ import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
-import { createTenantWithOwner, type CreatedTenant } from "./tenants/create-tenant.ts";
+import type { CreatedTenant } from "./tenants/create-tenant.ts";
+import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
 const SYP = Currency.of("SYP", 2);
 const clock = manualClock(new Date("2026-09-25T08:00:00.000Z"));
@@ -43,7 +44,7 @@ type AccountKey = "cash" | "salesRevenue" | "roundingDifferences";
 let accounts: Record<AccountKey, Account>;
 
 function newTenant(name: string): Promise<CreatedTenant> {
-  return createTenantWithOwner(
+  return createLicensedTenant(
     tenants,
     {
       name,
