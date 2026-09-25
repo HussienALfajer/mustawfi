@@ -1,7 +1,7 @@
 import { ProblemError } from "@mustawfi/core-config/server";
 import { currentTenant, type TenantTransaction } from "@mustawfi/core-tenancy/server";
-import { Money, type IdGenerator } from "@mustawfi/kernel";
-import { inArray } from "drizzle-orm";
+import { Decimal, Money, type IdGenerator } from "@mustawfi/kernel";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { calendarDateSchema, ledgerProblemCodes, type JournalSide } from "../shared/index.ts";
 import { accounts, journalEntries, journalLines } from "./schema.ts";
 
@@ -150,4 +150,81 @@ export async function postJournalEntry(
     total,
     lineIds: lines.map((line) => line.id),
   };
+}
+
+/** A posted entry as read back, with its lines' accounts. Amounts are canonical decimals. */
+export interface RecordedJournalEntry {
+  readonly id: string;
+  readonly accountingDate: string;
+  readonly currency: string;
+  readonly source: { readonly type: string; readonly id: string };
+  readonly lines: readonly {
+    readonly lineNo: number;
+    readonly accountCode: string;
+    readonly accountName: string;
+    readonly departmentId: string;
+    readonly debit: string;
+    readonly credit: string;
+  }[];
+}
+
+/**
+ * The entries that record the documents `sourceIds` of `sourceType`, in `tx` (under RLS), for
+ * the module that owns those documents to show them (flow 7 of the walking skeleton).
+ */
+export async function journalEntriesForSources(
+  tx: TenantTransaction,
+  sourceType: string,
+  sourceIds: readonly string[],
+): Promise<RecordedJournalEntry[]> {
+  if (sourceIds.length === 0) return [];
+  const rows = await tx
+    .select({
+      id: journalEntries.id,
+      accountingDate: journalEntries.accountingDate,
+      currency: journalEntries.currency,
+      sourceId: journalEntries.sourceId,
+      lineNo: journalLines.lineNo,
+      accountCode: accounts.code,
+      accountName: accounts.name,
+      departmentId: journalLines.departmentId,
+      debit: journalLines.debit,
+      credit: journalLines.credit,
+    })
+    .from(journalEntries)
+    .innerJoin(journalLines, eq(journalLines.journalEntryId, journalEntries.id))
+    .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
+    .where(
+      and(
+        eq(journalEntries.sourceType, sourceType),
+        inArray(journalEntries.sourceId, [...sourceIds]),
+      ),
+    )
+    .orderBy(asc(journalEntries.createdAt), asc(journalEntries.id), asc(journalLines.lineNo));
+  const entries = new Map<
+    string,
+    RecordedJournalEntry & { lines: RecordedJournalEntry["lines"][number][] }
+  >();
+  for (const row of rows) {
+    let entry = entries.get(row.id);
+    if (entry === undefined) {
+      entry = {
+        id: row.id,
+        accountingDate: row.accountingDate,
+        currency: row.currency,
+        source: { type: sourceType, id: row.sourceId },
+        lines: [],
+      };
+      entries.set(row.id, entry);
+    }
+    entry.lines.push({
+      lineNo: row.lineNo,
+      accountCode: row.accountCode,
+      accountName: row.accountName,
+      departmentId: row.departmentId,
+      debit: Decimal.of(row.debit).toString(),
+      credit: Decimal.of(row.credit).toString(),
+    });
+  }
+  return [...entries.values()];
 }

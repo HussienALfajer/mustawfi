@@ -96,3 +96,43 @@ export const salesProblemCodes = {
   /** Another operation already recorded this invoice id, number, or line id. */
   duplicate: "sales.invoice.duplicate",
 } as const;
+
+/** `GET /api/v1/sales/invoices?limit=`: the newest invoices first. */
+export const invoiceListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const invoiceJournalLineSchema = z.object({
+  accountCode: z.string(),
+  accountName: z.string(),
+  debit: decimalString({ scale: 4, sign: "nonNegative" }),
+  credit: decimalString({ scale: 4, sign: "nonNegative" }),
+});
+
+/** An invoice as the server recorded it, with its flags and the journal entry it posted. */
+export const invoiceViewSchema = z.object({
+  id: syncIdSchema,
+  number: z.string(),
+  businessDate: z.iso.date(),
+  /** The device's clock at the sale. */
+  soldAt: z.iso.datetime({ offset: true }),
+  deviceId: syncIdSchema,
+  total: z.object({
+    amount: decimalString({ scale: 4, sign: "nonNegative" }),
+    currency: z.string(),
+  }),
+  flags: z.array(invoiceFlagCodeSchema),
+  /** `null` for a free sale, which posts nothing. */
+  journalEntry: z
+    .object({
+      id: syncIdSchema,
+      accountingDate: z.iso.date(),
+      currency: z.string(),
+      lines: z.array(invoiceJournalLineSchema),
+    })
+    .nullable(),
+});
+
+export type InvoiceView = z.infer<typeof invoiceViewSchema>;
+
+export const invoiceListSchema = z.object({ items: z.array(invoiceViewSchema) });

@@ -781,6 +781,97 @@ describe("GET /api/v1/sync/pull", () => {
   });
 });
 
+describe("GET /api/v1/sales/invoices", () => {
+  function invoicesOf(store: Store | null) {
+    return server.inject({
+      method: "GET",
+      url: "/api/v1/sales/invoices",
+      ...(store === null ? {} : { headers: { authorization: `Bearer ${store.token}` } }),
+    });
+  }
+
+  it("shows the owner each recorded sale, newest first, with its flags and balanced entry", async () => {
+    const store = await newStore("متجر الفواتير");
+    const device = await newDevice(store);
+    const product = await newProduct(store, "12.5");
+    const paid = sale(device, [{ productId: product.id, quantity: "2", unitPrice: "12.5" }]);
+    const free = sale(device, [{ productId: product.id, quantity: "1", unitPrice: "0" }]);
+    clock.advance(1_000);
+    accepted((await push(device, [paid])).results[0]);
+    clock.advance(1_000);
+    accepted((await push(device, [free])).results[0]);
+
+    const response = await invoicesOf(store);
+    expect(response.statusCode, response.body).toBe(200);
+    const { items } = response.json<{ items: unknown[] }>();
+    expect(items).toEqual([
+      expect.objectContaining({
+        id: invoiceIdOf(free),
+        number: `${device.prefix}-INV-000002`,
+        total: { amount: "0", currency: "SYP" },
+        flags: ["negativeStock"],
+        journalEntry: null,
+      }),
+      {
+        id: invoiceIdOf(paid),
+        number: `${device.prefix}-INV-000001`,
+        businessDate: "2026-09-25",
+        soldAt: "2026-09-25T09:30:00.000Z",
+        deviceId: device.deviceId,
+        total: { amount: "25", currency: "SYP" },
+        flags: ["negativeStock"],
+        journalEntry: {
+          id: expect.any(String) as string,
+          accountingDate: "2026-09-25",
+          currency: "SYP",
+          lines: [
+            {
+              accountCode: "1100",
+              accountName: expect.any(String) as string,
+              debit: "25",
+              credit: "0",
+            },
+            {
+              accountCode: "4100",
+              accountName: expect.any(String) as string,
+              debit: "0",
+              credit: "25",
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("shows a store only its own invoices, and nobody without a session", async () => {
+    const other = await newStore("متجر له فاتورة");
+    const device = await newDevice(other);
+    const product = await newProduct(other, "3");
+    accepted(
+      (
+        await push(device, [
+          sale(device, [{ productId: product.id, quantity: "1", unitPrice: "3" }]),
+        ])
+      ).results[0],
+    );
+    expect((await invoicesOf(other)).json<{ items: unknown[] }>().items).toHaveLength(1);
+
+    const store = await newStore("متجر بلا فواتير");
+    const response = await invoicesOf(store);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ items: [] });
+    expectProblem(await invoicesOf(null), 401, accessProblemCodes.sessionRequired);
+  });
+
+  it("refuses a user who is not the owner", async () => {
+    const store = await newStore("متجر الموظف");
+    await superuser.query("update core_access.users set is_owner = false where id = $1", [
+      store.tenant.ownerId,
+    ]);
+    expectProblem(await invoicesOf(store), 403, accessProblemCodes.ownerRequired);
+  });
+});
+
 describe("the database", () => {
   let store: Store;
   let invoiceId: string;

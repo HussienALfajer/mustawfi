@@ -1,6 +1,8 @@
 import type { z } from "zod";
 import { hostProblemCodes, problemDetailsSchema } from "../shared/index.ts";
 
+export { type ClientRuntime, ClientRuntimeProvider, useClientRuntime } from "./runtime.tsx";
+
 /** The API answered with problem details; `code` picks the Arabic message (ADR-0014). */
 export class ApiProblem extends Error {
   override name = "ApiProblem";
@@ -26,6 +28,11 @@ export interface ApiRequest<T> {
   /** Validates the answer: a response that does not match is a bug, not data. */
   readonly schema: z.ZodType<T>;
   readonly signal?: AbortSignal;
+  /**
+   * A bearer credential: a registered device's, for sync (ADR-0022). Without it the request
+   * carries the session cookie.
+   */
+  readonly bearer?: string;
 }
 
 /**
@@ -38,7 +45,10 @@ export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promi
     response = await fetch(path, {
       method: request.method ?? "GET",
       credentials: "same-origin",
-      headers: request.body === undefined ? {} : { "content-type": "application/json" },
+      headers: {
+        ...(request.body === undefined ? {} : { "content-type": "application/json" }),
+        ...(request.bearer === undefined ? {} : { authorization: `Bearer ${request.bearer}` }),
+      },
       ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     });

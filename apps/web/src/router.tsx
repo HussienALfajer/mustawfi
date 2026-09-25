@@ -1,5 +1,12 @@
-import { LoginScreen, sessionQueryOptions, SignOutButton } from "@mustawfi/core-access/client";
+import {
+  DeviceScreen,
+  LoginScreen,
+  sessionQueryOptions,
+  SignOutButton,
+} from "@mustawfi/core-access/client";
+import { SyncStatusIndicator } from "@mustawfi/core-sync/client";
 import { ProductsScreen } from "@mustawfi/inventory/client";
+import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import {
   createRootRouteWithContext,
@@ -80,6 +87,20 @@ const loginRoute = createRoute({
   component: LoginPage,
 });
 
+function NavLink(props: {
+  readonly to: "/pos" | "/products" | "/invoices" | "/device";
+  readonly children: string;
+}) {
+  return (
+    <Link
+      to={props.to}
+      className="text-text-secondary data-[status=active]:font-semibold data-[status=active]:text-text-accent"
+    >
+      {props.children}
+    </Link>
+  );
+}
+
 function AppShell() {
   const { t } = useTranslation(SHELL_NAMESPACE);
   const navigate = useNavigate();
@@ -95,16 +116,15 @@ function AppShell() {
       <header className="flex items-center justify-between gap-4 border-b border-divider bg-surface px-6 py-3">
         <div className="flex items-center gap-8">
           <ProductMark />
-          <nav aria-label={t("nav.label")}>
-            <Link
-              to="/products"
-              className="text-text-secondary data-[status=active]:font-semibold data-[status=active]:text-text-accent"
-            >
-              {t("nav.products")}
-            </Link>
+          <nav aria-label={t("nav.label")} className="flex items-center gap-6">
+            <NavLink to="/pos">{t("nav.pos")}</NavLink>
+            <NavLink to="/products">{t("nav.products")}</NavLink>
+            <NavLink to="/invoices">{t("nav.invoices")}</NavLink>
+            <NavLink to="/device">{t("nav.device")}</NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3">
+          <SyncStatusIndicator />
           {session ? (
             <span className="text-sm text-text-secondary">
               {t("signedInAs", { name: session.user.name })}
@@ -148,9 +168,43 @@ const productsRoute = createRoute({
   component: ProductsScreen,
 });
 
+function PosPage() {
+  const { t } = useTranslation(SHELL_NAMESPACE);
+  const session = useQuery(sessionQueryOptions()).data;
+  if (session === undefined || session === null) return null;
+  return (
+    <PosScreen
+      seller={{ userId: session.user.id, tenantId: session.tenantId }}
+      registerDeviceLink={
+        <Link to="/device" className="text-text-accent underline">
+          {t("registerDevice")}
+        </Link>
+      }
+    />
+  );
+}
+
+const posRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/pos",
+  component: PosPage,
+});
+
+const invoicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/invoices",
+  component: InvoicesScreen,
+});
+
+const deviceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/device",
+  component: DeviceScreen,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([indexRoute, productsRoute]),
+  appRoute.addChildren([indexRoute, posRoute, productsRoute, invoicesRoute, deviceRoute]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

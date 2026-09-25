@@ -8,15 +8,20 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
 import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
-import { ApiProblem } from "@mustawfi/core-config/client";
+import { ApiProblem, ClientRuntimeProvider } from "@mustawfi/core-config/client";
+import { SYNC_NAMESPACE, SyncEngineProvider, syncMessages } from "@mustawfi/core-sync/client";
 import { createI18n, DIRECTION, LANGUAGE } from "@mustawfi/i18n";
 import { INVENTORY_NAMESPACE, inventoryMessages } from "@mustawfi/inventory/client";
+import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
+import { LocalDbProvider } from "@mustawfi/local-db";
+import { SALES_NAMESPACE, salesMessages } from "@mustawfi/sales/client";
 import { LocaleProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
+import { startLocalRuntime } from "./local.ts";
 import { SHELL_NAMESPACE, shellMessages } from "./messages.ts";
 import { createAppRouter } from "./router.tsx";
 
@@ -26,6 +31,8 @@ const i18n = createI18n({
   [UI_NAMESPACE]: uiMessages,
   [ACCESS_NAMESPACE]: accessMessages,
   [INVENTORY_NAMESPACE]: inventoryMessages,
+  [SYNC_NAMESPACE]: syncMessages,
+  [SALES_NAMESPACE]: salesMessages,
 });
 document.documentElement.lang = LANGUAGE;
 document.documentElement.dir = DIRECTION;
@@ -53,16 +60,47 @@ const queryClient: QueryClient = new QueryClient({
 });
 const router = createAppRouter(queryClient);
 
-const root = document.getElementById("root");
-if (root === null) throw new Error("index.html has no #root");
-createRoot(root).render(
-  <StrictMode>
-    <I18nextProvider i18n={i18n}>
-      <LocaleProvider>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      </LocaleProvider>
-    </I18nextProvider>
-  </StrictMode>,
+const runtime = {
+  clock: systemClock,
+  newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
+};
+
+const element = document.getElementById("root");
+if (element === null) throw new Error("index.html has no #root");
+const root = createRoot(element);
+
+/**
+ * The local database opens before anything renders (ADR-0019): screens read it, and the POS
+ * cannot sell without it. If it cannot open, the app says so instead of selling into nothing.
+ */
+startLocalRuntime(queryClient).then(
+  ({ db, sync }) => {
+    root.render(
+      <StrictMode>
+        <I18nextProvider i18n={i18n}>
+          <LocaleProvider>
+            <ClientRuntimeProvider runtime={runtime}>
+              <LocalDbProvider db={db}>
+                <SyncEngineProvider engine={sync}>
+                  <QueryClientProvider client={queryClient}>
+                    <RouterProvider router={router} />
+                  </QueryClientProvider>
+                </SyncEngineProvider>
+              </LocalDbProvider>
+            </ClientRuntimeProvider>
+          </LocaleProvider>
+        </I18nextProvider>
+      </StrictMode>,
+    );
+  },
+  (error: unknown) => {
+    console.error("the local database did not open", error);
+    root.render(
+      <StrictMode>
+        <p role="alert" className="p-6 text-text-negative">
+          {i18n.t("localDbUnavailable", { ns: SHELL_NAMESPACE })}
+        </p>
+      </StrictMode>,
+    );
+  },
 );

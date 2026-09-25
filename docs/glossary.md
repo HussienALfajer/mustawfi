@@ -185,3 +185,6 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | مؤشر المزامنة | Sync cursor | `syncCursor` |
 | بحاجة لمراجعة | Needs review | `needsReview` |
 | تنبيه للمحاسب | Accountant flag | `flag` |
+| قاعدة البيانات المحلية | Local database (ADR-0019) | `localDb` |
+| سلة البيع | POS cart | `cart` |
+| حالة المزامنة | Sync status (phase, pending, needs review) | `syncStatus` |

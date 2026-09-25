@@ -9,8 +9,14 @@ export const shellMessages = {
   skipToContent: "انتقل إلى المحتوى",
   nav: {
     label: "الأقسام",
+    pos: "البيع",
     products: "المنتجات",
+    invoices: "المبيعات",
+    device: "هذا الجهاز",
   },
+  registerDevice: "تسجيل هذا الجهاز",
+  localDbUnavailable:
+    "تعذّر فتح قاعدة البيانات المحلية، فلا يمكن البيع على هذا الجهاز. إن كان التطبيق مفتوحًا في نافذة أخرى فأغلقها ثم أعد تحميل الصفحة",
   signedInAs: "{name}",
   sessionFailed: "تعذّر التحقق من الجلسة. تحقّق من الاتصال ثم أعد تحميل الصفحة",
   notFound: "الصفحة غير موجودة",
