@@ -1,4 +1,4 @@
 {
   "extends": "@mustawfi/config/tsconfig.base.json",
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src", "drizzle.config.ts", "vitest.config.ts"]
 }

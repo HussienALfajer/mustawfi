@@ -1,0 +1,4 @@
+{
+  "extends": "@mustawfi/config/tsconfig.base.json",
+  "include": ["src", "vitest.config.ts"]
+}
