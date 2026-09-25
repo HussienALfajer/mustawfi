@@ -85,13 +85,15 @@ fn validate(printer: &str, document: &str, bytes: &[u8]) -> Result<(), PrintErro
     Ok(())
 }
 
-/// One write to an open spooler job: how many bytes it took.
+/// One write to an open spooler job: how many bytes it took. Used by the Windows spooler only.
+#[cfg(any(windows, test))]
 pub(crate) trait RawSink {
     fn write(&mut self, chunk: &[u8]) -> Result<usize, PrintError>;
 }
 
 /// Writes every byte, however the sink splits them. A write that takes nothing ends the job as
 /// [`PrintError::Incomplete`] instead of looping forever.
+#[cfg(any(windows, test))]
 pub(crate) fn write_all(sink: &mut impl RawSink, bytes: &[u8]) -> Result<(), PrintError> {
     let mut written = 0;
     while written < bytes.len() {
