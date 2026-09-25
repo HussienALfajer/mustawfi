@@ -42,6 +42,7 @@ These hold in every change. A change that needs to break one stops and asks the 
 - **Clients run on Windows 10 or later.** Windows 7 is still common in Syrian shops but is not supported; say so wherever requirements are shown.
 - **Cash is local reality:** shifts, cash counts, handovers, and owner drawings are core features, not edge cases.
 - **Cash drawer:** it opens with a sale, once. A reprint never kicks it; any other opening is an audited event (non-negotiable 10).
+- **Local migrations are matched by position:** a new module's local migrations go at the end of `LOCAL_MIGRATIONS` (`apps/web/src/local-migrations.ts`), never in dependency order, or devices with an existing database refuse to start.
 
 ## How work is organized
 
