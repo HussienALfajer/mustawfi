@@ -1,0 +1,145 @@
+# Walking skeleton (`walking-skeleton`)
+
+- Status: Spec ready
+- Modules covered: thin slices of `core.tenancy`, `core.access`, `core.audit`, `core.config` (registry only), `core.ledger`, `core.sync`, `inventory`, `sales`; packages `kernel`, `ui`, `i18n`, `local-db`, `testing`
+- Spec agreed with the user on: 2026-09-25 (Phase A2 architecture session)
+
+## Purpose
+
+Prove the chosen stack end to end, as thinly as possible: create a tenant → log in → create a product → sell it on a client while offline → sync → see the sale on the server with a balanced journal entry. Along the way, set up everything later units rely on: verification, CI, boundary enforcement, agent tooling, the kernel's money and identifiers, tenant isolation, the design-system foundation, and the local database.
+
+## Scope (V1)
+
+- Monorepo (ADR-0015), `pnpm verify`, GitHub Actions CI, boundary checks that fail the build.
+- Agent tooling: a `verify` skill, hooks (formatting after edits, filtered test output), path-scoped rules for ledger, sync, tenancy, migrations, and RTL UI.
+- `packages/kernel`: `Decimal`, `Money`, `Quantity`, `ExchangeRate`, UUIDv7, `Clock` (ADR-0018).
+- PostgreSQL 18 foundation: roles, migrations, `withTenant`, RLS catalog and isolation tests (ADR-0016, ADR-0017).
+- Server host with the module registry, contracts, problem-details errors; creating a tenant with its hidden default branch.
+- Password login, opaque sessions, device registration with prefix and credential; login audit (ADR-0022).
+- A minimal ledger (seeded accounts, balanced posting) and minimal products.
+- Sync server: idempotent push, invoice ingest with posting, cursor pull (ADR-0020).
+- Design tokens from the generator, contrast tests, a preview page approved by the user, `docs/design/design-system.md` (ADR-0024).
+- The web client: RTL Arabic shell, login, products, a minimal POS that sells offline through the local database and outbox (ADR-0019, ADR-0023).
+- The first version of the sync simulation harness (ADR-0026).
+- The Windows desktop shell with native SQLite (ADR-0019), and a receipt-printing spike (ADR-0025).
+
+## Out of scope
+
+- Android shell and its native SQLite adapter → `core-sync` unit.
+- Real permissions, roles, departments, shifts, cash boxes, multi-currency payments → `core-foundation`, `core-money`, `treasury`, `sales`.
+- Licenses, configuration bundles, and signing (ADR-0021) → `core-foundation` and `core-config`. The skeleton's device works without a license check.
+- PIN login, 2FA, device revoke → `core-foundation`.
+- Production deployment, backups, restore drill, monitoring → `ops` unit (added to the roadmap before the closed beta).
+- Admin console and portal apps → `admin`, `customer-portal`.
+
+## Dependencies
+
+None — this is the first code. ADR-0014 to ADR-0028 define the stack.
+
+## Entities and data
+
+Only what the path needs, each in its owning module's schema:
+
+- `core_tenancy.tenants` (id, name, base currency), `core_tenancy.branches` (the hidden default branch).
+- `core_access.users` (password hash), `core_access.sessions` (token hash, expiry, revoked_at), `core_access.devices` (type, prefix, credential hash), `core_access.registration_codes`.
+- `core_audit.entries` (append-only).
+- `core_ledger.accounts` (seeded: cash, sales revenue, rounding differences), `core_ledger.journal_entries`, `core_ledger.journal_lines`.
+- `inventory.products` (name, barcode, price with currency).
+- `sales.invoices`, `sales.invoice_lines` — with every field of non-negotiable 7 (department, shift, and template version take fixed skeleton values).
+- `core_sync.received_ops`, `core_sync.changes`, `core_sync.tenant_counters`.
+
+## Business rules and invariants
+
+1. Every tenant-owned table has `tenant_id`, `branch_id`, forced RLS, and a policy (catalog test).
+2. No query returns or changes another tenant's rows; no query without tenant context returns rows (isolation test).
+3. Every journal entry balances in the base currency; an unbalanced entry is refused (property test).
+4. Posted invoices and journal entries cannot be updated or deleted by the application role (database test).
+5. Pushing the same operation twice creates one invoice (idempotency test).
+6. Money never passes through a JavaScript `number` (lint rule with a fixture test).
+7. Document numbers are `{prefix}-INV-{seq:6}`, the prefix unique per tenant and never reused, the sequence gapless per device.
+
+## Accounting impact
+
+A cash sale posts: debit *cash*, credit *sales revenue*, and a *rounding differences* line when cash rounding applies — all in the base currency, with department and currency on each line. The skeleton uses a single currency (the tenant's base currency) and no cash-rounding step. Multi-currency posting belongs to `core-money`.
+
+## Flows
+
+1. Create a tenant (CLI command): tenant, default branch, owner user, seeded accounts.
+2. The owner logs in on the web client (password).
+3. The owner creates a product (online).
+4. The owner registers the device with a registration code; the device receives its prefix and credential.
+5. The device downloads products (pull), goes offline, and sells one product for cash: the invoice, its number, and its outbox entry commit in one local transaction.
+6. The device comes back online and pushes; the server writes the invoice and its balanced journal entry.
+7. The owner sees the sale and the journal entry on the server.
+
+Desktop (Windows app and browser) only; no tablet or phone screens.
+
+## Permissions
+
+None beyond "authenticated owner". The permission model arrives in `core-foundation`.
+
+## Offline and sync behavior
+
+- Works offline: selling a product already synced to the device; the POS cart and the invoice are in the local database.
+- Append-only: invoices (push).
+- Server-authoritative: products (pull).
+- Flagged after sync: negative stock (the skeleton records the flag; the accountant's review queue arrives later).
+
+## Settings and customization points
+
+None. The registry exists, but the skeleton defines no settings, custom fields, or templates beyond the receipt used in the printing spike.
+
+## Edge cases
+
+- The same push arrives twice (network retry) → one invoice; the second call returns `duplicate`.
+- A push arrives with a gap in `deviceSeq` → processing stops at the gap, the device resends.
+- The device sells more than the stock → the sale is accepted and flagged.
+- The browser tab closes mid-sale → the cart is restored from the local database.
+
+## Acceptance criteria
+
+1. The full path (flows 1–7) runs as a Playwright end-to-end test in CI.
+2. `AGENTS.md` → Commands lists the real build, test, lint, typecheck, and verify commands.
+3. A `verify` skill, the hooks, and the path-scoped rules exist and are used by the slices after they land.
+4. Every boundary rule of ADR-0015 fails the build on its fixture violation.
+5. The RLS catalog test, the isolation test, and the ledger property test pass in CI.
+6. The user approved the generated palette on the preview page.
+7. The Windows desktop app sells offline through native SQLite, and a receipt printed from the spike is legible Arabic on a real printer.
+
+## Verification plan
+
+- Unit and property tests (Vitest, fast-check): kernel, ledger, numbering.
+- Integration (Testcontainers PostgreSQL 18): migrations, RLS catalog and isolation, posting, push idempotency, pull ordering.
+- Sync simulation harness v1: three devices, drops, duplicates, reordering, convergence.
+- End-to-end (Playwright): keyboard-only login and product creation; the offline sale path.
+- Manual, with the results recorded in the slice: the Windows app offline sale; a printed receipt on one real thermal printer.
+
+## Slices
+
+| # | Slice | Done when (3–5 checks) | Effort | Depends on | Status |
+|---|---|---|---|---|---|
+| 1 | Monorepo and verification pipeline | `pnpm verify` (build, format check, lint, typecheck, test) passes on a clean checkout; the GitHub Actions workflow runs it on pull requests and passes; `pnpm check:boundaries` fails on fixture violations of ADR-0015 rules 1–4; `AGENTS.md` Commands lists the real commands | medium | — | Not started |
+| 2 | Agent tooling | A `verify` skill runs `pnpm verify` with filtered output; a hook formats edited files; a hook or wrapper filters test output to failures and summaries; path-scoped rules exist for ledger, sync, tenancy, migrations, and RTL UI, each citing its ADRs | medium | 1 | Not started |
+| 3 | Kernel: exact money and identifiers | `Decimal`/`Money`/`Quantity`/`ExchangeRate` round only through named, mode-explicit functions (half away from zero); property tests prove exact allocation, mirrored reversals, and bounded conversion residuals; UUIDv7 and an injectable `Clock`; lint rules ban float money, ambient clock, and ambient randomness in domain code, each with a fixture test | high | 1 | Not started |
+| 4 | Database foundation and tenant isolation | Tests start PostgreSQL 18 through Testcontainers and apply migrations as `mustawfi_owner`; the app connects as `mustawfi_app` and every access goes through `withTenant`; the catalog test fails on a fixture table without forced RLS; the isolation test proves tenant A cannot read, change, or count tenant B's rows, and that no context returns zero rows and blocks inserts | high | 3 | Not started |
+| 5 | Server host, module registry, tenancy | Fastify mounts modules from the registry, and the registry refuses to start with an undeclared or disabled dependency (test); OpenAPI is generated from the Zod contracts; errors are problem details with stable codes; a CLI command creates a tenant with its hidden default branch, base currency, and owner (integration test) | medium | 4 | Not started |
+| 6 | Access: login, sessions, devices | Password login (Argon2id) returns an opaque session whose hash alone is stored; a revoked session is refused on the next request; registration codes are single-use and expire; a registered device gets a credential and a prefix unique per tenant and never reused (test); logins are written to an append-only audit log | high | 5 | Not started |
+| 7 | Minimal ledger and products | Account seeding per tenant (cash, sales revenue, rounding differences); `postJournalEntry` refuses unbalanced entries; a property test of random posting sequences keeps debits equal to credits; the app role cannot update or delete posted entries (database test); product create and list endpoints under RLS | high | 5 | Not started |
+| 8 | Sync server: push, ingest, pull | Pushing the same `opId` twice yields one invoice and a `duplicate` result; a `deviceSeq` gap stops processing at the gap; ingesting `sales.invoice.post` writes the invoice and its balanced journal entry in one transaction; a negative-stock sale is accepted and flagged; pull returns product changes in commit order with a resumable cursor | high | 6, 7 | Not started |
+| 9 | Design tokens and preview | The generator emits light and dark token CSS from Mustawfi's inputs; the contrast test covers every pair with zero exceptions and fails on a fixture pair; a preview page shows palette, type scale, densities, `Money`, and the double-rule total; the user approved the palette; `docs/design/design-system.md` is written | medium | 1, ADR-0024 accepted | Blocked — ADR-0024 reopened |
+| 10 | Client shell: login and products | The web app renders RTL Arabic through i18n, and the string-literal and physical-direction lint rules fire on fixtures; `Button`, `TextInput`, `Money`, `MoneyInput`, and `DataTable` exist in `packages/ui` on React Aria; the login and product screens work against the API; a keyboard-only Playwright journey (log in, create a product) passes | medium | 6, 7, 9 | Not started |
+| 11 | Local database, offline sale, sync client | The `LocalDb` contract suite passes on the Node and WASM adapters; the POS screen sells offline, committing the invoice, `{prefix}-INV-000001`, and the outbox entry in one local transaction; the sync loop pushes and pulls, and a status indicator shows pending operations; the end-to-end Playwright test of flows 1–7 passes in CI | high | 8, 10 | Not started |
+| 12 | Sync simulation harness v1 | The harness runs three virtual devices on the Node adapter against a real server and database; the network drops, duplicates, and reorders requests from a seed; after convergence there are no lost or duplicate invoices and the ledger balances; it runs in CI within a time budget | high | 11 | Not started |
+| 13 | Windows desktop shell | The Tauri spike chooses the SQLite binding (recorded in ADR-0019's consequences); the native adapter passes the `LocalDb` contract suite, including multi-statement transactions, with WAL and `synchronous = FULL`; an offline sale works in the packaged app (manual check recorded); a CI job on a Windows runner builds the installer | high | 11 | Not started |
+| 14 | Receipt printing spike | A LiquidJS receipt template renders to a 576-dot raster with the bundled Arabic font; ESC/POS bytes are produced with the encoder, including cut and drawer kick; printed through the Windows spooler in RAW mode on one real printer, legible (photo recorded); receipt-to-printer time is measured on reference hardware, and the chosen rasterizer is recorded in ADR-0025 | medium | 13 | Not started |
+
+## Open questions
+
+- Reference low-end hardware for the POS speed budget (add an item < 100 ms, sale < 1 s). Default until decided: the oldest Windows 10 PC and Android tablet available to the team; the business track names the reference models.
+- Which thermal printer model is used for slice 14. Default: whatever 80 mm ESC/POS printer the team has on hand; the certified list comes later.
+- Visual identity: ADR-0024 is reopened. Slice 9 waits for its acceptance; slices 1–8 do not depend on it. Default until decided: none — slice 9 does not start.
+- Final product mark. Default: a text placeholder («مستوفي» with the double rule) until a designer delivers it.
+
+## Changelog
+
+- 2026-09-25 — Spec agreed in the Phase A2 architecture session.

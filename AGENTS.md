@@ -29,7 +29,7 @@ These hold in every change. A change that needs to break one stops and asks the 
 6. **Posted documents are immutable.** Corrections are reversals. Nothing financial is ever deleted.
 7. **Every document records** its currency, exchange rate, department, user, shift, device, and the print-template version used.
 8. **Document numbers are unique per device** (device prefix), so offline devices never collide.
-9. **Closed periods are locked.** No document may be dated inside a locked period.
+9. **Closed periods are locked.** No journal entry may carry an accounting date inside a locked period; a document keeps the business date it happened on.
 10. **Everything is audited.** Create, cancel, return, discount, price change, permission change, login, drawer open without sale, support impersonation — with who, what, when, which device, before/after values.
 
 ## Domain gotchas
