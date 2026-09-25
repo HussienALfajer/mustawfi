@@ -3,6 +3,7 @@ import type { ApiEndpoint } from "@mustawfi/core-config/client";
 import type { LocalDb } from "@mustawfi/local-db";
 import type { NativeLocalDb } from "@mustawfi/local-db/native";
 import { isTauri } from "@mustawfi/local-db/tauri";
+import type { RawPrinterTransport } from "@mustawfi/printing";
 
 /** The local database as a platform opens it; the native shells can also copy it. */
 export interface OpenedLocalDb {
@@ -18,6 +19,8 @@ export interface ClientPlatform {
   readonly deviceType: DeviceType;
   readonly api: ApiEndpoint;
   readonly openLocalDb: () => Promise<OpenedLocalDb>;
+  /** The receipt printer transport (ADR-0025); none in the browser, which is no printing client. */
+  readonly openPrinter?: () => Promise<RawPrinterTransport>;
 }
 
 /** The database file's name on every platform. */
@@ -48,6 +51,7 @@ const windows: ClientPlatform = {
     const { openTauriLocalDb } = await import("@mustawfi/local-db/tauri");
     return openTauriLocalDb(LOCAL_DB_NAME);
   },
+  openPrinter: async () => (await import("@mustawfi/printing/tauri")).tauriPrinterTransport,
 };
 
 export function detectPlatform(): ClientPlatform {

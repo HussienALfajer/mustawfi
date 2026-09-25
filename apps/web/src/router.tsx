@@ -20,6 +20,7 @@ import {
 } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { SHELL_NAMESPACE } from "./messages.ts";
+import { PrinterScreen, ReceiptActions } from "./printing.tsx";
 
 export interface RouterContext {
   readonly queryClient: QueryClient;
@@ -91,7 +92,7 @@ const loginRoute = createRoute({
 });
 
 function NavLink(props: {
-  readonly to: "/pos" | "/products" | "/invoices" | "/device";
+  readonly to: "/pos" | "/products" | "/invoices" | "/device" | "/printer";
   readonly children: string;
 }) {
   return (
@@ -124,6 +125,7 @@ function AppShell() {
             <NavLink to="/products">{t("nav.products")}</NavLink>
             <NavLink to="/invoices">{t("nav.invoices")}</NavLink>
             <NavLink to="/device">{t("nav.device")}</NavLink>
+            <NavLink to="/printer">{t("nav.printer")}</NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3">
@@ -183,6 +185,7 @@ function PosPage() {
           {t("registerDevice")}
         </Link>
       }
+      receiptAction={(invoice) => <ReceiptActions invoice={invoice} />}
     />
   );
 }
@@ -210,9 +213,22 @@ const deviceRoute = createRoute({
   component: DevicePage,
 });
 
+const printerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/printer",
+  component: PrinterScreen,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([indexRoute, posRoute, productsRoute, invoicesRoute, deviceRoute]),
+  appRoute.addChildren([
+    indexRoute,
+    posRoute,
+    productsRoute,
+    invoicesRoute,
+    deviceRoute,
+    printerRoute,
+  ]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient, deviceType: DeviceType) {

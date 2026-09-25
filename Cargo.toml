@@ -1,7 +1,7 @@
 # Rust crates of the clients (ADR-0019): the native LocalDb core and the Windows shell.
 [workspace]
 resolver = "3"
-members = ["packages/local-db/native", "apps/desktop/src-tauri"]
+members = ["packages/local-db/native", "packages/printing/native", "apps/desktop/src-tauri"]
 
 [workspace.package]
 edition = "2024"

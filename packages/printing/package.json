@@ -1,0 +1,24 @@
+{
+  "name": "@mustawfi/printing",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tauri": "./src/tauri.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@mustawfi/config": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "@point-of-sale/receipt-printer-encoder": "4.0.1",
+    "@tauri-apps/api": "2.11.1",
+    "liquidjs": "10.29.0",
+    "modern-screenshot": "4.7.0"
+  }
+}

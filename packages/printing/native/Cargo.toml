@@ -1,0 +1,30 @@
+[package]
+name = "mustawfi-printing"
+description = "The native printer transport (ADR-0025): raw bytes to a Windows printer through the spooler."
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Graphics_Printing",
+] }
+
+# The workspace forbids `unsafe`. The spooler is reachable only through FFI, so this crate
+# denies it instead, and `winspool.rs` alone allows it, each block with its safety argument.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "warn"
