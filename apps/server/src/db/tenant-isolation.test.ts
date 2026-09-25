@@ -49,6 +49,8 @@ interface SeedTenant {
   readonly tenantId: string;
   readonly branchId: string;
   readonly userId: string;
+  /** The department seeded with the tenant, which its documents and journal lines name. */
+  readonly departmentId: string;
 }
 
 const seedFixtureItem = (tx: TenantTransaction, tenant: SeedTenant) =>
@@ -91,7 +93,7 @@ const seeds: readonly Seed[] = [
         name: `tenant ${tenant.tenantId}`,
         baseCurrency: "SYP",
         storeCode: randomCode(cryptoRandom, 6),
-        defaultDepartmentId: newId(),
+        defaultDepartmentId: tenant.departmentId,
         createdAt: systemClock.now(),
         createdBy: tenant.userId,
       }),
@@ -157,7 +159,7 @@ const seeds: readonly Seed[] = [
       await seedAccounts(tx, standard, newId);
       const { cash, salesRevenue } = await systemAccounts(tx);
       const amount = Money.of("1250.50", Currency.of("SYP", 2));
-      const departmentId = newId();
+      const { departmentId } = tenant;
       await postJournalEntry(
         tx,
         {
@@ -199,9 +201,12 @@ const seeds: readonly Seed[] = [
   },
   {
     // A sale beyond the stock, pushed as a device does: the operation, the invoice, its
-    // stock movement and level, and its negative-stock flag.
+    // stock movement and level, and its negative-stock flag; then a sale past a missing
+    // number: the device's document sequence and the operation's number-gap flag.
     tables: [
       "core_sync.received_ops",
+      "core_sync.operation_flags",
+      "core_organization.document_sequences",
       "sales.invoices",
       "sales.invoice_lines",
       "sales.invoice_flags",
@@ -212,19 +217,22 @@ const seeds: readonly Seed[] = [
       const { credential = "", productId = "" } = seeded.get(tenant.tenantId) ?? {};
       const device = await authenticateDevice(tenants, credential);
       if (device === undefined) throw new Error("the seeded device does not authenticate");
-      const operation = invoiceOperation({
-        newId,
-        device,
-        userId: tenant.userId,
-        deviceSeq: 1,
-        lines: [{ productId, quantity: "1", unitPrice: "1250.50" }],
-      });
-      const pushed = await pushOperations(tenants, device, [operation], {
+      const sale = (deviceSeq: number, invoiceSeq: number) =>
+        invoiceOperation({
+          newId,
+          device,
+          userId: tenant.userId,
+          departmentId: tenant.departmentId,
+          deviceSeq,
+          invoiceSeq,
+          lines: [{ productId, quantity: "1", unitPrice: "1250.50" }],
+        });
+      const pushed = await pushOperations(tenants, device, [sale(1, 1), sale(2, 3)], {
         clock: systemClock,
         newId,
         operations: hostSyncOperations(createServerRegistry()),
       });
-      expect(pushed.results.map((r) => r.status)).toEqual(["accepted"]);
+      expect(pushed.results.map((r) => r.status)).toEqual(["accepted", "accepted"]);
     },
   },
   {
@@ -240,8 +248,14 @@ const seeds: readonly Seed[] = [
 ];
 const seededTables = seeds.flatMap((s) => s.tables).sort();
 
-const tenantA: SeedTenant = { tenantId: newId(), branchId: newId(), userId: newId() };
-const tenantB: SeedTenant = { tenantId: newId(), branchId: newId(), userId: newId() };
+const seedTenant = (): SeedTenant => ({
+  tenantId: newId(),
+  branchId: newId(),
+  userId: newId(),
+  departmentId: newId(),
+});
+const tenantA = seedTenant();
+const tenantB = seedTenant();
 let ownerPasswordHash: string;
 
 let database: TestDatabase;

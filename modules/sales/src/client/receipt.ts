@@ -1,3 +1,4 @@
+import { readLocalStoreProfile } from "@mustawfi/core-organization/client";
 import { priceCurrency } from "@mustawfi/inventory/client";
 import { type DigitShape, formatDecimal, LOCALE, useDigitShape } from "@mustawfi/i18n";
 import { Decimal, Money } from "@mustawfi/kernel";
@@ -7,51 +8,7 @@ import { asc, eq } from "drizzle-orm";
 import { useTranslation } from "react-i18next";
 import { BUSINESS_TIME_ZONE, localInvoiceLines, localInvoices } from "./local-sales.ts";
 import { SALES_NAMESPACE } from "./messages.ts";
-
-/**
- * The skeleton's cash receipt (ADR-0025): HTML/CSS with LiquidJS variables, laid out for an
- * 80 mm printer (576 dots, one CSS pixel per dot). Every invoice records the template version
- * it printed with (non-negotiable 7), so this text never changes under the same version: a
- * change is a new version. Labels come from i18n and figures arrive formatted, so the
- * template holds no language and does no arithmetic.
- */
-export const CASH_RECEIPT_TEMPLATE = {
-  version: "receipt.skeleton.1",
-  source: `<style>
-  .r { font-family: "Mustawfi Receipt", sans-serif; font-size: 24px; line-height: 1.35;
-       padding: 8px 12px 24px; }
-  .r h1 { font-size: 32px; font-weight: 700; text-align: center; margin: 0 0 4px; }
-  .r .meta { display: flex; justify-content: space-between; font-size: 22px; }
-  .r .num { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
-  .r table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  .r th { font-size: 20px; font-weight: 700; text-align: start; border-bottom: 2px solid #000; }
-  .r td { padding: 4px 0; vertical-align: top; }
-  .r .end { text-align: end; }
-  .r .total { display: flex; justify-content: space-between; font-size: 32px; font-weight: 700;
-              border-top: 6px double #000; margin-top: 8px; padding-top: 6px; }
-  .r footer { text-align: center; margin-top: 16px; font-size: 22px; }
-</style>
-<div class="r">
-  <h1>{{ labels.title }}</h1>
-  <div class="meta"><span>{{ labels.number }}</span><span class="num">{{ invoice.number }}</span></div>
-  <div class="meta"><span>{{ labels.date }}</span><span class="num">{{ invoice.soldAt }}</span></div>
-  <div class="meta"><span>{{ labels.device }}</span><span>{{ invoice.device }}</span></div>
-  <table>
-    <thead><tr>
-      <th>{{ labels.item }}</th><th class="end">{{ labels.quantity }}</th>
-      <th class="end">{{ labels.price }}</th><th class="end">{{ labels.amount }}</th>
-    </tr></thead>
-    <tbody>
-    {%- for line in lines %}
-      <tr><td>{{ line.name }}</td><td class="end num">{{ line.quantity }}</td>
-        <td class="end num">{{ line.unitPrice }}</td><td class="end num">{{ line.amount }}</td></tr>
-    {%- endfor %}
-    </tbody>
-  </table>
-  <div class="total"><span>{{ labels.total }}</span><span class="num">{{ invoice.total }} {{ invoice.currency }}</span></div>
-  <footer>{{ labels.thanks }}</footer>
-</div>`,
-} as const;
+import { cashReceiptTemplate } from "./receipt-templates.ts";
 
 /** One recorded invoice as its receipt shows it: exact values, not yet formatted. */
 export interface ReceiptInvoice {
@@ -111,6 +68,8 @@ export interface ReceiptDocument {
 }
 
 export interface ReceiptFormat {
+  /** The store's name from its profile; empty until the profile reaches the device. */
+  readonly storeName: string;
   readonly label: (key: string) => string;
   readonly currencyLabel: (code: string) => string;
   readonly digits: DigitShape;
@@ -134,11 +93,14 @@ function formatSoldAt(soldAt: string, digits: DigitShape): string {
 }
 
 /**
- * Formats an invoice for its receipt template. Refuses an invoice recorded with a template
- * version this client does not have, rather than printing it with another one.
+ * Formats an invoice for the receipt template it recorded (non-negotiable 7), so a reprint
+ * keeps the first print's layout; the store's name is the profile's current one. Refuses an
+ * invoice recorded with a template version this client does not have, rather than printing it
+ * with another one.
  */
 export function receiptDocument(invoice: ReceiptInvoice, format: ReceiptFormat): ReceiptDocument {
-  if (invoice.templateVersion !== CASH_RECEIPT_TEMPLATE.version) {
+  const template = cashReceiptTemplate(invoice.templateVersion);
+  if (template === undefined) {
     throw new Error(`no receipt template ${invoice.templateVersion} on this client`);
   }
   const amount = (value: Money) =>
@@ -161,10 +123,11 @@ export function receiptDocument(invoice: ReceiptInvoice, format: ReceiptFormat):
     ].map((key) => [key, format.label(key)]),
   );
   return {
-    template: CASH_RECEIPT_TEMPLATE.source,
-    templateVersion: CASH_RECEIPT_TEMPLATE.version,
+    template: template.source,
+    templateVersion: template.version,
     documentName: invoice.number,
     data: {
+      store: { name: format.storeName },
       labels,
       invoice: {
         number: invoice.number,
@@ -195,7 +158,9 @@ export function useReceiptDocument(): (
   return async (invoiceId, deviceName) => {
     const invoice = await readReceiptInvoice(db, invoiceId);
     if (invoice === undefined) throw new Error(`no local invoice ${invoiceId}`);
+    const profile = await readLocalStoreProfile(db);
     return receiptDocument(invoice, {
+      storeName: profile?.name ?? "",
       label: (key) => t(`receipt.${key}`),
       currencyLabel,
       digits,

@@ -1,6 +1,8 @@
 import { departmentNameSchema, tenantNameSchema } from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
 
+export { type DocumentNumber, formatDocumentNumber, parseDocumentNumber } from "./numbering.ts";
+
 export {
   departmentNameSchema,
   departmentSchema,

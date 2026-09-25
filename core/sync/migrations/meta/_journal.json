@@ -15,6 +15,20 @@
       "when": 1790314823609,
       "tag": "0001_sync_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790370753369,
+      "tag": "0002_operation_flags",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790370758198,
+      "tag": "0003_operation_flags_rules",
+      "breakpoints": true
     }
   ]
 }

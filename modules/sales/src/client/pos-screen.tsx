@@ -21,6 +21,7 @@ import {
   type LocalInvoice,
   localInvoicesQueryOptions,
   removeFromCart,
+  SaleRefused,
 } from "./local-sales.ts";
 import { SALES_NAMESPACE } from "./messages.ts";
 
@@ -296,7 +297,9 @@ function CartSection(props: {
       ) : null}
       {sale.isError ? (
         <p role="alert" className="text-text-negative">
-          {t("pos.failed")}
+          {sale.error instanceof SaleRefused && sale.error.reason === "noDepartment"
+            ? t("pos.noDepartment")
+            : t("pos.failed")}
         </p>
       ) : null}
       <p role="status" className="text-text-positive">

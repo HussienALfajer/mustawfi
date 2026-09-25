@@ -18,6 +18,7 @@ export {
   createDepartment,
   defaultDepartment,
   type DepartmentChange,
+  knownDepartments,
   listDepartments,
   type NewDepartment,
   renameDepartment,

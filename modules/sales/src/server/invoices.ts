@@ -1,5 +1,7 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { postJournalEntry, systemAccounts } from "@mustawfi/core-ledger/server";
+import { trackDocumentNumber } from "@mustawfi/core-organization/server";
+import { parseDocumentNumber } from "@mustawfi/core-organization/shared";
 import {
   OperationRejected,
   type ReceivedOperation,
@@ -7,14 +9,18 @@ import {
   type SyncOperationDefinition,
 } from "@mustawfi/core-sync/server";
 import type { SyncValues } from "@mustawfi/core-sync/shared";
-import { currentTenant, type TenantTransaction } from "@mustawfi/core-tenancy/server";
+import {
+  currentTenant,
+  knownDepartments,
+  type TenantTransaction,
+} from "@mustawfi/core-tenancy/server";
 import { knownProducts, moveStock } from "@mustawfi/inventory/server";
 import { Currency, Decimal, Money } from "@mustawfi/kernel";
 import { z } from "zod";
 import {
+  INVOICE_DOC_CODE,
   INVOICE_POST_OPERATION,
   invoicePostPayloadV1Schema,
-  parseInvoiceNumber,
   salesProblemCodes,
   type InvoiceFlagCode,
 } from "../shared/index.ts";
@@ -58,10 +64,10 @@ interface Flag {
 /**
  * Records a completed cash sale (`sales.invoice.post`, payload version 1) in `tx`, the sync
  * operation's transaction (ADR-0020): the invoice and its lines as the device recorded them,
- * the stock movements, the flags for the accountant, the audit entry, and the balanced journal
- * entry — debit cash, credit sales revenue — all or nothing. A business rule never refuses it:
- * negative stock and arithmetic that does not add up are flagged. Only what cannot be recorded
- * is rejected.
+ * the stock movements, the flags for the accountant, the audit entry, the device's numbering
+ * (a gap is flagged and audited), and the balanced journal entry — debit cash, credit sales
+ * revenue — all or nothing. A business rule never refuses it: negative stock, arithmetic that
+ * does not add up, and a number gap are flagged. Only what cannot be recorded is rejected.
  */
 async function postInvoiceV1(
   tx: TenantTransaction,
@@ -73,8 +79,8 @@ async function postInvoiceV1(
     throw reject(salesProblemCodes.invoiceInvalid, z.prettifyError(parsed.error));
   }
   const invoice = parsed.data;
-  const number = parseInvoiceNumber(invoice.number);
-  if (number?.prefix !== operation.device.prefix) {
+  const number = parseDocumentNumber(invoice.number);
+  if (number?.prefix !== operation.device.prefix || number.docCode !== INVOICE_DOC_CODE) {
     throw reject(
       salesProblemCodes.numberMismatch,
       `"${invoice.number}" is not {prefix}-INV-{seq:6} with prefix ${operation.device.prefix}`,
@@ -103,6 +109,14 @@ async function postInvoiceV1(
   }
   if (new Set(invoice.lines.map((line) => line.id)).size !== invoice.lines.length) {
     throw reject(salesProblemCodes.invoiceInvalid, "two lines share an id");
+  }
+  // An archived department still takes documents: a device may have sold offline before it
+  // heard of the archive.
+  if (!(await knownDepartments(tx, [invoice.departmentId])).has(invoice.departmentId)) {
+    throw reject(
+      salesProblemCodes.unknownDepartment,
+      `department ${invoice.departmentId} is not in the store`,
+    );
   }
   const known = await knownProducts(
     tx,
@@ -159,6 +173,14 @@ async function postInvoiceV1(
       `invoice ${invoice.number} collides with a recorded one (${constraint})`,
     );
   }
+
+  // After the insert, so a repeated number is refused as a duplicate before it could count.
+  await trackDocumentNumber(
+    tx,
+    operation,
+    { number, entity: { type: INVOICE_SOURCE_TYPE, id: invoice.id } },
+    dependencies,
+  );
 
   const flags: Flag[] = [];
   const levels = await moveStock(

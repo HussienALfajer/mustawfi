@@ -84,6 +84,11 @@ function converged(): ConvergenceInput {
       { productId: P1, onHand: "3" },
       { productId: P2, onHand: "-4" },
     ],
+    sequences: [
+      { deviceId: "device-k7", docCode: "INV", lastSeq: 2 },
+      { deviceId: "device-m3", docCode: "INV", lastSeq: 1 },
+    ],
+    operationFlags: [],
   };
   return { devices, server, received: new Map([[P1, Decimal.of("5")]]) };
 }
@@ -111,6 +116,22 @@ function broken(
 describe("convergence checks", () => {
   it("find nothing wrong in a converged run", () => {
     expect(convergenceProblems(converged())).toEqual([]);
+  });
+
+  it("report a device whose numbering the server tracked otherwise, or a flagged operation", () => {
+    expect(
+      broken(({ server }) => {
+        server.sequences[0] = { deviceId: "device-k7", docCode: "INV", lastSeq: 3 };
+      }).join("\n"),
+    ).toMatch(/K7 made 2 invoices; the server's last number is 3/);
+    expect(broken(({ server }) => server.sequences.splice(1, 1)).join("\n")).toMatch(
+      /M3 made 1 invoices; the server's last number is 0/,
+    );
+    expect(
+      broken(({ server }) => {
+        server.operationFlags.push({ opId: "op-7", code: "numberGap" });
+      }).join("\n"),
+    ).toMatch(/operation op-7 was flagged numberGap/);
   });
 
   it("report a sale the server lost", () => {

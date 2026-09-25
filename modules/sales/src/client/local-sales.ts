@@ -1,4 +1,6 @@
 import type { LocalDevice } from "@mustawfi/core-access/client";
+import { localDefaultDepartment } from "@mustawfi/core-organization/client";
+import { formatDocumentNumber } from "@mustawfi/core-organization/shared";
 import {
   enqueueOperation,
   nextDocumentSeq,
@@ -21,12 +23,12 @@ import { queryOptions } from "@tanstack/react-query";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import {
-  formatInvoiceNumber,
   INVOICE_DOC_CODE,
   INVOICE_POST_OPERATION,
   type InvoicePostPayloadV1,
   SKELETON_DOCUMENT_DEFAULTS,
 } from "../shared/index.ts";
+import { CASH_RECEIPT_TEMPLATE } from "./receipt-templates.ts";
 
 /** Scales of the local scaled integers, as their server columns (ADR-0018). */
 const QUANTITY_SCALE = 4;
@@ -217,16 +219,21 @@ export async function readCart(executor: LocalExecutor, baseCurrency: string): P
   };
 }
 
-/** The cart cannot become a sale: it is empty, or a line cannot be sold on this device. */
+/**
+ * The cart cannot become a sale: it is empty, a line cannot be sold on this device, or the
+ * store's departments have not reached the device yet (`noDepartment`).
+ */
 export class SaleRefused extends Error {
   override name = "SaleRefused";
-  readonly reason: "emptyCart" | "notSellable";
+  readonly reason: SaleRefusal;
 
-  constructor(reason: "emptyCart" | "notSellable") {
+  constructor(reason: SaleRefusal) {
     super(reason);
     this.reason = reason;
   }
 }
+
+export type SaleRefusal = "emptyCart" | "notSellable" | "noDepartment";
 
 export interface CashSaleInput {
   readonly device: LocalDevice;
@@ -255,7 +262,9 @@ export function businessDate(instant: Date, timeZone: string): string {
 /**
  * Sells the cart for cash, offline or not (flow 5): the invoice, its number
  * `{prefix}-INV-{seq:6}`, its outbox entry, and the emptied cart commit in one local
- * transaction (ADR-0019), or nothing does. The network is never touched.
+ * transaction (ADR-0019), or nothing does. The network is never touched. The invoice is sold
+ * under the store's default department (`core-foundation` rule 32, until `sales` chooses by the
+ * user's scope) and records the current receipt template.
  */
 export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promise<RecordedSale> {
   const { device, clock, newId } = input;
@@ -263,10 +272,13 @@ export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promi
     const cart = await readCart(tx, device.baseCurrency);
     if (cart.lines.length === 0) throw new SaleRefused("emptyCart");
     if (!cart.ready) throw new SaleRefused("notSellable");
+    // Departments arrive with the first pull, before any product: a device with a cart has one.
+    const department = await localDefaultDepartment(tx);
+    if (department === undefined) throw new SaleRefused("noDepartment");
 
     const soldAt = clock.now();
     const seq = await nextDocumentSeq(tx, INVOICE_DOC_CODE);
-    const number = formatInvoiceNumber(device.prefix, seq);
+    const number = formatDocumentNumber(device.prefix, INVOICE_DOC_CODE, seq);
     const invoiceId = newId();
     const opId = newId();
     const exchangeRate = Decimal.ONE;
@@ -290,8 +302,8 @@ export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promi
       businessDate: businessDate(soldAt, BUSINESS_TIME_ZONE),
       currency: cart.currency.code,
       exchangeRate: exchangeRate.toString(),
-      departmentId: SKELETON_DOCUMENT_DEFAULTS.departmentId,
-      templateVersion: SKELETON_DOCUMENT_DEFAULTS.templateVersion,
+      departmentId: department.id,
+      templateVersion: CASH_RECEIPT_TEMPLATE.version,
       total: cart.total.amount.toString(),
       lines: lines.map((line) => ({
         id: line.id,

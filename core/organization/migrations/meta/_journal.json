@@ -15,6 +15,20 @@
       "when": 1790364615569,
       "tag": "0001_store_profiles_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790370793550,
+      "tag": "0002_document_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790370794477,
+      "tag": "0003_document_sequences_rules",
+      "breakpoints": true
     }
   ]
 }

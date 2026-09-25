@@ -1,13 +1,17 @@
+import { formatDocumentNumber } from "@mustawfi/core-organization/shared";
 import type { SyncOperation } from "@mustawfi/core-sync/shared";
 import { Currency, Decimal, Money, type IdGenerator } from "@mustawfi/kernel";
 import {
-  formatInvoiceNumber,
+  INVOICE_DOC_CODE,
   INVOICE_POST_OPERATION,
   SKELETON_DOCUMENT_DEFAULTS,
   type InvoicePostPayloadV1,
 } from "@mustawfi/sales/shared";
 
 const SYP = Currency.of("SYP", 2);
+
+/** The receipt template version devices record today (`sales/client`'s current template). */
+const RECEIPT_TEMPLATE_VERSION = "receipt.cash.2";
 
 export interface InvoiceLineSpec {
   readonly productId: string;
@@ -21,6 +25,8 @@ export interface InvoiceOperationSpec {
   readonly newId: IdGenerator;
   readonly device: { readonly deviceId: string; readonly prefix: string };
   readonly userId: string;
+  /** The department the invoice is sold under: the store's default one, as devices sell today. */
+  readonly departmentId: string;
   readonly deviceSeq: number;
   /** The invoice's number sequence; defaults to `deviceSeq`. */
   readonly invoiceSeq?: number;
@@ -56,12 +62,16 @@ export function invoiceOperation(spec: InvoiceOperationSpec): SyncOperation {
     ).amount.toString();
   const payload: InvoicePostPayloadV1 = {
     id: spec.newId(),
-    number: formatInvoiceNumber(spec.device.prefix, spec.invoiceSeq ?? spec.deviceSeq),
+    number: formatDocumentNumber(
+      spec.device.prefix,
+      INVOICE_DOC_CODE,
+      spec.invoiceSeq ?? spec.deviceSeq,
+    ),
     businessDate: "2026-09-25",
     currency: "SYP",
     exchangeRate: "1",
-    departmentId: SKELETON_DOCUMENT_DEFAULTS.departmentId,
-    templateVersion: SKELETON_DOCUMENT_DEFAULTS.templateVersion,
+    departmentId: spec.departmentId,
+    templateVersion: RECEIPT_TEMPLATE_VERSION,
     total,
     lines,
   };

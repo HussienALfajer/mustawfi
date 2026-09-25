@@ -1,5 +1,6 @@
 export { type ChangeInput, readChanges, recordChange } from "./changes.ts";
 export type { SyncContext } from "./dependencies.ts";
+export { flagOperation, type OperationFlag } from "./flags.ts";
 export { syncModule } from "./manifest.ts";
 export {
   createSyncOperationTable,

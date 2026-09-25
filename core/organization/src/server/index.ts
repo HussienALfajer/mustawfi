@@ -8,6 +8,7 @@ export {
   retireDepartment,
 } from "./departments.ts";
 export { organizationModule } from "./manifest.ts";
+export { type NumberGap, trackDocumentNumber, type TrackedDocument } from "./numbering.ts";
 export { seedOrganization } from "./seed.ts";
 export {
   createStoreProfile,

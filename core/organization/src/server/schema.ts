@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   check,
   customType,
   integer,
@@ -58,5 +59,33 @@ export const storeProfiles = coreOrganization.table(
         or (${t.logoType} in ('image/png', 'image/jpeg') and ${t.logoSha256} ~ '^[0-9a-f]{64}$'
           and ${t.logoSize} = octet_length(${t.logo}) and ${t.logoSize} between 1 and 262144)`,
     ),
+  ],
+);
+
+/**
+ * The server's view of each device's numbering (ADR-0020, `core-foundation` rule 31): the
+ * highest sequence received per device and document code. Moves forward only, one document at
+ * a time, under the device's push lock; a jump is a gap, flagged and audited.
+ */
+export const documentSequences = coreOrganization.table(
+  "document_sequences",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    /** When the device's first document with this code arrived. */
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    /** References `core_access.devices` (FK in `0003_document_sequences_rules.sql`). */
+    deviceId: uuid().notNull(),
+    docCode: text().notNull(),
+    lastSeq: bigint({ mode: "number" }).notNull(),
+    /** When the last sequence moved. */
+    updatedAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique("document_sequences_per_device_code").on(t.tenantId, t.deviceId, t.docCode),
+    check("document_sequences_doc_code", sql`${t.docCode} ~ '^[A-Z]{3}$'`),
+    check("document_sequences_last_seq_positive", sql`${t.lastSeq} > 0`),
   ],
 );

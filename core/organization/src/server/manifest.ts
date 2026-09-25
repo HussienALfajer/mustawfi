@@ -5,7 +5,8 @@ import { organizationRoutes } from "./routes.ts";
 
 /**
  * `core.organization`: the store profile and the management of departments (stored by
- * `core.tenancy`, ADR-0030), both flowing down to devices; document numbering comes in slice 4.
+ * `core.tenancy`, ADR-0030), both flowing down to devices, and document numbering — the number
+ * format every module uses and the server's view of each device's sequences.
  */
 export const organizationModule = defineModule<OrganizationContext>({
   id: "core.organization",

@@ -2,42 +2,18 @@ import { syncIdSchema } from "@mustawfi/core-sync/shared";
 import { decimalString } from "@mustawfi/kernel";
 import { z } from "zod";
 
-/** The document code in a sales invoice's number (ADR-0020). */
-export const INVOICE_DOC_CODE = "INV";
-
-const INVOICE_NUMBER = /^([A-HJ-NP-Z2-9]{2})-INV-(\d{6,15})$/;
-
 /**
- * A sales invoice number, `{prefix}-INV-{seq:6}` (ADR-0020): the device's prefix and its
- * invoice sequence, zero-padded to six digits and longer beyond 999999.
+ * The document code in a sales invoice's number, `{prefix}-INV-{seq:6}` (ADR-0020), declared
+ * in `sales`' manifest. Numbers are made and read by `core.organization/shared`.
  */
-export function formatInvoiceNumber(prefix: string, seq: number): string {
-  if (!/^[A-HJ-NP-Z2-9]{2}$/.test(prefix))
-    throw new TypeError(`"${prefix}" is not a device prefix`);
-  if (!Number.isSafeInteger(seq) || seq < 1) {
-    throw new RangeError(`an invoice sequence is a positive integer, got ${String(seq)}`);
-  }
-  return `${prefix}-${INVOICE_DOC_CODE}-${String(seq).padStart(6, "0")}`;
-}
-
-/** The prefix and sequence of a number in its one canonical form, or `undefined`. */
-export function parseInvoiceNumber(number: string): { prefix: string; seq: number } | undefined {
-  const match = INVOICE_NUMBER.exec(number);
-  if (match === null) return undefined;
-  const [, prefix = "", digits = ""] = match;
-  const seq = Number.parseInt(digits, 10);
-  return seq >= 1 && formatInvoiceNumber(prefix, seq) === number ? { prefix, seq } : undefined;
-}
+export const INVOICE_DOC_CODE = "INV";
 
 /**
  * What every skeleton document records for the fields of non-negotiable 7 that have no module
- * yet: departments (`core.organization`), shifts (`treasury`), and print templates. The units
- * that bring them replace these.
+ * yet: shifts (`treasury`). The unit that brings them replaces this.
  */
 export const SKELETON_DOCUMENT_DEFAULTS = {
-  departmentId: "00000000-0000-7000-8000-000000000001",
   shiftId: "00000000-0000-7000-8000-000000000002",
-  templateVersion: "receipt.skeleton.1",
 } as const;
 
 /** The sync operation that records a completed sale (ADR-0020). */
@@ -89,6 +65,8 @@ export const salesProblemCodes = {
   invoiceInvalid: "sales.invoice.invalid",
   /** The number is not `{prefix}-INV-{seq:6}` with the device's own prefix. */
   numberMismatch: "sales.invoice.numberMismatch",
+  /** The invoice names a department the store does not have. */
+  unknownDepartment: "sales.invoice.unknownDepartment",
   /** Not in the base currency at rate 1: multi-currency sales come with `core-money`. */
   unsupportedCurrency: "sales.invoice.unsupportedCurrency",
   /** A line names a product the store does not have. */
