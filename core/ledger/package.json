@@ -1,0 +1,33 @@
+{
+  "name": "@mustawfi/core-ledger",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./shared": "./src/shared/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "mustawfi": {
+    "dependsOn": [
+      "core.config",
+      "core.tenancy"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mustawfi/core-config": "workspace:*",
+    "@mustawfi/core-tenancy": "workspace:*",
+    "@mustawfi/kernel": "workspace:*",
+    "drizzle-orm": "0.45.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@fast-check/vitest": "0.5.0",
+    "@mustawfi/config": "workspace:*",
+    "@types/node": "24.13.6",
+    "fast-check": "4.10.2",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  }
+}

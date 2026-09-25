@@ -6,13 +6,22 @@ import {
   registerDevice,
 } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
+import { postJournalEntry, seedAccounts, systemAccounts } from "@mustawfi/core-ledger/server";
 import {
   createTenant,
   openTenantDatabase,
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
-import { cryptoRandom, randomCode, systemClock, uuidV7Generator } from "@mustawfi/kernel";
+import { createProduct } from "@mustawfi/inventory/server";
+import {
+  cryptoRandom,
+  Currency,
+  Money,
+  randomCode,
+  systemClock,
+  uuidV7Generator,
+} from "@mustawfi/kernel";
 import {
   assertTenantIsolation,
   createTestDatabase,
@@ -111,6 +120,56 @@ const seeds: readonly Seed[] = [
         userId: tenant.userId,
         action: "fixture.isolation.seeded",
       }),
+  },
+  {
+    tables: ["core_ledger.accounts", "core_ledger.journal_entries", "core_ledger.journal_lines"],
+    seed: async (tx, tenant) => {
+      const standard = {
+        tenantId: tenant.tenantId,
+        branchId: tenant.branchId,
+        createdAt: systemClock.now(),
+        createdBy: tenant.userId,
+      };
+      await seedAccounts(tx, standard, newId);
+      const { cash, salesRevenue } = await systemAccounts(tx);
+      const amount = Money.of("1250.50", Currency.of("SYP", 2));
+      const departmentId = newId();
+      await postJournalEntry(
+        tx,
+        {
+          id: newId(),
+          tenantId: tenant.tenantId,
+          branchId: tenant.branchId,
+          accountingDate: "2026-09-25",
+          postedAt: standard.createdAt,
+          postedBy: tenant.userId,
+          source: { type: "fixture.isolation", id: newId() },
+          lines: [
+            { accountId: cash.id, side: "debit", amount, departmentId },
+            { accountId: salesRevenue.id, side: "credit", amount, departmentId },
+          ],
+        },
+        dependencies,
+      );
+    },
+  },
+  {
+    tables: ["inventory.products"],
+    seed: (tx, tenant) =>
+      createProduct(
+        tx,
+        {
+          id: newId(),
+          tenantId: tenant.tenantId,
+          branchId: tenant.branchId,
+          createdAt: systemClock.now(),
+          createdBy: tenant.userId,
+          name: "شاحن",
+          barcode: "6291041500213",
+          price: { amount: "12.5", currency: "USD" },
+        },
+        dependencies,
+      ),
   },
   { tables: ["rls_fixture.items"], seed: seedFixtureItem },
 ];

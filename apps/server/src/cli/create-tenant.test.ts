@@ -57,6 +57,7 @@ async function countRows(): Promise<Record<string, number>> {
     (select count(*)::int from core_tenancy.branches) as branches,
     (select count(*)::int from core_access.users) as users,
     (select count(*)::int from core_tenancy.store_codes) as store_codes,
+    (select count(*)::int from core_ledger.accounts) as accounts,
     (select count(*)::int from core_audit.entries) as audit_entries`);
   return rows[0] ?? {};
 }
@@ -123,6 +124,22 @@ describe("tenant:create", () => {
     expect(owner?.password_hash).toMatch(/^\$argon2id\$/);
     expect(await verify(owner?.password_hash ?? "", PASSWORD)).toBe(true);
     expect(await verify(owner?.password_hash ?? "", "wrong password")).toBe(false);
+
+    const accounts = await superuser.query(
+      "select code, kind, system_key, branch_id, created_by from core_ledger.accounts where tenant_id = $1 order by code",
+      [created.tenantId],
+    );
+    const standard = { branch_id: created.branchId, created_by: created.ownerId };
+    expect(accounts.rows).toEqual([
+      { code: "1100", kind: "asset", system_key: "cash", ...standard },
+      { code: "4100", kind: "revenue", system_key: "salesRevenue", ...standard },
+      { code: "5900", kind: "expense", system_key: "roundingDifferences", ...standard },
+    ]);
+    const seeded = await superuser.query(
+      "select created_by from core_audit.entries where tenant_id = $1 and action = 'ledger.accounts.seeded'",
+      [created.tenantId],
+    );
+    expect(seeded.rows).toEqual([{ created_by: created.ownerId }]);
   });
 
   it("gives each tenant its own rows, visible only in its own context", async () => {

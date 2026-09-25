@@ -11,3 +11,4 @@ export { type IdGenerator, isUuidV7, type Uuid, uuidV7Generator, uuidV7Timestamp
 export { Currency, CurrencyMismatchError, Money } from "./money.ts";
 export { Quantity, UnitMismatchError } from "./quantity.ts";
 export { cryptoRandom, type RandomSource, seededRandom } from "./random.ts";
+export { decimalString, type DecimalStringOptions } from "./wire.ts";
