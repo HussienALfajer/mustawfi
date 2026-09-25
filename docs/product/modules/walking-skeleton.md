@@ -163,6 +163,7 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
   - No real tenant tables exist yet (they start in slice 5). The catalog and isolation tests run over every table in the migrated database plus a fixture table (`rls_fixture.items`, generated with drizzle-kit); the isolation test fails for any catalog table without a registered seed, so new tables join automatically. Mutation checks: `USING (true)`, `WITH CHECK (true)`, and the unamended ADR policy each fail it.
   - `packages/testing` (`@mustawfi/testing`): a Vitest global setup starts `postgres:18.6-alpine` through Testcontainers and creates the roles; `createTestDatabase` gives each test file its own database; `inspectRlsCatalog` and `assertTenantIsolation` are generic. Role creation for production belongs to `ops`. `mustawfi_admin` and `mustawfi_portal` arrive with their apps.
   - `drizzle-kit` sits in its own package, `tools/drizzle`: installed next to Vitest, its esbuild and tsx peers split Vitest into two peer variants and broke `@fast-check/vitest`. pnpm 12 requires a decision on build scripts: `cpu-features`, `esbuild`, `protobufjs`, and `ssh2` are denied in `pnpm-workspace.yaml` (all have fallbacks or are checks only).
+  - vite's optional peers (esbuild, tsx, yaml) had still split Vitest into three installs in the lockfile, which failed CI only (a clean install). `pnpm dedupe` merged them, and `tools/agent/src/lockfile.test.ts` now fails when Vitest resolves to more than one install.
 
 ## Open questions
 
