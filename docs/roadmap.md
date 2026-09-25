@@ -14,7 +14,7 @@ Work is organized in **spec units**. A unit is one module, or a few tightly coup
 |---|---|---|
 | A1 | Foundation documents and agent setup (this repository's current contents) | Done (2026-09-25) |
 | A2 | Architecture session | Done (2026-09-25) — ADR-0014 to ADR-0028 accepted (ADR-0024 after a follow-up identity comparison) |
-| A3 | Walking skeleton (`docs/product/modules/walking-skeleton.md`) | In progress |
+| A3 | Walking skeleton (`docs/product/modules/walking-skeleton.md`) | Closing — slice 15 (receipt on a real printer) moved to `sales`; ADR-0015 rule 5 open (see the unit spec) |
 
 ### A2 — Architecture session
 
@@ -62,7 +62,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | 5 | `inventory` | inventory | Not started |
 | 6 | `treasury` | treasury | Not started |
 | 7 | `customers` | customers | Not started |
-| 8 | `sales` | sales | Not started |
+| 8 | `sales` | sales (inherits walking-skeleton slice 15: receipt on a real printer and reference-hardware timing) | Not started |
 | 9 | `purchases` | purchases | Not started |
 | 10 | `reports` | reports, owner dashboard | Not started |
 | 11 | `core-services` | core.notifications, core.data | Not started |
