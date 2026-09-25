@@ -110,5 +110,7 @@ Node.js 24 (`.nvmrc`) and pnpm (version pinned in `package.json` → `packageMan
 | `pnpm check:boundaries` | ADR-0015 boundary rules: package exports, module `dependsOn`, entry and layer rules |
 | `pnpm test` | Vitest across all workspace projects |
 | `pnpm verify` | All of the above in order — the gate before any commit; CI runs the same |
+| `pnpm verify:agent` | The same steps as `pnpm verify`, printing one line per passing step and only the errors and summary of a failing one (full logs in `node_modules/.cache/mustawfi-verify/`) |
+| `pnpm test:agent [filter]` | Vitest with only failures and the summary |
 
 A module declares its dependencies in its `package.json` as `"mustawfi": { "dependsOn": ["core.ledger", …] }` (module ids, not package names).

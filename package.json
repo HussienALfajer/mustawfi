@@ -14,7 +14,9 @@
     "typecheck": "tsc -p tsconfig.json && turbo run typecheck",
     "test": "vitest run",
     "check:boundaries": "node tools/boundaries/src/cli.ts",
-    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:boundaries && pnpm test"
+    "verify": "pnpm build && pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:boundaries && pnpm test",
+    "test:agent": "vitest run --reporter=minimal",
+    "verify:agent": "node tools/agent/src/verify-cli.ts"
   },
   "prettier": "@mustawfi/config/prettier",
   "devDependencies": {

@@ -213,6 +213,25 @@ importers:
         specifier: 5.0.1
         version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
 
+  tools/agent:
+    dependencies:
+      prettier:
+        specifier: 3.9.9
+        version: 3.9.9
+    devDependencies:
+      '@mustawfi/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.0.1
+        version: 5.0.1(@types/node@24.13.6)(vite@8.3.0(@types/node@24.13.6))
+
   tools/boundaries:
     dependencies:
       dependency-cruiser:
