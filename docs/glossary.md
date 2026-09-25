@@ -16,6 +16,22 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | جهاز رئيسي (كاشير) | Main POS device (device type `mainPos`) | `mainPosDevice` |
 | جهاز مساعد (موبايل) | Mobile companion device (device type `companion`; the browser registers as one) | `companionDevice` |
 | لوحة المالك | Owner dashboard | `ownerDashboard` |
+| القسم الافتراضي | Default department (seeded with the tenant, hidden while it is the only active one) | `defaultDepartment` |
+| نطاق الأقسام | Department scope (all, or listed departments) | `departmentScope` |
+| قالب دور | Role template | `roleTemplate` (`owner`, `accountant`, `sectionCashier`, `repairTechnician`, `topUpOperator`) |
+| حد صلاحية | Permission limit (percent, amount, or count) | `limit` |
+| إجراء (صلاحية) | Action permission | `permission` |
+| ملف المتجر | Store profile | `storeProfile` |
+| الرقم الضريبي | Tax number | `taxNumber` |
+| رقم السجل التجاري | Commercial register number | `commercialRegister` |
+| رمز نوع المستند | Document code (three letters, e.g. `INV`) | `docCode` |
+| قفل تلقائي | Auto-lock | `autoLock` |
+| قفل المستخدم على الجهاز | PIN lockout | `pinLockout` |
+| إبطال الجهاز | Device revoke | `revoke` (`revokedAt`) |
+| مسح بيانات الجهاز | Device wipe | `wipe` |
+| التحقق بخطوتين | Two-factor authentication (TOTP) | `twoFactor` |
+| رمز استرداد | Recovery code | `recoveryCode` |
+| رمز إعادة تعيين (من الدعم) | Support reset code | `resetCode` |
 
 ## Accounting
 
@@ -156,6 +172,9 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | استحقاق | Entitlement | `entitlement` |
 | إضافة مدفوعة | Add-on | `addOn` |
 | ترخيص | License | `license` |
+| حالة الترخيص | License state (`active`, `expiring`, `grace`, `readOnly`, `suspended`) | `licenseState` |
+| أقصى أيام بلا اتصال | Maximum offline days | `maxOfflineDays` |
+| حارس الساعة | Clock guard (monotonic high-water mark, ADR-0021) | `clockGuard` |
 | ترخيص دائم | Perpetual license | `perpetualLicense` |
 | صيانة سنوية | Annual maintenance | `annualMaintenance` |
 | مهلة سماح | Grace period | `gracePeriod` |
@@ -187,6 +206,7 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | تنبيه للمحاسب | Accountant flag | `flag` |
 | مخزون سالب | Negative stock (flag) | `negativeStock` |
 | عدم تطابق حسابي | Arithmetic mismatch (flag) | `arithmeticMismatch` |
+| تنبيه على العملية | Operation flag (any document type, `core.sync`) | `operationFlag` (`deviceRevoked`, `licenseReadOnly`, `permissionMissing`, `overrideNotAuthorized`, `numberGap`) |
 | قاعدة البيانات المحلية | Local database (ADR-0019) | `localDb` |
 | سلة البيع | POS cart | `cart` |
 | حالة المزامنة | Sync status (phase, pending, needs review) | `syncStatus` |

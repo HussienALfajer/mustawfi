@@ -43,3 +43,4 @@
 ## Amendments
 
 - 2026-09-25 (walking-skeleton slice 13, a temporary deviation accepted by the user on 2026-09-25): the Windows app keeps the device credential in the local database file, not the OS keystore, and holds the session token in memory only (sign in again after every start). Both move to the keystore in `core-foundation`.
+- 2026-09-25 (`core-foundation` spec, ADR-0030, accepted by the user on 2026-09-25): a revoked device may push at its first contact after revocation, and every completed document it pushes is accepted and flagged `deviceRevoked`, whatever its creation time; then it wipes its local data. PIN is also a sign-in method on its own: every user has a PIN and a password is optional; a user without a password signs in only by PIN on a registered device.
