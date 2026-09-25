@@ -103,12 +103,13 @@ Node.js 24 (`.nvmrc`) and pnpm (version pinned in `package.json` → `packageMan
 | Command | What it does |
 |---|---|
 | `pnpm install` | Install dependencies (CI uses `--frozen-lockfile`) |
-| `pnpm build` | Build every package that has a build step (Turborepo) |
+| `pnpm build` | Build every package that has a build step (Turborepo; today the web app) |
 | `pnpm format` / `pnpm format:check` | Format with Prettier / check formatting (Markdown is excluded) |
 | `pnpm lint` | ESLint, zero warnings allowed |
 | `pnpm typecheck` | TypeScript for root config and every package (Turborepo) |
 | `pnpm check:boundaries` | ADR-0015 boundary rules: package exports, module `dependsOn`, entry and layer rules |
 | `pnpm test` | Vitest across all workspace projects |
+| `pnpm test:e2e` | Playwright journeys of the web app against a real server and PostgreSQL (Docker); first run `pnpm --filter @mustawfi/web exec playwright install chromium` |
 | `pnpm verify` | All of the above in order — the gate before any commit; CI runs the same |
 | `pnpm verify:agent` | The same steps as `pnpm verify`, printing one line per passing step and only the errors and summary of a failing one (full logs in `node_modules/.cache/mustawfi-verify/`) |
 | `pnpm test:agent [filter]` | Vitest with only failures and the summary |

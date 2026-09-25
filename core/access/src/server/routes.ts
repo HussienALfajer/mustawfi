@@ -22,7 +22,14 @@ import {
   requireDevice,
 } from "./devices.ts";
 import { logIn } from "./login.ts";
-import { requireSession, revokeSession } from "./sessions.ts";
+import {
+  CLEARED_SESSION_COOKIE,
+  crossOriginRefused,
+  isSameOrigin,
+  requireSession,
+  revokeSession,
+  sessionCookie,
+} from "./sessions.ts";
 
 const tags = ["access"];
 
@@ -36,22 +43,38 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       schema: {
         tags,
         body: loginRequestSchema,
-        response: { 200: loginResponseSchema, 401: problemDetailsSchema },
+        response: {
+          200: loginResponseSchema,
+          401: problemDetailsSchema,
+          403: problemDetailsSchema,
+        },
       },
     },
-    async (request) => {
-      const loggedIn = await logIn(context.tenants, request.body, context);
-      return { ...loggedIn, expiresAt: loggedIn.expiresAt.toISOString() };
+    async (request, reply) => {
+      const { transport, ...credentials } = request.body;
+      // A forged sign-in would put the victim's browser in the attacker's session.
+      if (transport === "cookie" && !isSameOrigin(request)) throw crossOriginRefused();
+      const loggedIn = await logIn(context.tenants, credentials, context);
+      const expiresAt = loggedIn.expiresAt.toISOString();
+      if (transport === "bearer") return { ...loggedIn, expiresAt };
+      const { token, ...rest } = loggedIn;
+      reply.header("set-cookie", sessionCookie(token, loggedIn.expiresAt));
+      return { ...rest, expiresAt };
     },
   );
 
   app.post(
     "/logout",
-    { schema: { tags, response: { 204: z.null(), 401: problemDetailsSchema } } },
+    {
+      schema: {
+        tags,
+        response: { 204: z.null(), 401: problemDetailsSchema, 403: problemDetailsSchema },
+      },
+    },
     async (request, reply) => {
       const session = await requireSession(request, context);
       await revokeSession(context.tenants, session, context);
-      return reply.status(204).send(null);
+      return reply.status(204).header("set-cookie", CLEARED_SESSION_COOKIE).send(null);
     },
   );
 

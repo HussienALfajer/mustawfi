@@ -32,7 +32,7 @@ All custom properties are prefixed `--mf-`. Screens name **semantic** and **comp
 3. **Semantic** — `--mf-color-*`, one value per theme (table below).
 4. **Component** — named uses of semantic tokens: `--mf-button-primary-bg`, `-bg-hover`, `-text`, `--mf-field-bg`, `--mf-field-border`, `--mf-field-text`, `--mf-row-alt-bg`, `--mf-row-selected-bg`, `--mf-total-rule`.
 
-Switching axes, on the app root or any subtree: `data-theme` = `light` | `dark` | `system` (follows `prefers-color-scheme`), and `data-density` = `compact` | `comfortable` | `touch`. Light and comfortable are the defaults. Tailwind v4 consumes the tokens through `@theme` when the web app arrives (slice 10).
+Switching axes, on the app root or any subtree: `data-theme` = `light` | `dark` | `system` (follows `prefers-color-scheme`), and `data-density` = `compact` | `comfortable` | `touch`. Light and comfortable are the defaults. Tailwind v4 consumes them through the generated `@theme` in `packages/ui/src/styles/theme.css` (`@mustawfi/ui/theme.css`), which clears Tailwind's own palette, fonts, sizes, radii, and shadows: screens can name only semantic and component tokens (`bg-surface`, `text-text-muted`, `border-field-border`, `h-control`, `px-pad-inline`, `gap-density-gap`, `text-density`).
 
 ## Palette
 
@@ -118,7 +118,7 @@ The pairs are the usage rules. Combinations not in the list are not allowed on s
 | Padding inline / block | 8 / 4 | 12 / 8 | 16 / 12 |
 | Gap | 8 | 12 | 12 |
 
-Variables: `--mf-control-height`, `--mf-row-height`, `--mf-density-font-size`, `--mf-density-line-height`, `--mf-padding-inline`, `--mf-padding-block`, `--mf-gap`. In `touch`, every target is at least **48×48 px**; the token test checks the density values, and a component test checks rendered targets once components exist (slice 10).
+Variables: `--mf-control-height`, `--mf-row-height`, `--mf-density-font-size`, `--mf-density-line-height`, `--mf-padding-inline`, `--mf-padding-block`, `--mf-gap`. In `touch`, every target is at least **48×48 px**; the token test checks the density values, and a Playwright check measures rendered controls in `touch` density (`apps/web/e2e`).
 
 ## Shape and motion
 
@@ -128,11 +128,11 @@ Variables: `--mf-control-height`, `--mf-row-height`, `--mf-density-font-size`, `
 
 ## Direction and numbers
 
-- `dir="rtl"` is the default, not a mode. Only logical CSS properties (`margin-inline-start`, `ms-`, `text-start`…); physical ones are a lint error (slice 10).
+- `dir="rtl"` is the default, not a mode. Only logical CSS properties (`margin-inline-start`, `ms-`, `text-start`…); physical ones are a lint error (`mustawfi/no-physical-direction`; `.css` files are not linted).
 - Machine text — document numbers, IMEIs, codes, formats — is an LTR island with `unicode-bidi: isolate`, so `K7-INV-000123` never displays reordered.
 - Numeric columns align to the end, with decimal alignment and `tabular-nums`.
 - An amount never appears without its currency. A negative amount carries a minus sign **and** the negative colour.
-- Digit shapes (Latin or Arabic-Indic) and currency display names are decided with `packages/i18n` in slice 10; the preview uses Latin digits and ISO codes.
+- Digits are Latin by default, with Arabic-Indic as a per-user display setting (`DigitShapeContext` in `packages/i18n`); stored values and parsing never change. Currency labels: SYP «ل.س», USD «$», any other currency shows its ISO code (`ui` namespace).
 
 ## Brand
 

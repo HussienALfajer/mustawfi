@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { generatePreviewHtml } from "../preview/preview.ts";
 import { contrastRatio, hexToOklch, oklchToHex } from "./color.ts";
 import { checkContrast, CONTRAST_PAIRS, DECORATIVE_TOKENS, MIN_TEXT } from "./contrast.ts";
-import { generateTokenCss, themeDeclarations } from "./css.ts";
+import { generateTailwindThemeCss, generateTokenCss, themeDeclarations } from "./css.ts";
 import { ANCHORS, generatePalette, generateRamp, RAMP_SPECS, STEPS } from "./palette.ts";
 import { DENSITIES, MIN_FONT_SIZE, MIN_TOUCH_TARGET, TYPE_SCALE } from "./scale.ts";
 import { COMPONENT_TOKENS, resolveTheme, SEMANTIC_TOKENS, THEMES } from "./themes.ts";
@@ -157,6 +157,24 @@ describe("token stylesheet", () => {
   it("is committed exactly as the generator writes it (run tokens:generate)", () => {
     const committed = readFileSync(new URL("../styles/tokens.css", import.meta.url), "utf8");
     expect(committed.replaceAll("\r\n", "\n")).toBe(css);
+  });
+
+  it("commits the Tailwind theme exactly as the generator writes it (run tokens:generate)", () => {
+    const committed = readFileSync(new URL("../styles/theme.css", import.meta.url), "utf8");
+    expect(committed.replaceAll("\r\n", "\n")).toBe(generateTailwindThemeCss());
+  });
+
+  it("gives Tailwind every semantic and component token, and no primitive or raw colour", () => {
+    const theme = generateTailwindThemeCss();
+    for (const token of SEMANTIC_TOKENS) {
+      expect(theme).toContain(`--color-${token}: var(--mf-color-${token});`);
+    }
+    for (const name of Object.keys(COMPONENT_TOKENS)) {
+      expect(theme).toContain(`--color-${name}: var(--mf-${name});`);
+    }
+    expect(theme).toContain("--color-*: initial;");
+    expect(theme).not.toMatch(/var\(--mf-[a-z]+-\d+\)/);
+    expect(theme).not.toMatch(/#[0-9A-Fa-f]{3,8}\b/);
   });
 
   it("defines every semantic token in both themes through primitives only", () => {

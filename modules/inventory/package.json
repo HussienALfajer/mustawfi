@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     "./shared": "./src/shared/index.ts",
-    "./server": "./src/server/index.ts"
+    "./server": "./src/server/index.ts",
+    "./client": "./src/client/index.ts"
   },
   "mustawfi": {
     "dependsOn": [
@@ -19,20 +20,28 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@hookform/resolvers": "5.9.1",
     "@mustawfi/core-access": "workspace:*",
     "@mustawfi/core-audit": "workspace:*",
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/core-sync": "workspace:*",
     "@mustawfi/core-tenancy": "workspace:*",
+    "@mustawfi/i18n": "workspace:*",
     "@mustawfi/kernel": "workspace:*",
+    "@mustawfi/ui": "workspace:*",
+    "@tanstack/react-query": "5.103.2",
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",
     "fastify-type-provider-zod": "7.0.0",
+    "react": "19.3.0",
+    "react-hook-form": "7.88.0",
+    "react-i18next": "17.0.15",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@mustawfi/config": "workspace:*",
     "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
     "typescript": "6.0.3",
     "vitest": "5.0.1"
   }

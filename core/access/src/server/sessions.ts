@@ -128,21 +128,88 @@ export async function revokeSession(
   });
 }
 
+/** The browser's session cookie (ADR-0022); scripts never see it, and it goes to the API only. */
+export const SESSION_COOKIE = "mustawfi_session";
+
+const COOKIE_ATTRIBUTES = "Path=/api; HttpOnly; Secure; SameSite=Lax";
+
+/** The `Set-Cookie` value that hands a browser its session. */
+export function sessionCookie(token: string, expiresAt: Date): string {
+  return `${SESSION_COOKIE}=${token}; Expires=${expiresAt.toUTCString()}; ${COOKIE_ATTRIBUTES}`;
+}
+
+/** The `Set-Cookie` value that removes the session cookie. */
+export const CLEARED_SESSION_COOKIE = `${SESSION_COOKIE}=; Max-Age=0; ${COOKIE_ATTRIBUTES}`;
+
+/** The session token of a `Cookie` header, if it carries one. */
+export function cookieToken(cookie: string | undefined): string | undefined {
+  for (const part of (cookie ?? "").split(";")) {
+    const [name, ...value] = part.trim().split("=");
+    if (name === SESSION_COOKIE && value.length > 0 && value.join("=") !== "") {
+      return value.join("=");
+    }
+  }
+  return undefined;
+}
+
+/** What `requireSession` reads from a request. */
+export interface SessionRequest {
+  readonly method: string;
+  readonly headers: {
+    readonly authorization?: string | undefined;
+    readonly cookie?: string | undefined;
+    readonly origin?: string | undefined;
+    readonly host?: string | undefined;
+  };
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Whether the request's `Origin` is the host it was sent to. A browser attaches the session
+ * cookie by itself, so any change made with the cookie must come from our own pages (the CSRF
+ * check of ADR-0022). The web app and the API share one origin.
+ */
+export function isSameOrigin(request: SessionRequest): boolean {
+  const { origin, host } = request.headers;
+  if (origin === undefined || host === undefined) return false;
+  try {
+    return new URL(origin).host === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/** 403 `access.request.crossOrigin`. */
+export function crossOriginRefused(): ProblemError {
+  return new ProblemError(accessProblemCodes.crossOrigin, 403, {
+    title: "This request must come from the Mustawfi app",
+  });
+}
+
 /** The token of an `Authorization: Bearer <token>` header. */
 export function bearerToken(authorization: string | undefined): string | undefined {
   return /^Bearer ([^\s]+)$/i.exec(authorization ?? "")?.[1];
 }
 
 /**
- * The session of a request's `Authorization: Bearer` header, or a 401
- * `access.session.required` — the same refusal whatever was wrong with it. Other modules call
- * this at the top of every handler that needs a signed-in user.
+ * The session of a request's `Authorization: Bearer` header or, failing that, its session
+ * cookie; otherwise a 401 `access.session.required` — the same refusal whatever was wrong with
+ * it. A change (not GET, HEAD, OPTIONS) made with the cookie from another origin is a 403
+ * `access.request.crossOrigin`. Other modules call this at the top of every handler that needs
+ * a signed-in user.
  */
 export async function requireSession(
-  request: { readonly headers: { readonly authorization?: string | undefined } },
+  request: SessionRequest,
   context: { readonly tenants: TenantDatabase; readonly clock: Clock },
 ): Promise<Session> {
-  const token = bearerToken(request.headers.authorization);
+  let token = bearerToken(request.headers.authorization);
+  if (token === undefined) {
+    token = cookieToken(request.headers.cookie);
+    if (token !== undefined && !SAFE_METHODS.has(request.method) && !isSameOrigin(request)) {
+      throw crossOriginRefused();
+    }
+  }
   const session =
     token === undefined
       ? undefined

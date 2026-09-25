@@ -1,14 +1,22 @@
 import { Linter } from "eslint";
 import tseslint from "typescript-eslint";
 import { describe, expect, it } from "vitest";
-import { domainRules, mustawfi } from "./eslint.js";
+import { domainRules, mustawfi, uiRules } from "./eslint.js";
 
 const linter = new Linter({ configType: "flat" });
 /** @type {import("eslint").Linter.Config[]} */
 const config = [
   // Parse the fixtures as TypeScript, as the real domain code is.
   { files: ["**/*.ts"], languageOptions: { parser: /** @type {any} */ (tseslint.parser) } },
+  {
+    files: ["**/*.tsx"],
+    languageOptions: {
+      parser: /** @type {any} */ (tseslint.parser),
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+  },
   ...domainRules,
+  uiRules,
 ];
 
 /**
@@ -166,7 +174,119 @@ describe("no-ambient-randomness (ADR-0015 rule 6)", () => {
   });
 });
 
-it("the project config includes the domain rules", () => {
+describe("no-physical-direction (ADR-0024)", () => {
+  const fixture = [
+    'const a = <div className="ml-2 pr-4 text-left" />;',
+    'const b = <div className={`hover:mr-1 ${x ? "left-0" : "right-2"}`} />;',
+    'const c = <div className="-ml-px md:border-l rounded-tr-md float-right !pl-3" />;',
+    'const d = <div style={{ marginLeft: 4, paddingRight: 2, left: 0, textAlign: "right" }} />;',
+    'const e = cn("scroll-ml-2", "border-r-2");',
+    "declare const x: boolean; declare function cn(...c: string[]): string;",
+  ].join("\n");
+
+  it("fires on physical utilities and style properties in interface code", () => {
+    expect(findings(fixture, "apps/web/src/shell.tsx")).toEqual([
+      "no-physical-direction: `ml-2` names a physical side",
+      "no-physical-direction: `pr-4` names a physical side",
+      "no-physical-direction: `text-left` names a physical side",
+      "no-physical-direction: `mr-1` names a physical side",
+      "no-physical-direction: `left-0` names a physical side",
+      "no-physical-direction: `right-2` names a physical side",
+      "no-physical-direction: `-ml-px` names a physical side",
+      "no-physical-direction: `border-l` names a physical side",
+      "no-physical-direction: `rounded-tr-md` names a physical side",
+      "no-physical-direction: `float-right` names a physical side",
+      "no-physical-direction: `pl-3` names a physical side",
+      "no-physical-direction: `marginLeft` names a physical side",
+      "no-physical-direction: `paddingRight` names a physical side",
+      "no-physical-direction: `left` names a physical side",
+      "no-physical-direction: `right` names a physical side",
+      "no-physical-direction: `scroll-ml-2` names a physical side",
+      "no-physical-direction: `border-r-2` names a physical side",
+    ]);
+  });
+
+  it("fires in module screens and design-system components", () => {
+    for (const file of [
+      "core/access/src/client/login-screen.tsx",
+      "modules/inventory/src/client/products-screen.tsx",
+      "packages/ui/src/components/button.tsx",
+    ]) {
+      expect(findings('const a = <b className="mr-2" />;', file), file).toHaveLength(1);
+    }
+  });
+
+  it("allows logical utilities, symmetric ones, and data outside style", () => {
+    const code = [
+      'const a = <div className="ms-2 me-1 ps-3 pe-4 start-0 end-2 text-start text-end border-s rounded-e-md mx-2 px-1 inset-x-0" />;',
+      'const b = <div style={{ marginInlineStart: 4, insetInlineEnd: 0, textAlign: "end" }} />;',
+      "const c = { left: 1, right: 2 };",
+      'import "./left-panel.css";',
+    ].join("\n");
+    expect(findings(code, "apps/web/src/shell.tsx")).toEqual([]);
+  });
+
+  it("leaves server code, tests, and the token generator alone", () => {
+    const code = 'const a = "ml-2 text-left";';
+    expect(findings(code, "core/access/src/server/routes.ts")).toEqual([]);
+    expect(findings(code, "packages/ui/src/tokens/css.ts")).toEqual([]);
+    expect(findings(code, "apps/web/src/shell.test.tsx")).toEqual([]);
+  });
+});
+
+describe("no-literal-string (ADR-0023)", () => {
+  const fixture = [
+    "const a = <p>تسجيل الدخول</p>;",
+    "const b = <p>Sign in</p>;",
+    'const c = <p>{"حفظ"}</p>;',
+    "const d = <p>{`مرحبًا ${name}`}</p>;",
+    'const e = <input aria-label="بحث" placeholder="Search" title="x" />;',
+    'const f = <Field label="الاسم" description={"وصف"} errorMessage="خطأ" />;',
+    'const g = <img alt="logo" />;',
+    "declare const name: string; declare function Field(p: object): null;",
+  ].join("\n");
+
+  it("fires on literal text in JSX and in user-facing attributes", () => {
+    expect(findings(fixture, "modules/inventory/src/client/products-screen.tsx")).toEqual([
+      'no-literal-string: Literal text "تسجيل الدخول" in JSX',
+      'no-literal-string: Literal text "Sign in" in JSX',
+      'no-literal-string: Literal text "حفظ" in JSX',
+      'no-literal-string: Literal text "مرحبًا" in JSX',
+      'no-literal-string: Literal `aria-label` text "بحث"',
+      'no-literal-string: Literal `placeholder` text "Search"',
+      'no-literal-string: Literal `title` text "x"',
+      'no-literal-string: Literal `label` text "الاسم"',
+      'no-literal-string: Literal `description` text "وصف"',
+      'no-literal-string: Literal `errorMessage` text "خطأ"',
+      'no-literal-string: Literal `alt` text "logo"',
+    ]);
+  });
+
+  it("allows translated text, numbers, punctuation, and non-text attributes", () => {
+    const code = [
+      'const a = <p className="text-sm" data-testid="total" id="x">{t("login.title")}</p>;',
+      'const b = <p>{count} · 12:30 — {"/"}</p>;',
+      'const c = <input type="password" autoComplete="current-password" name="password" aria-label={t("x")} />;',
+      "declare const count: number; declare function t(key: string): string;",
+    ].join("\n");
+    expect(findings(code, "apps/web/src/shell.tsx")).toEqual([]);
+  });
+
+  it("fires in every interface location and leaves tests alone", () => {
+    const code = "const a = <p>نص</p>;";
+    for (const file of [
+      "apps/web/src/main.tsx",
+      "packages/ui/src/components/data-table.tsx",
+      "core/access/src/client/login-screen.tsx",
+    ]) {
+      expect(findings(code, file), file).toHaveLength(1);
+    }
+    expect(findings(code, "packages/ui/src/components/button.test.tsx")).toEqual([]);
+  });
+});
+
+it("the project config includes the domain and interface rules", () => {
   const project = mustawfi({ tsconfigRootDir: import.meta.dirname });
   for (const entry of domainRules) expect(project).toContainEqual(entry);
+  expect(project).toContainEqual(uiRules);
 });

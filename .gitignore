@@ -41,3 +41,7 @@ Thumbs.db
 
 # Turborepo
 .turbo/
+
+# Playwright
+test-results/
+playwright-report/

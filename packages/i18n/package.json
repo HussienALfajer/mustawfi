@@ -1,0 +1,24 @@
+{
+  "name": "@mustawfi/i18n",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@mustawfi/config": "workspace:*",
+    "@types/react": "19.3.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "i18next": "26.4.2",
+    "i18next-icu": "2.4.4",
+    "intl-messageformat": "11.2.15",
+    "react": "19.3.0",
+    "react-i18next": "17.0.15"
+  }
+}

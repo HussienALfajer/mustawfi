@@ -22,6 +22,8 @@ export {
   revokeSession,
   type Session,
   SESSION_LIFETIME_MS,
+  SESSION_COOKIE,
+  type SessionRequest,
   type SessionUser,
 } from "./sessions.ts";
 export { createOwner, isTenantUser, type NewOwner } from "./users.ts";
