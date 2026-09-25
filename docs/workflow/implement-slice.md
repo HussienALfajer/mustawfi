@@ -37,7 +37,7 @@ Stop at a clean, green boundary, commit what is done, split the remainder into a
 - If a mistake repeated during the session, propose a one-line gotcha for `AGENTS.md`.
 - Commit with a Conventional Commits message, push the branch, open a PR, and enable auto-merge (squash); GitHub merges once `verify` passes and deletes the branch. If the slice touched a non-negotiable or an ADR, don't enable auto-merge: leave the PR for the user under **ينتظرك**.
 - If CI fails, diagnose and fix it in code (at most three attempts; never weaken a test or a check), then push again. After three failures, stop and report under **ينتظرك**.
-- Once merged, update local `main` and delete the local branch.
+- Once merged, update local `main` and delete the local branch. If the PR is not merged when the session reports, **ينتظرك** carries the cleanup command instead (`AGENTS.md` → Reporting).
 - Report per `AGENTS.md`. The next step is the next slice with its effort, or the unit's close when this was the last slice.
 
 **Done when:** the slice's Done criteria are proven by checks, both reviews show no blocking findings, the spec is updated, and the work is merged (or waiting for the user with a stated reason).

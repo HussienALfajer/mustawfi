@@ -37,6 +37,15 @@ Everything above is shared with other coding agents. This part applies to Claude
   `جلسة جديدة ← /effort high ← /implement-slice core-money 3`
 - Slice progress lives in the unit spec's slice table, not in the conversation.
 
+## Commands for the user
+
+- Every command the user should run goes in its own fenced block tagged `bash`, so the desktop app shows a Run button: one line, no `$` prompt, no output inside the block. The user's terminal is Windows PowerShell 5.1, so chain with `;`, never `&&`.
+- The branch cleanup under **ينتظرك** (`AGENTS.md` → Reporting) is always such a block, with the real branch name, for example:
+
+  ```bash
+  git switch main; git pull --ff-only; git branch -d slice/core-foundation-1-license
+  ```
+
 # Compact instructions
 
 When compacting, keep: the current spec unit and slice number, its Done criteria, files changed so far, failing test names with their errors, decisions made this session, and open questions for the user.
