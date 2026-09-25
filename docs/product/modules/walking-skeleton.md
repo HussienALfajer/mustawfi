@@ -1,6 +1,6 @@
 # Walking skeleton (`walking-skeleton`)
 
-- Status: Closing — waiting for the user's decision on ADR-0015 rule 5 (acceptance criterion 4) and on the sync route amendment of ADR-0020; slice 15 moved to the `sales` unit
+- Status: Closing — slice 16 (ADR-0015 rule 5 check) remains; slice 15 moved to the `sales` unit
 - Modules covered: thin slices of `core.tenancy`, `core.access`, `core.audit`, `core.config` (registry only), `core.ledger`, `core.sync`, `inventory`, `sales`; packages `kernel`, `ui`, `i18n`, `local-db`, `testing`
 - Spec agreed with the user on: 2026-09-25 (Phase A2 architecture session)
 
@@ -102,7 +102,7 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 1. The full path (flows 1–7) runs as a Playwright end-to-end test in CI.
 2. `AGENTS.md` → Commands lists the real build, test, lint, typecheck, and verify commands.
 3. A `verify` skill, the hooks, and the path-scoped rules exist and are used by the slices after they land.
-4. Every boundary rule of ADR-0015 fails the build on its fixture violation. *(Close review: rules 1–4 and 6 have fixture tests; rule 5 — table definitions not exported, SQL only in the module's own schema — holds in the code today but has no check. Open for the user's decision.)*
+4. Every boundary rule of ADR-0015 fails the build on its fixture violation. *(Close review: rules 1–4 and 6 have fixture tests; rule 5 — table definitions not exported, SQL only in the module's own schema — holds in the code today but has no check; the user chose on 2026-09-25 to add it as slice 16 before the unit closes.)*
 5. The RLS catalog test, the isolation test, and the ledger property test pass in CI.
 6. The user approved the generated palette on the preview page.
 7. The Windows desktop app sells offline through native SQLite, and a receipt printed from the spike is legible Arabic on a real printer. *(The real-printer half moved to the `sales` unit with slice 15; the receipt pipeline up to the Windows spooler is built and tested here.)*
@@ -134,6 +134,7 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 | 13 | Windows desktop shell | The Tauri spike chooses the SQLite binding (recorded in ADR-0019's consequences); the native adapter passes the `LocalDb` contract suite, including multi-statement transactions, with WAL and `synchronous = FULL`; an offline sale works in the packaged app (manual check recorded); a CI job on a Windows runner builds the installer | high | 11 | Done 2026-09-25 — see deviations below |
 | 14 | Receipt printing spike | A LiquidJS receipt template renders to a 576-dot raster with the bundled Arabic font; ESC/POS bytes are produced with the encoder, including cut and drawer kick; printed through the Windows spooler in RAW mode on one real printer, legible (photo recorded); receipt-to-printer time is measured on reference hardware, and the chosen rasterizer is recorded in ADR-0025 | medium | 13 | Done 2026-09-25 — the real-printer and reference-hardware checks split into slice 15; see deviations below |
 | 15 | Receipt on a real printer | One 80 mm ESC/POS printer on Windows prints a sale's receipt through the spooler in RAW mode from the Windows app: legible Arabic, figures, and double rule (photo recorded in the slice notes); the paper is cut and the cash drawer opens when enabled; receipt-to-printer time (including the spooler send) is measured on the reference low-end PC and recorded in ADR-0025, and if it misses 1 s the cause is profiled and a fix or a follow-up is recorded | medium | 14 | Moved to the `sales` unit (2026-09-25, user decision: no thermal printer available) |
+| 16 | ADR-0015 rule 5 check (added at the unit close, 2026-09-25) | `pnpm check:boundaries` fails when a module entry (`shared`, `server`, `client`) exports its Drizzle table definitions, directly or through a re-export (fixture test); it fails when a module's SQL or Drizzle schema names another module's PostgreSQL schema other than through the foreign keys ADR-0016 allows to modules in `dependsOn` (fixture test); it passes on the current code; ADR-0015's amendment and acceptance criterion 4 are updated | medium | 1 | Not started |
 
 ### Slice notes and deviations
 
@@ -302,4 +303,4 @@ The unit closed on 2026-09-25. What it leaves open, by the unit that takes it:
 - 2026-09-25 — Slice 12 done: sync simulation harness v1 (`@mustawfi/testing/sync-sim`: seeded faulty network, runner, convergence checks) and a three-device scenario against the real server in CI.
 - 2026-09-25 — Slice 13 done: Windows desktop shell (Tauri 2), native `rusqlite` LocalDb core passing the contract suite, `VACUUM INTO` backups, browser registers as companion, Windows installer CI job; binding recorded in ADR-0019 (amendment and ADR-0022 deviations accepted by the user).
 - 2026-09-25 — Slice 14 done: receipt pipeline (`@mustawfi/printing`: LiquidJS template, sandboxed-frame rasterizer, 1-bit, ESC/POS), Windows spooler RAW transport (`mustawfi-printing`), receipt template in `sales`, printer page and preview/print in the app; rasterizer recorded in ADR-0025. Real-printer and reference-hardware checks split into slice 15.
-- 2026-09-25 — Unit close review. Slice 15 moved to the `sales` unit (user decision: no thermal printer available); acceptance criterion 7's real-printer half goes with it. What later units inherit is listed under *Carried to later units*.
+- 2026-09-25 — Unit close review (the user accepted the ADR-0020 route amendment and chose to add slice 16 for ADR-0015 rule 5). Slice 15 moved to the `sales` unit (user decision: no thermal printer available); acceptance criterion 7's real-printer half goes with it. What later units inherit is listed under *Carried to later units*.

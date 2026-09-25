@@ -11,7 +11,7 @@ The server is TypeScript (ADR-0010 chose TypeScript for the UI; one language let
 
 - **Runtime:** Node.js active LTS (24 today), pinned in `.nvmrc`; moving to the next LTS is a deliberate change, not a drift. ESM only, TypeScript `strict`.
 - **Framework:** Fastify 5. Each module registers its routes as an encapsulated Fastify plugin from its `server` entry; the module registry (`core.config`) decides what is mounted.
-- **API style:** HTTP + JSON, resource-oriented REST under `/api/v1`. Sync has its own protocol (ADR-0020), mounted at `/api/v1/sync` (ADR-0020 amendment, proposed 2026-09-25).
+- **API style:** HTTP + JSON, resource-oriented REST under `/api/v1`. Sync has its own protocol (ADR-0020), mounted at `/api/v1/sync` (ADR-0020 amendment, accepted 2026-09-25).
 - **Contracts and validation:** request and response schemas are **Zod** schemas in each module's `shared` entry, used on the server (via `fastify-type-provider-zod`), in client forms, and when validating local data. OpenAPI is generated from them; the client calls the API through a thin typed wrapper over the same schemas.
 - **Errors:** RFC 9457 problem details with a stable machine code (`inventory.product.barcodeTaken`); the client turns the code into an Arabic message through i18n. A business refusal is a value with a code; an unexpected failure is a 500 that reaches error reporting.
 - **Background work:** `pg-boss` (PostgreSQL-backed queue), enqueued inside the same transaction as the change that causes it. No Redis.

@@ -61,5 +61,5 @@ ADR-0005 sets the conflict model: documents are append-only, master data is serv
 
 ## Amendments
 
-- 2026-09-25 (walking-skeleton slice 8; **proposed, awaiting the user's acceptance** at the unit close): the routes are `POST /api/v1/sync/push` and `GET /api/v1/sync/pull`, not `/sync/v1/…`. The module registry mounts every module under `/api/v1/<module>`, so the API version stands for the protocol version until the two need to diverge. ADR-0014's mention of `/sync/v1` follows this amendment.
+- 2026-09-25 (walking-skeleton slice 8; accepted by the user on 2026-09-25 at the unit close): the routes are `POST /api/v1/sync/push` and `GET /api/v1/sync/pull`, not `/sync/v1/…`. The module registry mounts every module under `/api/v1/<module>`, so the API version stands for the protocol version until the two need to diverge. ADR-0014's mention of `/sync/v1` follows this amendment.
 - 2026-09-25 (walking-skeleton close, a deferral, not a change of decision): pull has no per-device scope filter yet, and which entities sync down is not declared in module manifests (modules call `recordChange`); both, with bootstrap and compaction, belong to the `core-sync` unit.
