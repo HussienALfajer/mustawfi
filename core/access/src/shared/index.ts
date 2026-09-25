@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export { accessGrant, type AccessGrant, type LimitValue, type RoleAccess } from "./grant.ts";
+
 /** A user's login name: lower case after trimming, letters, digits, `.`, `_`, `-`. */
 export const loginSchema = z
   .string()
@@ -11,6 +13,8 @@ export const loginSchema = z
 export const passwordSchema = z.string().min(10).max(256);
 
 export const userNameSchema = z.string().trim().min(1).max(200);
+
+export const roleNameSchema = z.string().trim().min(1).max(100);
 
 export const newOwnerSchema = z.object({
   name: userNameSchema,
@@ -41,11 +45,24 @@ export const loginRequestSchema = z.object({
   transport: z.enum(["bearer", "cookie"]).default("bearer"),
 });
 
+/** A user's department scope: every department, or the listed ones. */
+export const departmentScopeSchema = z.enum(["all", "listed"]);
+export type DepartmentScope = z.infer<typeof departmentScopeSchema>;
+
+/** The signed-in user with their role, scope, and effective permissions (`core-foundation` slice 5). */
 export const sessionUserSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   login: z.string(),
-  isOwner: z.boolean(),
+  role: z.object({ id: z.uuid(), name: z.string(), isOwner: z.boolean() }),
+  departmentScope: departmentScopeSchema,
+  /** The active departments of a `listed` scope; empty for `all`. */
+  departments: z.array(z.uuid()),
+  /**
+   * Every declared permission the user holds; a scoped one holds only in the scope's
+   * departments (rule 15).
+   */
+  permissions: z.array(z.string()),
 });
 
 export const loginResponseSchema = z.object({
@@ -103,8 +120,10 @@ export const accessProblemCodes = {
   loginFailed: "access.login.failed",
   /** No session, or a malformed, unknown, expired, or revoked one. */
   sessionRequired: "access.session.required",
-  /** The action needs the tenant's owner. */
-  ownerRequired: "access.permission.ownerRequired",
+  /** The user's role lacks the permission the action needs (`core-foundation` rule 17). */
+  permissionDenied: "access.permission.denied",
+  /** A role naming a permission or limit no module declares, or a malformed limit value. */
+  roleInvalid: "access.role.invalid",
   /** Unknown store, or a registration code that is unknown, used, or expired. */
   registrationFailed: "access.registration.failed",
   /** Every device prefix of the tenant is taken. */

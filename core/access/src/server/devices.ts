@@ -221,8 +221,8 @@ export async function authenticateDevice(
 
 /**
  * The device of a request's `Authorization: Bearer` device credential, or a 401
- * `access.device.required` — the same refusal whatever was wrong with it. Sync calls this:
- * a device syncs as itself, and each operation names the user who performed it (ADR-0022).
+ * `access.device.required` — the same refusal whatever was wrong with it. The route guard
+ * calls this for `device` routes (sync): a device syncs as itself, and each operation names the user who performed it (ADR-0022).
  */
 export async function requireDevice(
   request: { readonly headers: { readonly authorization?: string | undefined } },

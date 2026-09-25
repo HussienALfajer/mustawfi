@@ -1,4 +1,5 @@
-import { isTenantUser, type Device } from "@mustawfi/core-access/server";
+import { type Device, userAccess } from "@mustawfi/core-access/server";
+import { accessGrant } from "@mustawfi/core-access/shared";
 import { ProblemError } from "@mustawfi/core-config/server";
 import type { TenantDatabase, TenantTransaction } from "@mustawfi/core-tenancy/server";
 import { eq, max, sql } from "drizzle-orm";
@@ -15,6 +16,7 @@ import {
   type SyncHandlerDependencies,
   type SyncOperationTable,
 } from "./operations.ts";
+import { flagOperation } from "./flags.ts";
 import { receivedOps } from "./schema.ts";
 
 export interface PushDependencies extends SyncHandlerDependencies {
@@ -178,8 +180,35 @@ async function processOperation(
       `${operation.type} has no payload version ${String(operation.payloadVersion)} here`,
     );
   }
-  if (!(await isTenantUser(tx, operation.userId))) {
-    throw new OperationRejected(syncProblemCodes.unknownUser);
+  const user = await userAccess(tx, operation.userId);
+  if (user === undefined) throw new OperationRejected(syncProblemCodes.unknownUser);
+  const { access } = definition;
+  if (access !== "device") {
+    // Checked with the user's role at ingest; a miss is recorded, not refused (rule 17).
+    const departmentId = access.department?.(operation.payload);
+    const grant = accessGrant(dependencies.operations.permissionCatalogue, user.access);
+    const scoped =
+      dependencies.operations.permissionCatalogue.permissions.get(access.permission)?.scoped ===
+      true;
+    // A scoped operation that names no department cannot be shown to be allowed: flagged (the
+    // handler usually rejects such a payload, which rolls the flag back with it).
+    const allowed =
+      scoped && departmentId === undefined ? false : grant.can(access.permission, departmentId);
+    if (!allowed) {
+      await flagOperation(
+        tx,
+        operation,
+        {
+          code: "permissionMissing",
+          detail: {
+            permission: access.permission,
+            ...(departmentId === undefined ? {} : { departmentId }),
+            roleId: user.role.id,
+          },
+        },
+        dependencies,
+      );
+    }
   }
   const result: SyncValues = await handler(tx, operation, dependencies);
   await store(tx, operation, { status: "accepted", result });

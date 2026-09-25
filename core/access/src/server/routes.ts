@@ -1,11 +1,9 @@
-import { ProblemError } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import { currentTenant } from "@mustawfi/core-tenancy/server";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
-  accessProblemCodes,
   currentDeviceSchema,
   currentSessionSchema,
   loginRequestSchema,
@@ -15,18 +13,13 @@ import {
   registrationCodeResponseSchema,
 } from "../shared/index.ts";
 import type { AccessContext } from "./dependencies.ts";
-import {
-  issueRegistrationCode,
-  registerDevice,
-  registrationFailed,
-  requireDevice,
-} from "./devices.ts";
+import { issueRegistrationCode, registerDevice, registrationFailed } from "./devices.ts";
 import { logIn } from "./login.ts";
+import { deviceOf, sessionOf } from "./route-access.ts";
 import {
   CLEARED_SESSION_COOKIE,
   crossOriginRefused,
   isSameOrigin,
-  requireSession,
   revokeSession,
   sessionCookie,
 } from "./sessions.ts";
@@ -40,6 +33,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/login",
     {
+      config: { access: "public" },
       schema: {
         tags,
         body: loginRequestSchema,
@@ -66,13 +60,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/logout",
     {
+      config: { access: "session" },
       schema: {
         tags,
         response: { 204: z.null(), 401: problemDetailsSchema, 403: problemDetailsSchema },
       },
     },
     async (request, reply) => {
-      const session = await requireSession(request, context);
+      const session = sessionOf(request);
       await revokeSession(context.tenants, session, context);
       return reply.status(204).header("set-cookie", CLEARED_SESSION_COOKIE).send(null);
     },
@@ -80,9 +75,12 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
 
   app.get(
     "/session",
-    { schema: { tags, response: { 200: currentSessionSchema, 401: problemDetailsSchema } } },
-    async (request) => {
-      const session = await requireSession(request, context);
+    {
+      config: { access: "session" },
+      schema: { tags, response: { 200: currentSessionSchema, 401: problemDetailsSchema } },
+    },
+    (request) => {
+      const session = sessionOf(request);
       return {
         tenantId: session.tenantId,
         expiresAt: session.expiresAt.toISOString(),
@@ -94,6 +92,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/registration-codes",
     {
+      config: { access: { permission: "access.devices.manage" } },
       schema: {
         tags,
         response: {
@@ -104,12 +103,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       },
     },
     async (request, reply) => {
-      const session = await requireSession(request, context);
-      if (!session.user.isOwner) {
-        throw new ProblemError(accessProblemCodes.ownerRequired, 403, {
-          title: "Only the store owner can do this",
-        });
-      }
+      const session = sessionOf(request);
       const issued = await context.tenants.withTenant(
         { tenantId: session.tenantId, userId: session.user.id },
         async (tx) => {
@@ -130,6 +124,8 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/devices",
     {
+      // The registration code is the credential (ADR-0022).
+      config: { access: "public" },
       schema: {
         tags,
         body: registerDeviceRequestSchema,
@@ -153,9 +149,12 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
 
   app.get(
     "/devices/current",
-    { schema: { tags, response: { 200: currentDeviceSchema, 401: problemDetailsSchema } } },
-    async (request) => {
-      const device = await requireDevice(request, context);
+    {
+      config: { access: "device" },
+      schema: { tags, response: { 200: currentDeviceSchema, 401: problemDetailsSchema } },
+    },
+    (request) => {
+      const device = deviceOf(request);
       return {
         deviceId: device.deviceId,
         tenantId: device.tenantId,

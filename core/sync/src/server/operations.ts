@@ -1,4 +1,4 @@
-import { problemCodeSchema } from "@mustawfi/core-config/shared";
+import { type PermissionCatalogue, problemCodeSchema } from "@mustawfi/core-config/shared";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import type { Clock, IdGenerator } from "@mustawfi/kernel";
 import { operationTypeSchema, type SyncValues } from "../shared/index.ts";
@@ -43,9 +43,27 @@ export type SyncOperationHandler = (
   dependencies: SyncHandlerDependencies,
 ) => Promise<SyncValues>;
 
+/**
+ * What the user an operation names must hold (`core-foundation` rule 17): a permission, with
+ * the department it is checked in when the permission is scoped, or `device` for an operation
+ * any user of a registered device may send (device audit events). A user without the
+ * permission does not stop the operation: it is recorded and flagged `permissionMissing`.
+ */
+export type SyncOperationAccess =
+  | "device"
+  | {
+      readonly permission: string;
+      /**
+       * The department of the operation, read from its unchecked payload; required for a scoped
+       * permission. `undefined` for a payload without one: the handler rejects it as malformed.
+       */
+      readonly department?: (payload: Readonly<Record<string, unknown>>) => string | undefined;
+    };
+
 /** An operation type a module handles, with a handler per payload version it still accepts. */
 export interface SyncOperationDefinition {
   readonly type: string;
+  readonly access: SyncOperationAccess;
   readonly versions: Readonly<Record<number, SyncOperationHandler>>;
 }
 
@@ -69,14 +87,18 @@ export class OperationRejected extends Error {
 export interface SyncOperationTable {
   readonly types: readonly string[];
   get(type: string): SyncOperationDefinition | undefined;
+  /** The permissions the operations' access is checked against. */
+  readonly permissionCatalogue: PermissionCatalogue;
 }
 
 /**
  * Builds the table the push endpoint dispatches through. Refuses a type defined twice, a
- * malformed type, or a type without any payload version.
+ * malformed type, a type without any payload version, and a type whose access names a
+ * permission `catalogue` does not declare or a scoped one without its department.
  */
 export function createSyncOperationTable(
   definitions: readonly SyncOperationDefinition[],
+  catalogue: PermissionCatalogue,
 ): SyncOperationTable {
   const byType = new Map<string, SyncOperationDefinition>();
   for (const definition of definitions) {
@@ -88,10 +110,28 @@ export function createSyncOperationTable(
     if (versions.length === 0 || !versions.every((v) => /^[1-9]\d*$/.test(v))) {
       throw new TypeError(`sync operation ${definition.type} needs payload versions from 1`);
     }
+    const access = definition.access as SyncOperationAccess | undefined;
+    if (access === undefined || (access !== "device" && typeof access !== "object")) {
+      throw new TypeError(`sync operation ${definition.type} declares no access`);
+    }
+    if (access !== "device") {
+      const declared = catalogue.permissions.get(access.permission);
+      if (declared === undefined) {
+        throw new TypeError(
+          `sync operation ${definition.type} needs ${access.permission}, which no module declares`,
+        );
+      }
+      if (declared.scoped && access.department === undefined) {
+        throw new TypeError(
+          `sync operation ${definition.type} needs the scoped ${access.permission}: say where its department is`,
+        );
+      }
+    }
     byType.set(definition.type, definition);
   }
   return {
     types: [...byType.keys()],
     get: (type) => byType.get(type),
+    permissionCatalogue: catalogue,
   };
 }

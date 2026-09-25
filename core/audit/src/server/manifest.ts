@@ -8,5 +8,7 @@ import { defineModule } from "@mustawfi/core-config/server";
 export const auditModule = defineModule({
   id: "core.audit",
   dependsOn: ["core.config", "core.tenancy"],
+  /** Reading the log (`core-foundation` rule 35); the screen and its route come in slice 17. */
+  permissions: [{ id: "audit.view", grants: ["accountant"] }],
   migrations: fileURLToPath(new URL("../../migrations", import.meta.url)),
 });

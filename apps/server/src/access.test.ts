@@ -8,11 +8,12 @@ import { createTestDatabase, sqlState, type TestDatabase } from "@mustawfi/testi
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildServer } from "./app.ts";
+import { buildHostServer } from "./host-server.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
-import { createServerRegistry, hostSyncOperations } from "./modules.ts";
+import { createServerRegistry } from "./modules.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
+import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -48,14 +49,13 @@ beforeAll(async () => {
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   superuser = await database.connect("superuser");
   const registry = createServerRegistry();
-  server = await buildServer({
+  server = await buildHostServer({
     registry,
-    context: {
+    services: {
       tenants,
       clock,
       newId,
       random: cryptoRandom,
-      syncOperations: hostSyncOperations(registry),
     },
   });
   store = await newTenant("متجر النور");
@@ -121,7 +121,14 @@ describe("password login", () => {
     expect(body).toMatchObject({
       tenantId: store.tenantId,
       expiresAt: new Date(clock.now().getTime() + SESSION_LIFETIME_MS).toISOString(),
-      user: { id: store.ownerId, name: "أحمد", login: "ahmad", isOwner: true },
+      user: {
+        id: store.ownerId,
+        name: "أحمد",
+        login: "ahmad",
+        role: { name: "المالك", isOwner: true },
+        departmentScope: "all",
+        departments: [],
+      },
     });
     expect(body.token).toMatch(new RegExp(`^s1\\.${store.tenantId}\\.[A-Za-z0-9_-]{43}$`));
 
@@ -534,17 +541,23 @@ describe("device registration", () => {
     );
   });
 
-  it("refuses to issue a code to a user who is not the owner", async () => {
+  it("issues codes only to a role holding access.devices.manage", async () => {
     const other = await newTenant("متجر الموظف");
-    await superuser.query("update core_access.users set is_owner = false where id = $1", [
-      other.ownerId,
-    ]);
-    const response = await server.inject({
-      method: "POST",
-      url: "/api/v1/access/registration-codes",
-      headers: bearer(await tokenFor(other)),
-    });
-    expectProblem(response, 403, accessProblemCodes.ownerRequired);
+    const issue = async (permissions: string[]) => {
+      const staff = await createStaffUser(
+        tenants,
+        other,
+        { login: `staff-${String(permissions.length)}`, permissions },
+        dependencies,
+      );
+      return server.inject({
+        method: "POST",
+        url: "/api/v1/access/registration-codes",
+        headers: bearer(await signInAs(server, other, staff.login)),
+      });
+    };
+    expectProblem(await issue(["access.users.manage"]), 403, accessProblemCodes.permissionDenied);
+    expect((await issue(["access.users.manage", "access.devices.manage"])).statusCode).toBe(201);
   });
 });
 
@@ -699,9 +712,23 @@ describe("audit log", () => {
         device_id: null,
         entity_type: "access.user",
         entity_id: tenant.ownerId,
-        after: { name: "أحمد", login: "ahmad", isOwner: true },
+        after: {
+          name: "أحمد",
+          login: "ahmad",
+          roleId: expect.any(String) as string,
+          departmentScope: "all",
+        },
       },
     ]);
+    const roles = await auditOf(tenant.tenantId, "access.role.created");
+    expect(roles.map((entry) => entry.after?.["template"])).toEqual([
+      "owner",
+      "accountant",
+      "sectionCashier",
+      "repairTechnician",
+      "topUpOperator",
+    ]);
+    for (const entry of roles) expect(entry.created_by).toBe(tenant.ownerId);
     const { rows } = await superuser.query<{ text: string }>(
       "select string_agg(to_jsonb(e)::text, ' ') as text from core_audit.entries e",
     );

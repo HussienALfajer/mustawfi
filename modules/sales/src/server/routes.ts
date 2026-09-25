@@ -1,6 +1,4 @@
-import { requireSession } from "@mustawfi/core-access/server";
-import { accessProblemCodes } from "@mustawfi/core-access/shared";
-import { ProblemError } from "@mustawfi/core-config/server";
+import { sessionOf } from "@mustawfi/core-access/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -17,6 +15,7 @@ export function salesRoutes(scope: FastifyInstance, context: SalesContext): void
   app.get(
     "/invoices",
     {
+      config: { access: { permission: "sales.invoices.view" } },
       schema: {
         tags,
         querystring: invoiceListQuerySchema,
@@ -24,13 +23,7 @@ export function salesRoutes(scope: FastifyInstance, context: SalesContext): void
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
-      // The skeleton's one permission: the owner (the permission model is `core-foundation`'s).
-      if (!session.user.isOwner) {
-        throw new ProblemError(accessProblemCodes.ownerRequired, 403, {
-          title: "Only the store owner can do this",
-        });
-      }
+      const session = sessionOf(request);
       const items = await context.tenants.withTenant(
         { tenantId: session.tenantId, userId: session.user.id },
         (tx) => listInvoices(tx, request.query),

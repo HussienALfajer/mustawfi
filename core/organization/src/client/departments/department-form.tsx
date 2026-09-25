@@ -35,8 +35,8 @@ export function departmentProblem(error: unknown): string {
       return "archived";
     case tenancyProblemCodes.departmentNotFound:
       return "notFound";
-    case accessProblemCodes.ownerRequired:
-      return "ownerRequired";
+    case accessProblemCodes.permissionDenied:
+      return "permissionDenied";
     default:
       return "refused";
   }

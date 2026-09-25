@@ -1,5 +1,21 @@
 export { documentCodeSchema } from "./document-code.ts";
 export {
+  type DeclaredLimit,
+  type DeclaredPermission,
+  type LimitDeclaration,
+  limitIdSchema,
+  type LimitKind,
+  limitKindSchema,
+  limitValueSchema,
+  type PermissionCatalogue,
+  type PermissionDeclaration,
+  permissionIdSchema,
+  permissionPrefix,
+  ROLE_TEMPLATES,
+  type RoleTemplate,
+  roleTemplateSchema,
+} from "./permissions.ts";
+export {
   hostProblemCodes,
   problemCodeSchema,
   problemDetailsSchema,

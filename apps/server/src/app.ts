@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
+import type { RouteAccess } from "@mustawfi/core-access/server";
 import type { ModuleRegistry } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
@@ -18,6 +19,11 @@ export const OPENAPI_PATH = "/api/v1/openapi.json";
 export interface ServerOptions<Context> {
   readonly registry: ModuleRegistry<Context>;
   readonly context: Context;
+  /**
+   * Installs route authorization before any route is added (`installRouteAccess` from
+   * `core.access`): every route must then declare `config.access` (`core-foundation` rule 17).
+   */
+  readonly guard: (app: FastifyInstance) => void;
   readonly logger?: FastifyServerOptions["logger"];
   /**
    * Origins of the native shells' web views (the Windows app is `http://tauri.localhost`),
@@ -30,7 +36,7 @@ export interface ServerOptions<Context> {
 /**
  * The Fastify host (ADR-0014): Zod validates requests and serializes responses, every error is
  * problem details, OpenAPI is generated from the routes' Zod schemas, and each enabled module
- * of the registry is mounted in its own scope under `/api/v1/<module>`.
+ * of the registry is mounted in its own scope under `/api/v1/<module>`, behind the route guard.
  */
 export async function buildServer<Context>(
   options: ServerOptions<Context>,
@@ -62,10 +68,14 @@ export async function buildServer<Context>(
     transformObject: jsonSchemaTransformObject,
   });
 
+  options.guard(app);
+
+  const open: { readonly access: RouteAccess } = { access: "public" };
   const api = app.withTypeProvider<ZodTypeProvider>();
   api.get(
     "/api/v1/health",
     {
+      config: open,
       schema: {
         tags: ["host"],
         response: { 200: z.object({ status: z.literal("ok") }), 500: problemDetailsSchema },
@@ -73,7 +83,7 @@ export async function buildServer<Context>(
     },
     () => ({ status: "ok" as const }),
   );
-  api.get(OPENAPI_PATH, { schema: { hide: true } }, () => app.swagger());
+  api.get(OPENAPI_PATH, { config: open, schema: { hide: true } }, () => app.swagger());
 
   await options.registry.mount(app, options.context);
   return app;

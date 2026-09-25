@@ -290,5 +290,11 @@ async function postInvoiceV1(
 /** `sales.invoice.post`: a completed sale, pushed by the device that made it. */
 export const invoicePostOperation: SyncOperationDefinition = {
   type: INVOICE_POST_OPERATION,
+  // Checked in the invoice's department at ingest; a cashier without it is flagged, not refused.
+  access: {
+    permission: "sales.invoice.create",
+    department: (payload) =>
+      typeof payload["departmentId"] === "string" ? payload["departmentId"] : undefined,
+  },
   versions: { 1: postInvoiceV1 },
 };

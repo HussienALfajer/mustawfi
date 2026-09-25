@@ -1,4 +1,4 @@
-import { requireDevice } from "@mustawfi/core-access/server";
+import { deviceOf } from "@mustawfi/core-access/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -24,6 +24,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
   app.post(
     "/push",
     {
+      config: { access: "device" },
       schema: {
         tags,
         body: pushRequestSchema,
@@ -31,7 +32,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
       },
     },
     async (request) => {
-      const device = await requireDevice(request, context);
+      const device = deviceOf(request);
       return pushOperations(context.tenants, device, request.body.operations, {
         clock: context.clock,
         newId: context.newId,
@@ -43,6 +44,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
   app.get(
     "/pull",
     {
+      config: { access: "device" },
       schema: {
         tags,
         querystring: pullQuerySchema,
@@ -50,7 +52,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
       },
     },
     async (request) => {
-      const device = await requireDevice(request, context);
+      const device = deviceOf(request);
       return context.tenants.withTenant(
         { tenantId: device.tenantId, deviceId: device.deviceId },
         (tx) => readChanges(tx, request.query),

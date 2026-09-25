@@ -1,0 +1,1 @@
+ALTER TABLE "core_access"."users" DROP COLUMN "is_owner";

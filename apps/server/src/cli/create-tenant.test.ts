@@ -123,10 +123,14 @@ describe("tenant:create", () => {
       id: string;
       branch_id: string;
       login: string;
-      is_owner: boolean;
+      department_scope: string;
+      role: { name: string; template: string; is_owner: boolean };
       password_hash: string;
     }>(
-      "select id, branch_id, login, is_owner, password_hash from core_access.users where tenant_id = $1",
+      `select u.id, u.branch_id, u.login, u.department_scope, u.password_hash,
+         json_build_object('name', r.name, 'template', r.template, 'is_owner', r.is_owner) as role
+       from core_access.users u join core_access.roles r on r.id = u.role_id
+       where u.tenant_id = $1`,
       [created.tenantId],
     );
     expect(owners.rows).toHaveLength(1);
@@ -135,8 +139,57 @@ describe("tenant:create", () => {
       id: created.ownerId,
       branch_id: created.branchId,
       login: "ahmad.owner",
-      is_owner: true,
+      department_scope: "all",
+      role: { name: "المالك", template: "owner", is_owner: true },
     });
+    // The owner role and one role per template, with what the modules grant each (slice 5).
+    const roles = await superuser.query<{
+      name: string;
+      template: string;
+      is_owner: boolean;
+      permissions: string[];
+    }>(
+      `select r.name, r.template, r.is_owner,
+         coalesce(array_agg(p.permission order by p.permission)
+           filter (where p.permission is not null), '{}') as permissions
+       from core_access.roles r left join core_access.role_permissions p on p.role_id = r.id
+       where r.tenant_id = $1 group by r.id order by r.id`,
+      [created.tenantId],
+    );
+    expect(roles.rows).toEqual([
+      { name: "المالك", template: "owner", is_owner: true, permissions: [] },
+      {
+        name: "المحاسب",
+        template: "accountant",
+        is_owner: false,
+        permissions: [
+          "access.users.unlock",
+          "access.users.view",
+          "audit.view",
+          "inventory.products.manage",
+          "inventory.products.view",
+          "sales.invoices.view",
+        ],
+      },
+      {
+        name: "كاشير القسم",
+        template: "sectionCashier",
+        is_owner: false,
+        permissions: ["inventory.products.view", "sales.invoice.create"],
+      },
+      {
+        name: "فني الصيانة",
+        template: "repairTechnician",
+        is_owner: false,
+        permissions: ["inventory.products.view"],
+      },
+      {
+        name: "موظف تعبئة الرصيد",
+        template: "topUpOperator",
+        is_owner: false,
+        permissions: ["inventory.products.view"],
+      },
+    ]);
     expect(owner?.password_hash).toMatch(/^\$argon2id\$/);
     expect(await verify(owner?.password_hash ?? "", PASSWORD)).toBe(true);
     expect(await verify(owner?.password_hash ?? "", "wrong password")).toBe(false);
@@ -208,11 +261,49 @@ describe("tenant:create", () => {
     ).toBe("23505");
     expect(
       await state(
-        `insert into core_access.users (id, tenant_id, branch_id, created_at, created_by, name, login, password_hash, is_owner)
-         values (gen_random_uuid(), $1, $2, now(), $1, 'twin', 'ahmad.owner', '$argon2id$x', false)`,
+        `insert into core_access.users (id, tenant_id, branch_id, created_at, created_by, name, login, password_hash, role_id, department_scope)
+         select gen_random_uuid(), $1, $2, now(), $1, 'twin', 'ahmad.owner', '$argon2id$x', id, 'all'
+         from core_access.roles where tenant_id = $1 and is_owner`,
         [tenantId, branchId],
       ),
     ).toBe("23505");
+    // The owner role stays the owner role (rule 14): one per tenant, never archived, and the
+    // app cannot change what a role is.
+    expect(
+      await state(
+        `insert into core_access.roles (id, tenant_id, branch_id, created_at, created_by, name, template, is_owner)
+         values (gen_random_uuid(), $1, $2, now(), $1, 'second owner', 'owner', true)`,
+        [tenantId, branchId],
+      ),
+    ).toBe("23505");
+    expect(
+      await state(
+        `update core_access.roles set archived_at = now(), archived_by = $1
+         where tenant_id = $1 and is_owner`,
+        [tenantId],
+      ),
+    ).toBe("23514");
+    expect(
+      await state(
+        `update core_access.roles set is_owner = false where tenant_id = $1 and is_owner`,
+        [tenantId],
+      ),
+    ).toBe("23514");
+    const app = await database.connect("app");
+    try {
+      await app.query("begin");
+      await app.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
+      const refused = await app
+        .query("update core_access.roles set template = null, is_owner = false where is_owner")
+        .then(
+          () => "ok",
+          (error: { code?: string }) => error.code,
+        );
+      expect(refused).toBe("42501");
+      await app.query("rollback");
+    } finally {
+      await app.end();
+    }
     // The deferred FK fires at commit: a tenant pointing at a missing branch never commits.
     expect(
       await state(

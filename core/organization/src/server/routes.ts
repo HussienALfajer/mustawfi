@@ -1,5 +1,4 @@
-import { requireSession, type Session } from "@mustawfi/core-access/server";
-import { accessProblemCodes } from "@mustawfi/core-access/shared";
+import { type RouteAccess, type Session, sessionOf } from "@mustawfi/core-access/server";
 import { ProblemError } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import { listDepartments, type TenantTransaction } from "@mustawfi/core-tenancy/server";
@@ -42,14 +41,17 @@ const refusals = {
   422: problemDetailsSchema,
 };
 
-/** The skeleton's one permission until slice 5 declares `organization.*`: the owner. */
-function requireOwner(session: Session): void {
-  if (!session.user.isOwner) {
-    throw new ProblemError(accessProblemCodes.ownerRequired, 403, {
-      title: "Only the store owner can do this",
-    });
-  }
-}
+/**
+ * Reads are open to every signed-in user: the POS shows the store name, and pickers list
+ * departments (`core-foundation` slice 5).
+ */
+const read: { readonly access: RouteAccess } = { access: "session" };
+const manageDepartments: { readonly access: RouteAccess } = {
+  access: { permission: "organization.departments.manage" },
+};
+const editProfile: { readonly access: RouteAccess } = {
+  access: { permission: "organization.profile.edit" },
+};
 
 /**
  * `core.organization` routes, under `/api/v1/organization`: departments (stored by
@@ -79,6 +81,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.get(
     "/departments",
     {
+      config: read,
       schema: {
         tags,
         response: {
@@ -88,7 +91,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
+      const session = sessionOf(request);
       const items = await asActor(session, (tx) => listDepartments(tx));
       return { items };
     },
@@ -97,11 +100,11 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.post(
     "/departments",
     {
+      config: manageDepartments,
       schema: { tags, body: newDepartmentSchema, response: { 201: departmentSchema, ...refusals } },
     },
     async (request, reply) => {
-      const session = await requireSession(request, context);
-      requireOwner(session);
+      const session = sessionOf(request);
       const department = await asActor(session, (tx, actor) =>
         addDepartment(tx, actor, request.body.name, context),
       );
@@ -112,6 +115,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.patch(
     "/departments/:id",
     {
+      config: manageDepartments,
       schema: {
         tags,
         params: departmentParamsSchema,
@@ -120,8 +124,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
-      requireOwner(session);
+      const session = sessionOf(request);
       return asActor(session, (tx, actor) =>
         changeDepartmentName(
           tx,
@@ -136,6 +139,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.post(
     "/departments/:id/archive",
     {
+      config: manageDepartments,
       schema: {
         tags,
         params: departmentParamsSchema,
@@ -143,8 +147,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
-      requireOwner(session);
+      const session = sessionOf(request);
       return asActor(session, (tx, actor) =>
         retireDepartment(tx, actor, request.params.id, context),
       );
@@ -153,9 +156,12 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
 
   app.get(
     "/profile",
-    { schema: { tags, response: { 200: storeProfileSchema, 401: problemDetailsSchema } } },
+    {
+      config: read,
+      schema: { tags, response: { 200: storeProfileSchema, 401: problemDetailsSchema } },
+    },
     async (request) => {
-      const session = await requireSession(request, context);
+      const session = sessionOf(request);
       return asActor(session, (tx) => storeProfile(tx));
     },
   );
@@ -163,6 +169,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.put(
     "/profile",
     {
+      config: editProfile,
       schema: {
         tags,
         body: storeProfileInputSchema,
@@ -170,8 +177,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
-      requireOwner(session);
+      const session = sessionOf(request);
       return asActor(session, (tx, actor) => editStoreProfile(tx, actor, request.body, context));
     },
   );
@@ -179,6 +185,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.put(
     "/profile/logo",
     {
+      config: editProfile,
       schema: {
         tags,
         body: logoUploadSchema,
@@ -186,8 +193,7 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
-      requireOwner(session);
+      const session = sessionOf(request);
       const bytes = new Uint8Array(Buffer.from(request.body.data, "base64"));
       return asActor(session, (tx, actor) => setStoreLogo(tx, actor, bytes, context));
     },
@@ -195,10 +201,12 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
 
   app.delete(
     "/profile/logo",
-    { schema: { tags, response: { 200: storeProfileSchema, ...refusals } } },
+    {
+      config: editProfile,
+      schema: { tags, response: { 200: storeProfileSchema, ...refusals } },
+    },
     async (request) => {
-      const session = await requireSession(request, context);
-      requireOwner(session);
+      const session = sessionOf(request);
       return asActor(session, (tx, actor) => removeStoreLogo(tx, actor, context));
     },
   );
@@ -206,9 +214,9 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
   app.get(
     "/profile/logo",
     // The image bytes, as stored; refusals are problem details like everywhere else.
-    { schema: { tags } },
+    { config: read, schema: { tags } },
     async (request, reply) => {
-      const session = await requireSession(request, context);
+      const session = sessionOf(request);
       const logo = await asActor(session, (tx) => storeLogo(tx));
       if (logo === undefined) {
         throw new ProblemError(organizationProblemCodes.logoNotFound, 404, {

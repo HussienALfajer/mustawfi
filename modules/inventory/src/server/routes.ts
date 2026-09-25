@@ -1,6 +1,4 @@
-import { requireSession } from "@mustawfi/core-access/server";
-import { accessProblemCodes } from "@mustawfi/core-access/shared";
-import { ProblemError } from "@mustawfi/core-config/server";
+import { sessionOf } from "@mustawfi/core-access/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -22,6 +20,7 @@ export function inventoryRoutes(scope: FastifyInstance, context: InventoryContex
   app.post(
     "/products",
     {
+      config: { access: { permission: "inventory.products.manage" } },
       schema: {
         tags,
         body: newProductSchema,
@@ -34,13 +33,7 @@ export function inventoryRoutes(scope: FastifyInstance, context: InventoryContex
       },
     },
     async (request, reply) => {
-      const session = await requireSession(request, context);
-      // The skeleton's one permission: the owner (the permission model is `core-foundation`'s).
-      if (!session.user.isOwner) {
-        throw new ProblemError(accessProblemCodes.ownerRequired, 403, {
-          title: "Only the store owner can do this",
-        });
-      }
+      const session = sessionOf(request);
       const product = await context.tenants.withTenant(
         { tenantId: session.tenantId, userId: session.user.id },
         (tx) =>
@@ -65,14 +58,15 @@ export function inventoryRoutes(scope: FastifyInstance, context: InventoryContex
   app.get(
     "/products",
     {
+      config: { access: { permission: "inventory.products.view" } },
       schema: {
         tags,
         querystring: productListQuerySchema,
-        response: { 200: productPageSchema, 401: problemDetailsSchema },
+        response: { 200: productPageSchema, 401: problemDetailsSchema, 403: problemDetailsSchema },
       },
     },
     async (request) => {
-      const session = await requireSession(request, context);
+      const session = sessionOf(request);
       return context.tenants.withTenant(
         { tenantId: session.tenantId, userId: session.user.id },
         (tx) => listProducts(tx, request.query),

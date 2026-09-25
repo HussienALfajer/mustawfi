@@ -214,6 +214,19 @@ export async function defaultDepartment(tx: TenantTransaction): Promise<Departme
   return toView(row);
 }
 
+/** Which of `ids` name an active (not archived) department of the tenant. */
+export async function activeDepartments(
+  tx: TenantTransaction,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .select({ id: departments.id })
+    .from(departments)
+    .where(and(inArray(departments.id, [...new Set(ids)]), isNull(departments.archivedAt)));
+  return new Set(rows.map((row) => row.id));
+}
+
 /**
  * Which of `ids` name a department of the tenant, archived ones included: a document keeps
  * the department it was made in (`core-foundation` rule 28).

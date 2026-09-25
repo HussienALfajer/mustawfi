@@ -74,8 +74,8 @@ function refusalProblem(error: unknown): string {
   if (error instanceof ApiUnreachable) return "unreachable";
   if (!(error instanceof ApiProblem)) return "refused";
   switch (error.code) {
-    case accessProblemCodes.ownerRequired:
-      return "ownerRequired";
+    case accessProblemCodes.permissionDenied:
+      return "permissionDenied";
     case organizationProblemCodes.logoTooLarge:
       return "logoTooLarge";
     case organizationProblemCodes.logoUnsupportedType:
