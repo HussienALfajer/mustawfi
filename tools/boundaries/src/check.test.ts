@@ -327,6 +327,7 @@ describe("boundary check", { timeout: 30_000 }, () => {
         'ALTER TABLE "sales"."invoices" ADD CONSTRAINT "invoices_entry_fk"',
         '  FOREIGN KEY ("entry_id") REFERENCES "core_ledger"."entries"("id");',
         'GRANT USAGE ON SCHEMA "sales" TO mustawfi_app;',
+        'ALTER TABLE "sales"."invoices" ADD CHECK ("kind" IN (\'core_ledger.entry\'));',
         "",
       ].join("\n"),
     };
@@ -423,6 +424,30 @@ describe("boundary check", { timeout: 30_000 }, () => {
       ).toEqual(["own-schema-only"]);
     });
 
+    it("fails when a migration drops or creates another module's schema", async () => {
+      for (const statement of [
+        "DROP SCHEMA IF EXISTS core_ledger CASCADE;",
+        'CREATE SCHEMA IF NOT EXISTS "core_ledger";',
+      ]) {
+        expect(
+          await rulesBrokenBy({
+            ...owned,
+            "modules/sales/migrations/0001_x.sql": `${statement}\n`,
+          }),
+        ).toEqual(["own-schema-only"]);
+      }
+    });
+
+    it("fails when a migration puts another module's schema on the search path", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/migrations/0001_path.sql":
+            "SET search_path TO sales, core_ledger;\nSELECT id FROM entries;\n",
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
     it("fails on a foreign key toward a module outside dependsOn", async () => {
       expect(
         await rulesBrokenBy({
@@ -449,6 +474,19 @@ describe("boundary check", { timeout: 30_000 }, () => {
       ).toEqual(["own-schema-only"]);
     });
 
+    it("fails when SQL inside a sql template's substitution reads another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/invoices.ts": [
+            'import { sql } from "drizzle-orm";',
+            'export const count = sql`select ${sql.raw("id from core_ledger.entries")}`;',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
     it("fails when a plain SQL string reads another module's schema", async () => {
       expect(
         await rulesBrokenBy({
@@ -467,6 +505,20 @@ describe("boundary check", { timeout: 30_000 }, () => {
             'import { pgSchema } from "drizzle-orm/pg-core";',
             'const ledger = pgSchema("core_ledger");',
             'export const entries = ledger.table("entries", {});',
+            "",
+          ].join("\n"),
+        }),
+      ).toEqual(["own-schema-only"]);
+    });
+
+    it("fails when a namespace-imported pgSchema names another module's schema", async () => {
+      expect(
+        await rulesBrokenBy({
+          ...owned,
+          "modules/sales/src/server/ledger-tables.ts": [
+            'import * as pg from "drizzle-orm/pg-core";',
+            'const ledger = pg.pgSchema("core_ledger");',
+            "export const entries = ledger;",
             "",
           ].join("\n"),
         }),

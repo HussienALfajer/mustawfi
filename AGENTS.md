@@ -108,7 +108,7 @@ Node.js 24 (`.nvmrc`), pnpm (version pinned in `package.json` → `packageManage
 | `pnpm format` / `pnpm format:check` | Format with Prettier / check formatting (Markdown is excluded) |
 | `pnpm lint` | ESLint, zero warnings allowed |
 | `pnpm typecheck` | TypeScript for root config and every package (Turborepo) |
-| `pnpm check:boundaries` | ADR-0015 boundary rules: package exports, module `dependsOn`, entry and layer rules |
+| `pnpm check:boundaries` | ADR-0015 boundary rules: package exports, module `dependsOn`, entry and layer rules, tables kept internal and SQL kept in the module's own schema |
 | `pnpm check:rust` | `cargo fmt --check` for every crate, then Clippy (warnings are errors) and `cargo test` on the native LocalDb core and the printer transport |
 | `pnpm test` | Vitest across all workspace projects (builds the native LocalDb core with Cargo for its contract suite) |
 | `pnpm test:e2e` | Playwright journeys of the web app against a real server and PostgreSQL (Docker); first run `pnpm --filter @mustawfi/web exec playwright install chromium` |
