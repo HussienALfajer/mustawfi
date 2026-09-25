@@ -107,14 +107,19 @@ export class DeviceAlreadyRegistered extends Error {
 }
 
 export interface RegisterThisDeviceInput {
+  /**
+   * What this client is (ADR-0022): the Windows app registers as the store's main POS; the
+   * browser, a limited client (ADR-0010, ADR-0019), as a companion.
+   */
+  readonly type: DeviceType;
   readonly storeCode: string;
   readonly registrationCode: string;
   readonly name: string;
 }
 
 /**
- * Registers this client as the store's main POS with a registration code (flow 4), then keeps
- * the device, its prefix, and its credential in the local database.
+ * Registers this client with a registration code (flow 4), then keeps the device, its prefix,
+ * and its credential in the local database.
  */
 export async function registerThisDevice(
   db: LocalDb,
@@ -124,7 +129,7 @@ export async function registerThisDevice(
   if ((await localDevice(db)) !== undefined) throw new DeviceAlreadyRegistered();
   const registered = await apiRequest("/api/v1/access/devices", {
     method: "POST",
-    body: { ...input, type: "mainPos" satisfies DeviceType },
+    body: input,
     schema: registeredDeviceSchema,
   });
   // Kept at once: the code is used up and the credential is shown only in this answer.
@@ -133,7 +138,7 @@ export async function registerThisDevice(
     tenantId: registered.tenantId,
     prefix: registered.prefix,
     name: registered.name,
-    type: "mainPos",
+    type: input.type,
     credential: registered.credential,
     baseCurrency: registered.baseCurrency,
     registeredAt: clock.now().toISOString(),

@@ -17,7 +17,7 @@ async function addProduct(page: Page, name: string, barcode: string, price: stri
   await expect(page.getByRole("main").getByRole("status")).toHaveText(`أُضيف المنتج «${name}»`);
 }
 
-/** Flow 4: the owner issues a registration code and registers this browser with it. */
+/** Flow 4: the owner issues a registration code and registers this browser, as a companion. */
 async function registerDevice(page: Page): Promise<string> {
   await page.getByRole("link", { name: "هذا الجهاز" }).click();
   await page.getByRole("button", { name: "إصدار رمز تسجيل" }).click();
@@ -29,6 +29,8 @@ async function registerDevice(page: Page): Promise<string> {
   await page.getByRole("button", { name: "تسجيل الجهاز" }).click();
   const prefix = page.getByTestId("device-prefix");
   await expect(prefix).toHaveText(/^[A-HJ-NP-Z2-9]{2}$/);
+  // The browser is never the main POS (ADR-0019); the Windows app is.
+  await expect(page.getByTestId("device-type")).toHaveText("جهاز مساعد");
   return (await prefix.textContent()) ?? "";
 }
 

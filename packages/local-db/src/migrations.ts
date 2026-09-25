@@ -20,14 +20,23 @@ export class LocalMigrationMismatch extends Error {
   override name = "LocalMigrationMismatch";
 }
 
+export interface MigrateOptions {
+  /**
+   * Runs once before the first pending migration of a database that already has migrations
+   * applied — where the native shells copy the database (`VACUUM INTO`, ADR-0019). A failure
+   * stops the migration.
+   */
+  readonly beforeApplying?: (pending: readonly string[]) => Promise<void>;
+}
+
 /**
  * Applies `migrations` in order, each in its own transaction with its ledger row, before the
  * outbox is opened. Already applied ones must be the list's prefix, in the same order.
- * Backups before a migration (`VACUUM INTO`) come with the desktop shell.
  */
 export async function migrateLocalDb(
   db: LocalDb,
   migrations: readonly LocalMigration[],
+  options: MigrateOptions = {},
 ): Promise<{ applied: string[] }> {
   const ids = new Set<string>();
   for (const migration of migrations) {
@@ -45,6 +54,8 @@ export async function migrateLocalDb(
       );
     }
   });
+  const pending = migrations.slice(done.length).map((migration) => migration.id);
+  if (pending.length > 0 && done.length > 0) await options.beforeApplying?.(pending);
   const applied: string[] = [];
   for (const [index, migration] of migrations.entries()) {
     if (index < done.length) continue;

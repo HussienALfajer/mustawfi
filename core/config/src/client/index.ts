@@ -21,6 +21,41 @@ export class ApiUnreachable extends Error {
   override name = "ApiUnreachable";
 }
 
+/**
+ * Where the API is and how the session travels (ADR-0022), set once by the app's composition
+ * root. The browser calls its own origin and the session is an `HttpOnly` cookie; the Windows
+ * app is served from its own origin, so it calls the server's origin and sends the session as
+ * a bearer token, which it holds in memory only (the OS secure store comes later).
+ */
+export interface ApiEndpoint {
+  /** The server's origin, `https://…`; `""` for the page's own origin. */
+  readonly origin: string;
+  readonly session: "cookie" | "bearer";
+}
+
+let endpoint: ApiEndpoint = { origin: "", session: "cookie" };
+let sessionBearer: string | undefined;
+
+export function configureApi(next: ApiEndpoint): void {
+  endpoint = next;
+  sessionBearer = undefined;
+}
+
+/** How this client's session travels: the login asks the server for that transport. */
+export function sessionTransport(): ApiEndpoint["session"] {
+  return endpoint.session;
+}
+
+/** Keeps (or, with `undefined`, forgets) the session token of the bearer transport. */
+export function holdSessionToken(token: string | undefined): void {
+  sessionBearer = token;
+}
+
+/** Whether a bearer-transport client holds a session token; always true for the cookie. */
+export function hasSessionCredential(): boolean {
+  return endpoint.session === "cookie" || sessionBearer !== undefined;
+}
+
 export interface ApiRequest<T> {
   readonly method?: "GET" | "POST";
   /** Sent as JSON. */
@@ -30,7 +65,7 @@ export interface ApiRequest<T> {
   readonly signal?: AbortSignal;
   /**
    * A bearer credential: a registered device's, for sync (ADR-0022). Without it the request
-   * carries the session cookie.
+   * carries the session: the cookie, or the held session token.
    */
   readonly bearer?: string;
   /**
@@ -41,18 +76,20 @@ export interface ApiRequest<T> {
 }
 
 /**
- * Calls the tenant API from the browser, on the page's own origin, with the session cookie
- * (ADR-0022). A problem-details answer throws `ApiProblem`; no answer throws `ApiUnreachable`.
+ * Calls the tenant API at the configured endpoint (`configureApi`), with the session (ADR-0022).
+ * A problem-details answer throws `ApiProblem`; no answer throws `ApiUnreachable`.
  */
 export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promise<T> {
+  const bearer = request.bearer ?? (endpoint.session === "bearer" ? sessionBearer : undefined);
   let response: Response;
   try {
-    response = await (request.fetch ?? fetch)(path, {
+    response = await (request.fetch ?? fetch)(`${endpoint.origin}${path}`, {
       method: request.method ?? "GET",
-      credentials: "same-origin",
+      // Another origin never receives the browser's cookies.
+      credentials: endpoint.origin === "" ? "same-origin" : "omit",
       headers: {
         ...(request.body === undefined ? {} : { "content-type": "application/json" }),
-        ...(request.bearer === undefined ? {} : { authorization: `Bearer ${request.bearer}` }),
+        ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),
       },
       ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
       ...(request.signal === undefined ? {} : { signal: request.signal }),

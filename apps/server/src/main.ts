@@ -18,6 +18,7 @@ const app = await buildServer({
     newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
   },
   logger: true,
+  clientOrigins: config.CLIENT_ORIGINS,
 });
 app.addHook("onClose", () => tenants.close());
 

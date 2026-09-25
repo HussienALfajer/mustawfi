@@ -23,6 +23,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # The toolchain of rust-toolchain.toml: `check:rust` and the native LocalDb contract suite.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.2
       - run: pnpm install --frozen-lockfile
       # The end-to-end journeys (`pnpm test:e2e`, part of `pnpm verify`) drive Chromium.
       - run: pnpm --filter @mustawfi/web exec playwright install --with-deps chromium

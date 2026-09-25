@@ -68,6 +68,7 @@ beforeAll(async () => {
   app = await buildServer({
     registry: createModuleRegistry([fixtureModule, disabledModule], { disabled: ["disabled"] }),
     context: { taken: new Set(["taken"]) },
+    clientOrigins: ["http://tauri.localhost"],
   });
 });
 
@@ -104,6 +105,47 @@ describe("server host", () => {
   it("does not mount a disabled module", async () => {
     const response = await app.inject({ method: "GET", url: "/api/v1/disabled/here" });
     expectProblem(response, 404, "core.route.notFound");
+  });
+});
+
+describe("cross-origin calls (CORS)", () => {
+  it("lets the Windows app's origin call with a bearer token, never with cookies", async () => {
+    const preflight = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/fixture/widgets",
+      headers: {
+        origin: "http://tauri.localhost",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "authorization,content-type",
+      },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers["access-control-allow-origin"]).toBe("http://tauri.localhost");
+    expect(preflight.headers["access-control-allow-headers"]).toBe("authorization, content-type");
+    expect(preflight.headers["access-control-allow-credentials"]).toBeUndefined();
+    const call = await app.inject({
+      method: "GET",
+      url: "/api/v1/health",
+      headers: { origin: "http://tauri.localhost" },
+    });
+    expect(call.headers["access-control-allow-origin"]).toBe("http://tauri.localhost");
+  });
+
+  it("gives any other origin no CORS headers", async () => {
+    for (const origin of ["https://evil.example", "http://localhost:5173"]) {
+      const preflight = await app.inject({
+        method: "OPTIONS",
+        url: "/api/v1/fixture/widgets",
+        headers: { origin, "access-control-request-method": "POST" },
+      });
+      expect(preflight.headers["access-control-allow-origin"]).toBeUndefined();
+      const call = await app.inject({
+        method: "GET",
+        url: "/api/v1/health",
+        headers: { origin },
+      });
+      expect(call.headers["access-control-allow-origin"]).toBeUndefined();
+    }
   });
 });
 

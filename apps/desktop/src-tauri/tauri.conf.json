@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mustawfi",
+  "mainBinaryName": "mustawfi",
+  "version": "0.1.0",
+  "identifier": "de.vertexsystem.mustawfi",
+  "build": {
+    "frontendDist": "../../web/dist-desktop",
+    "devUrl": "http://localhost:5174",
+    "beforeDevCommand": "pnpm --filter @mustawfi/web dev:desktop",
+    "beforeBuildCommand": "pnpm --filter @mustawfi/web build:desktop"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "مستوفي",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost http: https:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "publisher": "Vertex System",
+    "shortDescription": "مستوفي — المحاسبة ونقاط البيع",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Arabic"]
+      }
+    }
+  }
+}

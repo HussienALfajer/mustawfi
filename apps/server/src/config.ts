@@ -10,6 +10,21 @@ const moduleList = z
       .filter((id) => id !== ""),
   );
 
+const originList = z
+  .string()
+  .default("http://tauri.localhost")
+  .transform((value) =>
+    value
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin !== ""),
+  )
+  .pipe(
+    z.array(
+      z.url({ protocol: /^https?$/ }).refine((url) => new URL(url).origin === url, "not an origin"),
+    ),
+  );
+
 /** The server's environment (ADR-0014): validated at startup, or the process refuses to start. */
 export const serverEnvSchema = z.object({
   /** `mustawfi_app` — never the owner or a superuser; `openTenantDatabase` checks. */
@@ -18,6 +33,11 @@ export const serverEnvSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   /** Comma-separated module ids switched off for this deployment. */
   DISABLED_MODULES: moduleList,
+  /**
+   * Comma-separated origins of native shells allowed to call the API (CORS, bearer only); the
+   * Windows app's by default.
+   */
+  CLIENT_ORIGINS: originList,
 });
 
 export type ServerConfig = z.infer<typeof serverEnvSchema>;

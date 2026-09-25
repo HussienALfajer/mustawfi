@@ -13,6 +13,11 @@ export {
   type StatementResult,
   writtenTable,
 } from "./local-db.ts";
-export { type LocalMigration, LocalMigrationMismatch, migrateLocalDb } from "./migrations.ts";
+export {
+  type LocalMigration,
+  LocalMigrationMismatch,
+  type MigrateOptions,
+  migrateLocalDb,
+} from "./migrations.ts";
 export { int64, localOrm, safeInteger } from "./orm.ts";
 export { LocalDbProvider, type LocalQueryMeta, touchesLocalTables, useLocalDb } from "./react.tsx";

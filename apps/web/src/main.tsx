@@ -8,7 +8,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
 import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
-import { ApiProblem, ClientRuntimeProvider } from "@mustawfi/core-config/client";
+import { ApiProblem, ClientRuntimeProvider, configureApi } from "@mustawfi/core-config/client";
 import { SYNC_NAMESPACE, SyncEngineProvider, syncMessages } from "@mustawfi/core-sync/client";
 import { createI18n, DIRECTION, LANGUAGE } from "@mustawfi/i18n";
 import { INVENTORY_NAMESPACE, inventoryMessages } from "@mustawfi/inventory/client";
@@ -23,9 +23,16 @@ import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { startLocalRuntime } from "./local.ts";
 import { SHELL_NAMESPACE, shellMessages } from "./messages.ts";
+import { detectPlatform } from "./platform.ts";
 import { createAppRouter } from "./router.tsx";
 
-/** The composition root of the web client: each module brings its own i18n namespace. */
+/**
+ * The composition root of the client — the browser app and the Windows app's page: the
+ * platform, then each module with its own i18n namespace.
+ */
+const platform = detectPlatform();
+configureApi(platform.api);
+
 const i18n = createI18n({
   [SHELL_NAMESPACE]: shellMessages,
   [UI_NAMESPACE]: uiMessages,
@@ -58,7 +65,7 @@ const queryClient: QueryClient = new QueryClient({
     },
   },
 });
-const router = createAppRouter(queryClient);
+const router = createAppRouter(queryClient, platform.deviceType);
 
 const runtime = {
   clock: systemClock,
@@ -73,7 +80,7 @@ const root = createRoot(element);
  * The local database opens before anything renders (ADR-0019): screens read it, and the POS
  * cannot sell without it. If it cannot open, the app says so instead of selling into nothing.
  */
-startLocalRuntime(queryClient).then(
+startLocalRuntime(queryClient, platform).then(
   ({ db, sync }) => {
     root.render(
       <StrictMode>
