@@ -1,5 +1,7 @@
 export {
   apiSyncTransport,
+  type ApiSyncTransportOptions,
+  createApiSyncTransport,
   createSyncEngine,
   type PullApplier,
   type SyncEngine,

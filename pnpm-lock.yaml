@@ -242,6 +242,9 @@ importers:
       '@mustawfi/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@mustawfi/local-db':
+        specifier: workspace:*
+        version: link:../../packages/local-db
       '@mustawfi/testing':
         specifier: workspace:*
         version: link:../../packages/testing
@@ -915,6 +918,9 @@ importers:
 
   packages/testing:
     dependencies:
+      '@mustawfi/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@testcontainers/postgresql':
         specifier: 12.1.0
         version: 12.1.0(supports-color@7.2.0)
