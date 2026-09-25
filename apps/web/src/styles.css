@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "@mustawfi/ui/tokens.css";
+@import "@mustawfi/ui/theme.css";
+
+/* Workspace packages are linked through node_modules, which Tailwind does not scan by itself. */
+@source "../../../packages/ui/src/components";
+@source "../../../core/*/src/client/**/*.tsx";
+@source "../../../modules/*/src/client/**/*.tsx";
+
+@layer base {
+  html {
+    background-color: var(--mf-color-page);
+    color: var(--mf-color-text);
+    font-family: var(--mf-font-sans);
+    font-size: var(--mf-density-font-size);
+    line-height: var(--mf-density-line-height);
+  }
+}

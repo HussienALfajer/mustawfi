@@ -31,10 +31,40 @@ export const sharedEntryRules = {
 };
 
 /**
- * Domain code: modules and the kernel. Apps are composition roots — they pass the kernel's
- * `systemClock`, `cryptoRandom`, and `uuidV7Generator` in.
+ * Domain code: modules, the kernel, and the packages that show and read amounts (`ui`
+ * components, `i18n`). Apps are composition roots — they pass the kernel's `systemClock`,
+ * `cryptoRandom`, and `uuidV7Generator` in.
  */
-export const domainFiles = ["core/*/src/**", "modules/*/src/**", "packages/kernel/src/**"];
+export const domainFiles = [
+  "core/*/src/**",
+  "modules/*/src/**",
+  "packages/kernel/src/**",
+  "packages/ui/src/components/**",
+  "packages/i18n/src/**",
+];
+
+/** The user interface: the web app, the design-system components, and module screens. */
+export const uiFiles = [
+  "apps/web/src/**",
+  "packages/ui/src/components/**",
+  "core/*/src/client/**",
+  "modules/*/src/client/**",
+];
+
+/**
+ * ADR-0015 rule 6, ADR-0023, and ADR-0024 for interface code: logical CSS only, and no
+ * user-facing text outside i18n. Tests may render literal text.
+ * @type {import("eslint").Linter.Config}
+ */
+export const uiRules = {
+  files: uiFiles,
+  ignores: ["**/*.test.ts", "**/*.test.tsx"],
+  plugins: { mustawfi: plugin },
+  rules: {
+    "mustawfi/no-physical-direction": "error",
+    "mustawfi/no-literal-string": "error",
+  },
+};
 
 /**
  * ADR-0015 rule 6 and ADR-0018: no float money, no ambient clock, no ambient randomness in
@@ -90,5 +120,6 @@ export function mustawfi({ tsconfigRootDir }) {
     },
     sharedEntryRules,
     domainRules,
+    uiRules,
   );
 }

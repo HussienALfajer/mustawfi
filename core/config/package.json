@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     "./shared": "./src/shared/index.ts",
-    "./server": "./src/server/index.ts"
+    "./server": "./src/server/index.ts",
+    "./client": "./src/client/index.ts"
   },
   "mustawfi": {
     "dependsOn": []
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@mustawfi/config": "workspace:*",
     "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
     "typescript": "6.0.3",
     "vitest": "5.0.1"
   }

@@ -1,18 +1,20 @@
 /**
- * Writes the token stylesheet (committed; a test keeps it equal to the generator's output) and
+ * Writes the token stylesheet and the Tailwind theme (committed; a test keeps them equal to the
+ * generator's output) and
  * the preview page (not committed). Run with `pnpm --filter @mustawfi/ui tokens:generate`.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generatePreviewHtml } from "../src/preview/preview.ts";
-import { generateTokenCss } from "../src/tokens/css.ts";
+import { generateTailwindThemeCss, generateTokenCss } from "../src/tokens/css.ts";
 import { generatePalette } from "../src/tokens/palette.ts";
 
 const packageDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 const palette = generatePalette();
 
 writeFileSync(join(packageDir, "src/styles/tokens.css"), generateTokenCss(palette));
+writeFileSync(join(packageDir, "src/styles/theme.css"), generateTailwindThemeCss());
 
 const fonts = [
   ...[400, 500, 600, 700].map((weight) => `ibm-plex-sans-arabic/${weight}.css`),
@@ -25,7 +27,7 @@ writeFileSync(
   generatePreviewHtml({ palette, fontStylesheets: fonts }),
 );
 
-console.log("Wrote src/styles/tokens.css and preview/index.html");
+console.log("Wrote src/styles/tokens.css, src/styles/theme.css, and preview/index.html");
 
 // A hosted copy for review outside the repository: fonts from Google Fonts, no document shell.
 if (process.argv.includes("--hosted")) {

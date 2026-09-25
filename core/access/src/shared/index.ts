@@ -33,6 +33,12 @@ export const loginRequestSchema = z.object({
   storeCode: z.string().max(20),
   login: z.string().max(100),
   password: z.string().max(256),
+  /**
+   * How the session travels (ADR-0022): `bearer` returns the token for the desktop and
+   * Android shells' secure store; `cookie` (the browser) sets an `HttpOnly` cookie instead and
+   * never shows the token to scripts.
+   */
+  transport: z.enum(["bearer", "cookie"]).default("bearer"),
 });
 
 export const sessionUserSchema = z.object({
@@ -43,8 +49,8 @@ export const sessionUserSchema = z.object({
 });
 
 export const loginResponseSchema = z.object({
-  /** Opaque; sent back as `Authorization: Bearer <token>`. */
-  token: z.string(),
+  /** Opaque; sent back as `Authorization: Bearer <token>`. Absent for the cookie transport. */
+  token: z.string().optional(),
   expiresAt: z.iso.datetime(),
   tenantId: z.uuid(),
   user: sessionUserSchema,
@@ -100,4 +106,6 @@ export const accessProblemCodes = {
   prefixesExhausted: "access.device.prefixesExhausted",
   /** No device credential, or an unknown one. */
   deviceRequired: "access.device.required",
+  /** A cookie-authenticated change sent from another origin (CSRF, ADR-0022). */
+  crossOrigin: "access.request.crossOrigin",
 } as const;

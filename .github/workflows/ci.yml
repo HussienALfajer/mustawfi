@@ -24,4 +24,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The end-to-end journeys (`pnpm test:e2e`, part of `pnpm verify`) drive Chromium.
+      - run: pnpm --filter @mustawfi/web exec playwright install --with-deps chromium
       - run: pnpm verify

@@ -268,6 +268,133 @@ describe("sessions", () => {
   });
 });
 
+describe("browser sessions (cookie transport, ADR-0022)", () => {
+  const HOST = "app.mustawfi.test";
+  const sameOrigin = { host: HOST, origin: `https://${HOST}` };
+
+  async function cookieLogIn(headers: Record<string, string> = sameOrigin) {
+    return server.inject({
+      method: "POST",
+      url: "/api/v1/access/login",
+      headers,
+      payload: {
+        storeCode: store.storeCode,
+        login: "ahmad",
+        password: PASSWORD,
+        transport: "cookie",
+      },
+    });
+  }
+
+  async function cookieFor(): Promise<string> {
+    const response = await cookieLogIn();
+    expect(response.statusCode).toBe(200);
+    const setCookie = response.headers["set-cookie"];
+    expect(typeof setCookie).toBe("string");
+    return String(setCookie).split(";")[0] ?? "";
+  }
+
+  it("sets an HttpOnly, Secure, SameSite=Lax cookie for the API and never returns the token", async () => {
+    const response = await cookieLogIn();
+    expect(response.statusCode).toBe(200);
+    const body = response.json<Record<string, unknown>>();
+    expect(body).not.toHaveProperty("token");
+    expect(body).toMatchObject({ tenantId: store.tenantId, user: { login: "ahmad" } });
+    const setCookie = String(response.headers["set-cookie"]);
+    const [pair, ...attributes] = setCookie.split("; ");
+    const token = pair?.replace(/^mustawfi_session=/, "") ?? "";
+    expect(token).toMatch(/^s1\./);
+    expect(attributes).toEqual(
+      expect.arrayContaining(["Path=/api", "HttpOnly", "Secure", "SameSite=Lax"]),
+    );
+    expect(attributes.find((a) => a.startsWith("Expires="))).toBe(
+      `Expires=${new Date(String(body["expiresAt"])).toUTCString()}`,
+    );
+    const { rowCount } = await superuser.query(
+      "select 1 from core_access.sessions where token_hash = $1",
+      [sha256(token)],
+    );
+    expect(rowCount).toBe(1);
+  });
+
+  it("authenticates reads with the cookie alone, from any origin", async () => {
+    const cookie = await cookieFor();
+    const response = await server.inject({
+      method: "GET",
+      url: "/api/v1/access/session",
+      headers: { cookie: `theme=dark; ${cookie}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ user: { login: "ahmad" } });
+  });
+
+  it("accepts a change made with the cookie only from the same origin, in every module", async () => {
+    const cookie = await cookieFor();
+    const create = (headers: Record<string, string>) =>
+      server.inject({
+        method: "POST",
+        url: "/api/v1/inventory/products",
+        headers: { cookie, ...headers },
+        payload: { name: "كبل", price: { amount: "10", currency: "SYP" } },
+      });
+    for (const headers of [
+      { host: HOST },
+      { host: HOST, origin: "https://evil.test" },
+      { host: HOST, origin: `http://${HOST}.evil.test` },
+      { host: HOST, origin: "null" },
+    ]) {
+      expectProblem(await create(headers), 403, accessProblemCodes.crossOrigin);
+    }
+    expect((await create(sameOrigin)).statusCode).toBe(201);
+    // A bearer token is not sent by the browser on its own, so it needs no origin check.
+    const token = await tokenFor();
+    const withBearer = await server.inject({
+      method: "POST",
+      url: "/api/v1/inventory/products",
+      headers: { ...bearer(token), host: HOST, origin: "https://evil.test" },
+      payload: { name: "كبل ٢", price: { amount: "10", currency: "SYP" } },
+    });
+    expect(withBearer.statusCode).toBe(201);
+  });
+
+  it("refuses a cookie sign-in from another origin (login CSRF)", async () => {
+    expectProblem(
+      await cookieLogIn({ host: HOST, origin: "https://evil.test" }),
+      403,
+      accessProblemCodes.crossOrigin,
+    );
+    expectProblem(await cookieLogIn({ host: HOST }), 403, accessProblemCodes.crossOrigin);
+  });
+
+  it("signs out: revokes the session and clears the cookie", async () => {
+    const cookie = await cookieFor();
+    const logout = await server.inject({
+      method: "POST",
+      url: "/api/v1/access/logout",
+      headers: { cookie, ...sameOrigin },
+    });
+    expect(logout.statusCode).toBe(204);
+    expect(String(logout.headers["set-cookie"])).toMatch(
+      /^mustawfi_session=; Max-Age=0; Path=\/api;/,
+    );
+    expectProblem(
+      await server.inject({ method: "GET", url: "/api/v1/access/session", headers: { cookie } }),
+      401,
+      accessProblemCodes.sessionRequired,
+    );
+  });
+
+  it("refuses a malformed or forged cookie like a missing session", async () => {
+    for (const cookie of ["mustawfi_session=", "mustawfi_session=s1.x.y", "other=1"]) {
+      expectProblem(
+        await server.inject({ method: "GET", url: "/api/v1/access/session", headers: { cookie } }),
+        401,
+        accessProblemCodes.sessionRequired,
+      );
+    }
+  });
+});
+
 describe("device registration", () => {
   async function issueCode(token: string) {
     const response = await server.inject({

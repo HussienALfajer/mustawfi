@@ -1,9 +1,11 @@
 /**
- * Project lint rules for domain code (ADR-0015 rule 6, ADR-0018).
+ * Project lint rules (ADR-0015 rule 6, ADR-0018, ADR-0023, ADR-0024).
  *
  * - `no-float-money`: money never passes through a JavaScript `number`.
  * - `no-ambient-clock`: the time comes from an injected `Clock`.
  * - `no-ambient-randomness`: randomness comes from an injected `RandomSource` or `IdGenerator`.
+ * - `no-physical-direction`: the RTL interface uses logical CSS only (ADR-0024).
+ * - `no-literal-string`: user-facing text comes from i18n keys (ADR-0023).
  */
 
 /** @typedef {import("eslint").Rule.RuleModule} RuleModule */
@@ -251,11 +253,181 @@ const noAmbientRandomness = {
   },
 };
 
+const RTL_ADR = "Use the logical form (ADR-0024: RTL is the default, not a mode).";
+
+/**
+ * Tailwind utilities, and the bare values `left` and `right`, that name a physical side. Their logical forms are `ms-`/`me-`,
+ * `ps-`/`pe-`, `start-`/`end-`, `border-s`/`border-e`, `rounded-s`/`rounded-e`,
+ * `text-start`/`text-end`, `float-start`/`float-end`.
+ */
+const PHYSICAL_UTILITY =
+  /^-?(?:m[lr]|p[lr]|scroll-m[lr]|scroll-p[lr]|left|right|border-[lr]|rounded-[lr]|rounded-(?:tl|tr|bl|br))(?:-|$)|^(?:text|float|clear)-(?:left|right)$/;
+
+/** CSS properties (React style keys) that name a physical side. */
+const PHYSICAL_PROPERTY =
+  /^(?:(?:margin|padding|border|scrollMargin|scrollPadding)(?:Left|Right)\w*|border(?:Top|Bottom)(?:Left|Right)Radius|left|right)$/;
+
+/**
+ * The physical utilities in a class string: variants (`hover:`, `md:`) and the important
+ * mark are stripped before matching.
+ * @param {string} text
+ */
+function physicalUtilities(text) {
+  return text
+    .split(/\s+/)
+    .map((token) => token.split(":").at(-1)?.replace(/^!|!$/g, "") ?? "")
+    .filter((token) => PHYSICAL_UTILITY.test(token));
+}
+
+/**
+ * Whether `node` sits inside a JSX `style={…}` attribute.
+ * @param {RuleContext} context
+ * @param {Node} node
+ */
+function inStyleAttribute(context, node) {
+  return context.sourceCode
+    .getAncestors(node)
+    .some(
+      (ancestor) =>
+        /** @type {{ type: string }} */ (ancestor).type === "JSXAttribute" &&
+        /** @type {any} */ (ancestor).name?.name === "style",
+    );
+}
+
+/** @type {RuleModule} */
+const noPhysicalDirection = {
+  meta: {
+    type: "problem",
+    docs: { description: "No physical-direction CSS in the RTL user interface (ADR-0024)." },
+    schema: [],
+    messages: {
+      utility: "`{{name}}` names a physical side. " + RTL_ADR,
+      property: "`{{name}}` names a physical side. " + RTL_ADR,
+    },
+  },
+  create(context) {
+    /**
+     * @param {Node} node
+     * @param {string} text
+     */
+    function checkClasses(node, text) {
+      for (const name of physicalUtilities(text)) {
+        context.report({ node, messageId: "utility", data: { name } });
+      }
+    }
+    return {
+      Literal(node) {
+        if (typeof node.value !== "string") return;
+        const parent = /** @type {{ type: string }} */ (/** @type {any} */ (node).parent);
+        if (parent.type === "ImportDeclaration" || parent.type === "ExportNamedDeclaration") return;
+        checkClasses(node, node.value);
+      },
+      TemplateElement(node) {
+        checkClasses(node, node.value.cooked ?? node.value.raw);
+      },
+      Property(node) {
+        if (!inStyleAttribute(context, node)) return;
+        const key =
+          node.key.type === "Identifier"
+            ? node.key.name
+            : node.key.type === "Literal" && typeof node.key.value === "string"
+              ? node.key.value
+              : undefined;
+        if (key === undefined) return;
+        // A `"left"`/`"right"` value (`textAlign`, `float`) is caught as a string above.
+        if (PHYSICAL_PROPERTY.test(key)) {
+          context.report({ node: node.key, messageId: "property", data: { name: key } });
+        }
+      },
+    };
+  },
+};
+
+const I18N_ADR =
+  "Put user-facing text in the module's i18n namespace and render it with `t()` (ADR-0023).";
+
+/** JSX attributes whose value a person reads or hears. */
+const USER_FACING_ATTRIBUTES = new Set([
+  "alt",
+  "aria-description",
+  "aria-label",
+  "aria-placeholder",
+  "aria-roledescription",
+  "aria-valuetext",
+  "description",
+  "errorMessage",
+  "label",
+  "placeholder",
+  "title",
+]);
+
+/** Text a person would read: any letter in any script. Digits and punctuation pass. */
+const WORDS = /\p{L}/u;
+
+/**
+ * The literal text of a JSX child or attribute value, when it is a plain string.
+ * @param {any} node
+ * @returns {string | undefined}
+ */
+function literalText(node) {
+  if (node === null || node === undefined) return undefined;
+  if (node.type === "Literal" && typeof node.value === "string") return node.value;
+  if (node.type === "TemplateLiteral") {
+    return node.quasis.map((/** @type {any} */ quasi) => quasi.value.cooked ?? "").join(" ");
+  }
+  if (node.type === "JSXExpressionContainer") return literalText(node.expression);
+  return undefined;
+}
+
+/** @type {RuleModule} */
+const noLiteralString = {
+  meta: {
+    type: "problem",
+    docs: { description: "No hard-coded user-facing strings in the interface (ADR-0023)." },
+    schema: [],
+    messages: {
+      text: "Literal text {{text}} in JSX. " + I18N_ADR,
+      attribute: "Literal `{{name}}` text {{text}}. " + I18N_ADR,
+    },
+  },
+  create(context) {
+    /** @param {string} text */
+    const quote = (text) => JSON.stringify(text.trim().slice(0, 30));
+    return {
+      /** @param {any} node */
+      JSXText(node) {
+        if (WORDS.test(node.value)) {
+          context.report({ node, messageId: "text", data: { text: quote(node.value) } });
+        }
+      },
+      /** @param {any} node */
+      JSXExpressionContainer(node) {
+        if (node.parent.type !== "JSXElement" && node.parent.type !== "JSXFragment") return;
+        const text = literalText(node.expression);
+        if (text !== undefined && WORDS.test(text)) {
+          context.report({ node, messageId: "text", data: { text: quote(text) } });
+        }
+      },
+      /** @param {any} node */
+      JSXAttribute(node) {
+        const name = node.name.type === "JSXIdentifier" ? node.name.name : undefined;
+        if (name === undefined || !USER_FACING_ATTRIBUTES.has(name)) return;
+        const text = literalText(node.value);
+        if (text !== undefined && WORDS.test(text)) {
+          context.report({ node, messageId: "attribute", data: { name, text: quote(text) } });
+        }
+      },
+    };
+  },
+};
+
 export const plugin = {
   meta: { name: "@mustawfi/eslint-plugin" },
   rules: {
     "no-float-money": noFloatMoney,
     "no-ambient-clock": noAmbientClock,
     "no-ambient-randomness": noAmbientRandomness,
+    "no-physical-direction": noPhysicalDirection,
+    "no-literal-string": noLiteralString,
   },
 };
