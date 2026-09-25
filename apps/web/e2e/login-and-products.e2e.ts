@@ -36,6 +36,8 @@ test("renders right to left in Arabic", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "تسجيل الدخول" })).toBeVisible();
   const form = await page.getByRole("form").evaluate((element) => getComputedStyle(element));
   expect(form.direction).toBe("rtl");
+  // The screen's classes live in a module package: Tailwind must scan it (`@source`).
+  expect(form.maxWidth).not.toBe("none");
 });
 
 test("reports a wrong password in words and stays on the sign-in page", async ({ page }) => {

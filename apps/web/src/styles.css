@@ -4,8 +4,8 @@
 
 /* Workspace packages are linked through node_modules, which Tailwind does not scan by itself. */
 @source "../../../packages/ui/src/components";
-@source "../../../core/*/src/client";
-@source "../../../modules/*/src/client";
+@source "../../../core/*/src/client/**/*.tsx";
+@source "../../../modules/*/src/client/**/*.tsx";
 
 @layer base {
   html {
