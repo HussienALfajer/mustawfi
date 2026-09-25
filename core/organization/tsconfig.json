@@ -1,0 +1,8 @@
+{
+  "extends": "@mustawfi/config/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "jsx": "react-jsx"
+  },
+  "include": ["src", "drizzle.config.ts"]
+}

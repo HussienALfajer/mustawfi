@@ -36,6 +36,7 @@
     "@hookform/resolvers": "5.9.1",
     "@mustawfi/core-access": "workspace:*",
     "@mustawfi/core-config": "workspace:*",
+    "@mustawfi/core-organization": "workspace:*",
     "@mustawfi/core-sync": "workspace:*",
     "@mustawfi/core-tenancy": "workspace:*",
     "@mustawfi/i18n": "workspace:*",

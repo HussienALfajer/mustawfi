@@ -7,6 +7,7 @@ import {
   pgSchema,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -78,6 +79,45 @@ export const branches = coreTenancy.table(
     uniqueIndex("branches_one_default_per_tenant")
       .on(t.tenantId)
       .where(sql`${t.isDefault}`),
+  ],
+);
+
+/**
+ * Departments (profit centers, ADR-0030): stored here, next to branches, so user scopes,
+ * journal lines, and documents can reference them; `core.organization` manages them. Archived,
+ * never deleted: `mustawfi_app` has no `DELETE`. One default per tenant, created with it, which
+ * is never archived.
+ */
+export const departments = coreTenancy.table(
+  "departments",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid()
+      .notNull()
+      .references(() => tenants.id),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    name: text().notNull(),
+    isDefault: boolean().notNull(),
+    sortOrder: integer().notNull(),
+    archivedAt: timestamp({ withTimezone: true }),
+    archivedBy: uuid(),
+  },
+  (t) => [
+    uniqueIndex("departments_one_default_per_tenant")
+      .on(t.tenantId)
+      .where(sql`${t.isDefault}`),
+    uniqueIndex("departments_active_name_per_tenant")
+      .on(t.tenantId, t.name)
+      .where(sql`${t.archivedAt} is null`),
+    // Target of tenant-scoped foreign keys (user scopes, journal lines, documents).
+    unique("departments_id_per_tenant").on(t.tenantId, t.id),
+    check(
+      "departments_default_not_archived",
+      sql`not (${t.isDefault} and ${t.archivedAt} is not null)`,
+    ),
+    check("departments_archived_by", sql`(${t.archivedAt} is null) = (${t.archivedBy} is null)`),
   ],
 );
 

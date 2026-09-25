@@ -7,6 +7,7 @@ import {
   type ModuleRegistry,
 } from "@mustawfi/core-config/server";
 import { ledgerModule } from "@mustawfi/core-ledger/server";
+import { organizationModule } from "@mustawfi/core-organization/server";
 import {
   createSyncOperationTable,
   syncModule,
@@ -37,6 +38,7 @@ export const serverModules: readonly ModuleManifest<HostContext>[] = [
   accessModule,
   ledgerModule,
   syncModule,
+  organizationModule,
   inventoryModule,
   salesModule,
 ];

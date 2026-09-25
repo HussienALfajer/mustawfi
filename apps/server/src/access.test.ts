@@ -689,6 +689,7 @@ describe("audit log", () => {
           baseCurrency: "SYP",
           storeCode: tenant.storeCode,
           defaultBranchId: tenant.branchId,
+          defaultDepartmentId: tenant.defaultDepartmentId,
         },
       },
     ]);

@@ -7,6 +7,7 @@ import {
   registerDevice,
 } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
+import { addDepartment, seedOrganization } from "@mustawfi/core-organization/server";
 import { postJournalEntry, seedAccounts, systemAccounts } from "@mustawfi/core-ledger/server";
 import {
   createTenant,
@@ -82,7 +83,7 @@ const remember = (tenant: SeedTenant, values: { credential?: string; productId?:
  */
 const seeds: readonly Seed[] = [
   {
-    tables: ["core_tenancy.tenants", "core_tenancy.branches"],
+    tables: ["core_tenancy.tenants", "core_tenancy.branches", "core_tenancy.departments"],
     seed: (tx, tenant) =>
       createTenant(tx, {
         tenantId: tenant.tenantId,
@@ -90,6 +91,7 @@ const seeds: readonly Seed[] = [
         name: `tenant ${tenant.tenantId}`,
         baseCurrency: "SYP",
         storeCode: randomCode(cryptoRandom, 6),
+        defaultDepartmentId: newId(),
         createdAt: systemClock.now(),
         createdBy: tenant.userId,
       }),
@@ -223,6 +225,15 @@ const seeds: readonly Seed[] = [
         operations: hostSyncOperations(createServerRegistry()),
       });
       expect(pushed.results.map((r) => r.status)).toEqual(["accepted"]);
+    },
+  },
+  {
+    // The store profile and a second department, as tenant creation and the owner write them.
+    tables: ["core_organization.store_profiles"],
+    seed: async (tx, tenant) => {
+      const actor = { ...tenant, at: systemClock.now() };
+      await seedOrganization(tx, actor, "متجر", dependencies);
+      await addDepartment(tx, actor, "الإكسسوارات", dependencies);
     },
   },
   { tables: ["rls_fixture.items"], seed: seedFixtureItem },

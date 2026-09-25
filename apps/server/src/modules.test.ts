@@ -50,6 +50,7 @@ describe("server modules", () => {
       "core.access",
       "core.ledger",
       "core.sync",
+      "core.organization",
       "inventory",
       "sales",
     ]);

@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790364614595,
+      "tag": "0000_store_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790364615569,
+      "tag": "0001_store_profiles_rls",
+      "breakpoints": true
+    }
+  ]
+}

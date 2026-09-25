@@ -6,7 +6,22 @@ export {
   type TenantDatabaseOptions,
   type TenantTransaction,
 } from "./tenant-database.ts";
-export { createTenant, currentTenant, type NewTenant, type Tenant } from "./tenants.ts";
+export {
+  createTenant,
+  type CreatedTenant,
+  currentTenant,
+  type NewTenant,
+  type Tenant,
+} from "./tenants.ts";
+export {
+  archiveDepartment,
+  createDepartment,
+  defaultDepartment,
+  type DepartmentChange,
+  listDepartments,
+  type NewDepartment,
+  renameDepartment,
+} from "./departments.ts";
 export {
   currentLicense,
   installLicense,

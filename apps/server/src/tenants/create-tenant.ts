@@ -2,6 +2,7 @@ import { loginSchema, passwordSchema, userNameSchema } from "@mustawfi/core-acce
 import { createOwner, hashPassword } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { seedAccounts } from "@mustawfi/core-ledger/server";
+import { seedOrganization } from "@mustawfi/core-organization/server";
 import {
   currencyCodeSchema,
   STORE_CODE_LENGTH,
@@ -37,6 +38,8 @@ export interface CreatedTenant {
   readonly tenantId: string;
   readonly branchId: string;
   readonly ownerId: string;
+  /** The department seeded with the tenant («المتجر», `core-foundation` rule 28). */
+  readonly defaultDepartmentId: string;
   /** What the owner types to sign in (ADR-0029). */
   readonly storeCode: string;
 }
@@ -84,6 +87,7 @@ export async function createTenantWithOwner(
     tenantId: claims.tenant,
     branchId: dependencies.newId(),
     ownerId: dependencies.newId(),
+    defaultDepartmentId: dependencies.newId(),
   };
   const createdAt = dependencies.clock.now();
   const createdBy = ids.ownerId;
@@ -115,6 +119,7 @@ export async function createTenantWithOwner(
       name: parsed.name,
       baseCurrency: parsed.baseCurrency,
       storeCode: created.storeCode,
+      defaultDepartmentId: created.defaultDepartmentId,
       createdAt,
       createdBy,
     });
@@ -140,6 +145,7 @@ export async function createTenantWithOwner(
         baseCurrency: tenant.baseCurrency,
         storeCode: tenant.storeCode,
         defaultBranchId: tenant.defaultBranchId,
+        defaultDepartmentId: tenant.defaultDepartmentId,
       },
     });
     await recordAudit(tx, {
@@ -150,6 +156,12 @@ export async function createTenantWithOwner(
       entity: { type: "access.user", id: created.ownerId },
       after: { name: parsed.ownerName, login: parsed.ownerLogin, isOwner: true },
     });
+    await seedOrganization(
+      tx,
+      { tenantId: created.tenantId, branchId: created.branchId, userId: createdBy, at: createdAt },
+      tenant.name,
+      dependencies,
+    );
     const accounts = await seedAccounts(
       tx,
       { tenantId: created.tenantId, branchId: created.branchId, createdAt, createdBy },
