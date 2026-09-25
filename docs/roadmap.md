@@ -27,6 +27,7 @@ One discussion session with the user, run at `/effort high`, producing accepted 
 - Local database per client (Tauri, Capacitor, browser), sync protocol (outbox, idempotency keys, cursors, batching), device numbering, signing of licenses and configuration bundles.
 - Authentication: sessions or tokens, PIN login on shared devices, device registration and revoke.
 - Client stack: state and data layer, RTL-capable UI kit, i18n.
+- Visual design direction for the tenant app: design tokens, Arabic typography, and an explicit list of UI patterns to avoid.
 - Thermal printing (render to raster, ESC/POS) and camera scanning libraries.
 - Test stack: unit, property-based (ledger), integration against real PostgreSQL, sync simulation harness, end-to-end.
 - CI/CD on GitHub Actions; hosting target and environments; backups; error reporting and observability.
@@ -39,6 +40,16 @@ One discussion session with the user, run at `/effort high`, producing accepted 
 The thinnest end-to-end path through the chosen stack: create a tenant → log in → create a product → sell it on a client while offline → sync → see the sale on the server with a balanced journal entry.
 
 **Done when:** that path runs in CI; `AGENTS.md` Commands lists the real build, test, lint, and typecheck commands; a `verify` skill runs the project's verification; hooks (formatting after edits, filtered test output) and path-scoped rules for ledger, sync, tenancy, migrations, and RTL UI exist; module-boundary tooling fails the build on violations.
+
+## Business track (the owner, in parallel with development)
+
+These are not agent tasks, but their findings feed the spec sessions:
+
+- Field interviews before the first spec sessions: 10–15 mobile phone shops and 5 supermarkets (current software, pain points, what they pay).
+- A Syrian accountant as advisor, available for the `core-money`, `treasury`, and `reports` spec sessions.
+- Inquiry with the General Commission for Taxes and Fees about approval conditions for accounting software.
+- Certified hardware: source and test the printers, scanners, and cash drawers to support.
+- Resellers per governorate, lined up before the beta.
 
 ## Phase B — V1 modules (in order)
 

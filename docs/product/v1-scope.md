@@ -211,7 +211,7 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 **`admin` — super admin console** (a separate app, mandatory 2FA)
 1. Create a tenant and its admin account from a sector template (chart of accounts, roles, departments).
 2. Dynamic plans and licenses: perpetual (with annual maintenance), periodic of any duration, fixed term, trial.
-3. Invoices and payments: manual payment entry with receipt photo, partial payments, balance computed, **automatic extension on payment**.
+3. Invoices and payments: manual payment entry with receipt photo, partial payments, balance computed, **automatic extension on payment**, upgrade and downgrade with proration, printable invoice and receipt for the tenant.
 4. Lifecycle automation: reminders at 14, 7, 3, and 1 days and on expiry; configurable grace per tenant; read-only; suspension; archiving after 6–12 months with prior notice; a **temporary extension** button with a reason.
 5. Entitlements per tenant: modules, features, limits, add-ons.
 6. **Support impersonation**, read-only by default, logged and **visible to the tenant**.
@@ -231,6 +231,7 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 
 - One UI codebase (React + TypeScript). Screen sets per form factor: desktop gets everything; tablet gets POS, repairs, inventory, reports; phone gets task-focused screens (quick sale, scanning, stocktake, receiving, repair tickets, owner dashboard, alerts).
 - Native camera scanning (ML Kit) in the apps; browser scanning is not relied on.
+- Android distribution through Google Play and as a direct APK installed by resellers.
 - Certified hardware list: ESC/POS thermal printers 58/80 mm (USB, network, Bluetooth), HID barcode scanners, cash drawer via printer, one label printer.
 - Deferred: printing from a phone to a Bluetooth printer, native iOS app, push notifications on iOS.
 
@@ -286,6 +287,7 @@ The ten non-negotiables in `AGENTS.md` are the V1 data invariants. Module specs 
 | Customer display, restaurant features | Later | |
 | English UI | Later | i18n structure is ready |
 | Reseller portal in the admin console | After launch | |
+| Admin console extras: announcements to tenants, coupons, release channels, tenant health metrics (errors, storage), churn metrics | After launch | The V1 console covers selling, billing, lifecycle, and support |
 
 ## 10. Launch gates
 

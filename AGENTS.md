@@ -61,6 +61,7 @@ A **slice** is one verifiable outcome that fits in a single session without comp
 - Accepted ADRs are settled. Don't reopen one without new evidence; if you think one is wrong, say why and let the user decide. A new significant decision gets an ADR (from `docs/decisions/_template.md`) with status *Proposed* until the user accepts it.
 - Show evidence, not assertions: the commands you ran and what they returned.
 - Mark anything you couldn't confirm, and say where you looked.
+- Give your candid professional opinion, including disagreement with the user's idea, with the reasons. The user wants it.
 
 ## Definition of done (code changes)
 
@@ -72,7 +73,7 @@ A **slice** is one verifiable outcome that fits in a single session without comp
 
 ## Reporting
 
-End every task with a report to the user, in Arabic, under these headings:
+End every task that changes files or runs more than a few steps with a report to the user, in Arabic, under these headings (a quick question gets a direct answer instead):
 
 - **ينتظرك** — decisions or approvals needed from the user, or «لا شيء».
 - **ما تغيّر** — what changed, briefly.

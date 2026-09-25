@@ -9,7 +9,7 @@ Vertex System staff create tenants, sell plans, record payments, grant entitleme
 
 ## Decision
 
-- A separate application from the tenant app, with mandatory 2FA and staff roles (owner, support, finance; resellers later, limited to their own tenants).
+- A separate application from the tenant app, with mandatory 2FA, optional IP allowlisting, and staff roles (owner, support, finance; resellers later, limited to their own tenants).
 - It manages tenants (created from sector templates), plans and licenses (ADR-0008), invoices and payments, entitlements and limits (ADR-0009), devices, internal notes, and tenant data export.
 - Support impersonation is read-only by default, logged, and visible to the tenant.
 - Every admin action goes to an immutable audit log.

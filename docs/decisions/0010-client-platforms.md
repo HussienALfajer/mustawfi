@@ -11,7 +11,7 @@ Stores use Windows PCs at the cashier and Android tablets and phones in the shop
 
 - One UI codebase in React and TypeScript, with a shared local-database and sync layer.
 - Windows app via Tauri (lighter than Electron; suits old hardware), Windows 10 or later.
-- Android app via Capacitor (native ML Kit camera scanning, storage, Bluetooth).
+- Android app via Capacitor (native ML Kit camera scanning, storage, Bluetooth), distributed through Google Play and as a direct APK installed by resellers.
 - Browser/PWA for remote owner and accountant access, and for iPad/iPhone in V1; never a primary POS.
 - Screen sets per form factor: desktop gets everything; tablets get POS, repairs, inventory, reports; phones get task-focused screens.
 - The owner dashboard is a permission-gated set of screens inside the same app — the phone home screen for users who hold that permission — not a separate application.
