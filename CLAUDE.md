@@ -17,6 +17,12 @@ Everything above is shared with other coding agents. This part applies to Claude
 - Bundled `/code-review` — correctness bugs in the current diff.
 - Route verbose output (full test runs, long logs) through a subagent or filter it; bring back only what matters.
 
+## Agent tooling
+
+- `verify` skill — runs `pnpm verify:agent`, the full gate with filtered output. Use it for every verification step; it passes only on `verify: PASSED`.
+- Hook (`.claude/settings.json`): every Edit or Write is formatted with Prettier through `tools/agent/src/format-edited-hook.ts`; files ignored by `.gitignore` or `.prettierignore` (Markdown) are left alone.
+- Path-scoped rules in `.claude/rules/` (ledger, sync, tenancy, migrations, RTL UI) load when you read matching files. They summarize the ADRs they cite; the ADRs stay the source of truth. `tools/agent/src/agent-setup.test.ts` checks their paths and ADR references.
+
 ## Model and effort
 
 - Work runs on Opus 5.5. Fable models are not available on this subscription — never suggest them.

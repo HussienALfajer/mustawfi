@@ -119,7 +119,7 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 | # | Slice | Done when (3–5 checks) | Effort | Depends on | Status |
 |---|---|---|---|---|---|
 | 1 | Monorepo and verification pipeline | `pnpm verify` (build, format check, lint, typecheck, test) passes on a clean checkout; the GitHub Actions workflow runs it on pull requests and passes; `pnpm check:boundaries` fails on fixture violations of ADR-0015 rules 1–4; `AGENTS.md` Commands lists the real commands | medium | — | Done 2026-09-25 — see deviations below |
-| 2 | Agent tooling | A `verify` skill runs `pnpm verify` with filtered output; a hook formats edited files; a hook or wrapper filters test output to failures and summaries; path-scoped rules exist for ledger, sync, tenancy, migrations, and RTL UI, each citing its ADRs | medium | 1 | Not started |
+| 2 | Agent tooling | A `verify` skill runs `pnpm verify` with filtered output; a hook formats edited files; a hook or wrapper filters test output to failures and summaries; path-scoped rules exist for ledger, sync, tenancy, migrations, and RTL UI, each citing its ADRs | medium | 1 | Done 2026-09-25 — see deviations below |
 | 3 | Kernel: exact money and identifiers | `Decimal`/`Money`/`Quantity`/`ExchangeRate` round only through named, mode-explicit functions (half away from zero); property tests prove exact allocation, mirrored reversals, and bounded conversion residuals; UUIDv7 and an injectable `Clock`; lint rules ban float money, ambient clock, and ambient randomness in domain code, each with a fixture test | high | 1 | Not started |
 | 4 | Database foundation and tenant isolation | Tests start PostgreSQL 18 through Testcontainers and apply migrations as `mustawfi_owner`; the app connects as `mustawfi_app` and every access goes through `withTenant`; the catalog test fails on a fixture table without forced RLS; the isolation test proves tenant A cannot read, change, or count tenant B's rows, and that no context returns zero rows and blocks inserts | high | 3 | Not started |
 | 5 | Server host, module registry, tenancy | Fastify mounts modules from the registry, and the registry refuses to start with an undeclared or disabled dependency (test); OpenAPI is generated from the Zod contracts; errors are problem details with stable codes; a CLI command creates a tenant with its hidden default branch, base currency, and owner (integration test) | medium | 4 | Not started |
@@ -142,6 +142,11 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
   - `pnpm build` has no build tasks yet; the first come with the apps (slices 5 and 10).
   - Prettier skips Markdown so docs tables and Arabic prose are not reflowed.
   - Dependencies respect pnpm's minimum release age (turbo pinned to 2.11.3; 2.11.4 was under a day old). No policy exclusions.
+- **Slice 2 (2026-09-25).**
+  - The tooling lives in `tools/agent` (`@mustawfi/tools-agent`): `pnpm verify:agent` runs the same steps as `pnpm verify` and prints only failures and summaries; a test keeps its step list equal to the root `verify` script.
+  - Test output is filtered by a wrapper, not a hook: `pnpm test:agent` and the verify runner use Vitest's `minimal` reporter explicitly (Vitest 5 also picks it by itself when it detects an agent).
+  - The format hook is a `PostToolUse` hook on `Edit|Write|MultiEdit` that runs Prettier on the edited file through its API, honouring `.gitignore` and `.prettierignore` like the CLI; it never blocks the agent.
+  - Path-scoped rules are Claude Code rules in `.claude/rules/`. Their globs cover directories that do not exist yet (for example `**/migrations/**`); slice 4 decides where migrations live and should adjust `migrations.md` if needed. `agent-setup.test.ts` checks that each rule has `paths` and cites only existing ADRs, and that hook scripts and skill commands exist.
 
 ## Open questions
 
@@ -154,3 +159,4 @@ None. The registry exists, but the skeleton defines no settings, custom fields, 
 - 2026-09-25 — Spec agreed in the Phase A2 architecture session.
 - 2026-09-25 — Unit base commit: f0196b4c5701f564778daeed0dc8ddf04a3ed3fc
 - 2026-09-25 — Slice 1 done: monorepo, `pnpm verify`, CI, boundary checks.
+- 2026-09-25 — Slice 2 done: `verify` skill, format hook, filtered test output, path-scoped rules.
