@@ -9,6 +9,7 @@ import {
   currentDeviceSchema,
   currentSessionSchema,
   deactivateUserRequestSchema,
+  deviceViewSchema,
   newUserRequestSchema,
   permissionCatalogueSchema,
   roleRequestSchema,
@@ -24,10 +25,18 @@ import {
   registerDeviceRequestSchema,
   registeredDeviceSchema,
   registrationCodeResponseSchema,
+  revokeDeviceRequestSchema,
 } from "../shared/index.ts";
 import type { Manager } from "./actor.ts";
 import type { AccessContext } from "./dependencies.ts";
-import { issueRegistrationCode, registerDevice, registrationFailed } from "./devices.ts";
+import {
+  issueRegistrationCode,
+  listDevices,
+  registerDevice,
+  registrationFailed,
+  reportDeviceWiped,
+  revokeDevice,
+} from "./devices.ts";
 import { type LoggedIn, logIn, logInWithPin, type SignInSource } from "./login.ts";
 import { resetPasswordWithCode } from "./reset-codes.ts";
 import { archiveRole, copyRole, editRole, listRoles } from "./roles.ts";
@@ -74,6 +83,9 @@ const manageUsers: { readonly access: RouteAccess } = {
 };
 const manageRoles: { readonly access: RouteAccess } = {
   access: { permission: "access.roles.manage" },
+};
+const manageDevices: { readonly access: RouteAccess } = {
+  access: { permission: "access.devices.manage" },
 };
 
 /**
@@ -219,7 +231,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/registration-codes",
     {
-      config: { access: { permission: "access.devices.manage" } },
+      config: manageDevices,
       schema: {
         tags,
         response: {
@@ -290,6 +302,63 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
         name: device.name,
       };
     },
+  );
+
+  app.post(
+    "/devices/current/wipe",
+    {
+      // A revoked device reports its wipe with its credential, as it pushed (rule 23).
+      config: { access: "deviceEvenRevoked" },
+      schema: {
+        tags,
+        response: { 204: z.null(), 401: problemDetailsSchema, 409: problemDetailsSchema },
+      },
+    },
+    async (request, reply) => {
+      await reportDeviceWiped(context.tenants, deviceOf(request), context);
+      return reply.status(204).send(null);
+    },
+  );
+
+  app.get(
+    "/devices",
+    {
+      config: manageDevices,
+      schema: {
+        tags,
+        response: { 200: z.object({ items: z.array(deviceViewSchema) }), ...refusals },
+      },
+    },
+    async (request) => {
+      const session = sessionOf(request);
+      const items = await context.tenants.withTenant(
+        { tenantId: session.tenantId, userId: session.user.id },
+        (tx) => listDevices(tx),
+      );
+      return { items };
+    },
+  );
+
+  app.post(
+    "/devices/:id/revoke",
+    {
+      config: manageDevices,
+      schema: {
+        tags,
+        params: idParamsSchema,
+        body: revokeDeviceRequestSchema,
+        response: { 200: deviceViewSchema, ...refusals },
+      },
+    },
+    (request) =>
+      asManager(sessionOf(request), (tx, manager) =>
+        revokeDevice(
+          tx,
+          manager,
+          { deviceId: request.params.id, reason: request.body.reason },
+          context,
+        ),
+      ),
   );
 
   /** Runs `fn` in the session's tenant with the session's user as the manager. */

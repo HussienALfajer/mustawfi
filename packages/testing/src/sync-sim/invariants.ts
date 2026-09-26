@@ -17,8 +17,15 @@ export interface DeviceSnapshot {
   readonly name: string;
   readonly deviceId: string;
   readonly prefix: string;
+  /**
+   * The device's invoices; for a wiped device, the sales the harness saw it make, since its
+   * outbox is gone.
+   */
   readonly invoices: readonly DeviceInvoice[];
+  /** The products it holds; none once it wiped its data. */
   readonly productIds: readonly string[];
+  /** A revoked device that wiped its local data (`core-foundation` rule 23). */
+  readonly wiped?: boolean;
 }
 
 export interface ServerInvoice {
@@ -60,6 +67,11 @@ export interface ConvergenceInput {
   readonly server: ServerSnapshot;
   /** Stock the run put on hand per product, outside sales. */
   readonly received: ReadonlyMap<string, Decimal>;
+  /**
+   * The operation flags the run expects, as `<opId> <code>` — `deviceRevoked` on what a revoked
+   * device pushed after its revoke. Every other flag is a problem, and so is a missing one.
+   */
+  readonly expectedFlags?: ReadonlySet<string>;
 }
 
 const NUMBER = /^(.+)-[A-Z]+-(\d{6})$/;
@@ -80,7 +92,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
  * What a converged run must show (ADR-0026, ADR-0020): every sale a device made is on the
  * server exactly once, with its number and total; no invoice appears that no device made;
  * each device's numbers run from 1 without gaps, the server tracked each device's last invoice
- * number, and no operation was flagged; every invoice with a total posts one balanced
+ * number, and no operation was flagged but the expected ones; a wiped device holds nothing; every invoice with a total posts one balanced
  * entry for that total and the ledger balances; stock on hand is what was received minus what
  * was sold; and every device holds every product. Returns the problems found, empty when the
  * run converged.
@@ -103,7 +115,9 @@ export function convergenceProblems(input: ConvergenceInput): string[] {
     for (const invoice of device.invoices) {
       made.add(invoice.id);
       const where = `${device.name} ${invoice.number}`;
-      if (invoice.syncState === "rejected") {
+      if (device.wiped === true) {
+        // Its outbox is gone with the wipe: the sale must simply be on the server.
+      } else if (invoice.syncState === "rejected") {
         problems.push(`${where} was rejected: ${invoice.rejectionCode ?? "no code"}`);
       } else if (invoice.syncState !== "accepted" && invoice.syncState !== "duplicate") {
         problems.push(`${where} is ${invoice.syncState ?? "missing from the outbox"}`);
@@ -142,15 +156,26 @@ export function convergenceProblems(input: ConvergenceInput): string[] {
         `${device.name} made ${String(seqs.length)} invoices; the server's last number is ${String(tracked?.lastSeq ?? 0)}`,
       );
     }
-    if (!sameSet(device.productIds, server.productIds)) {
+    if (device.wiped === true) {
+      if (device.productIds.length > 0) {
+        problems.push(
+          `${device.name} still holds ${String(device.productIds.length)} products after its wipe`,
+        );
+      }
+    } else if (!sameSet(device.productIds, server.productIds)) {
       problems.push(
         `${device.name} holds ${String(device.productIds.length)} products, the server ${String(server.productIds.length)}`,
       );
     }
   }
+  const expectedFlags = new Set(input.expectedFlags ?? []);
   for (const flag of server.operationFlags) {
-    problems.push(`operation ${flag.opId} was flagged ${flag.code}`);
+    if (!expectedFlags.delete(`${flag.opId} ${flag.code}`)) {
+      problems.push(`operation ${flag.opId} was flagged ${flag.code}`);
+    }
   }
+  for (const flag of expectedFlags)
+    problems.push(`operation ${flag.replace(" ", " was not flagged ")}`);
   for (const invoice of server.invoices) {
     if (!made.has(invoice.id))
       problems.push(`invoice ${invoice.number} on the server was never made`);

@@ -232,12 +232,28 @@ export const devices = coreAccess.table(
       .notNull()
       .unique()
       .references(() => registrationCodes.id),
+    /**
+     * Set once, by revoke (`core-foundation` rule 23), with who and why; never cleared. A
+     * revoked device's credential is refused everywhere but push.
+     */
+    revokedAt: timestamp({ withTimezone: true }),
+    revokedBy: uuid(),
+    revokeReason: text(),
+    /** When the revoked device reported that it wiped its local data, if it could. */
+    wipedAt: timestamp({ withTimezone: true }),
+    /** The server's time of the device's last push or pull. */
+    lastSyncAt: timestamp({ withTimezone: true }),
   },
   (t) => [
     unique("devices_prefix_per_tenant").on(t.tenantId, t.prefix),
     check("devices_type", sql`${t.type} in ('mainPos', 'companion')`),
     check("devices_prefix_format", sql`${t.prefix} ~ '^[A-HJ-NP-Z2-9]{2}$'`),
     check("devices_credential_hash_format", sql`${t.credentialHash} ~ ${sql.raw(SHA256_HEX)}`),
+    check(
+      "devices_revoke_complete",
+      sql`(${t.revokedAt} is null) = (${t.revokedBy} is null) and (${t.revokedAt} is null) = (${t.revokeReason} is null)`,
+    ),
+    check("devices_wiped_after_revoke", sql`${t.wipedAt} is null or ${t.revokedAt} is not null`),
   ],
 );
 

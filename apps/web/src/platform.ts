@@ -5,10 +5,14 @@ import type { NativeLocalDb } from "@mustawfi/local-db/native";
 import { isTauri } from "@mustawfi/local-db/tauri";
 import type { RawPrinterTransport } from "@mustawfi/printing";
 
-/** The local database as a platform opens it; the native shells can also copy it. */
+/**
+ * The local database as a platform opens it; the native shells can also copy it, and delete
+ * the copies when a revoked device wipes its data.
+ */
 export interface OpenedLocalDb {
   readonly db: LocalDb;
   readonly backup?: NativeLocalDb["backup"];
+  readonly removeBackups?: NativeLocalDb["removeBackups"];
 }
 
 /**

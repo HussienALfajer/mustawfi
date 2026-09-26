@@ -1,4 +1,4 @@
-import { deviceOf } from "@mustawfi/core-access/server";
+import { deviceOf, recordDeviceSync } from "@mustawfi/core-access/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -16,7 +16,9 @@ const tags = ["sync"];
 
 /**
  * `core.sync` routes, under `/api/v1/sync` (ADR-0020). Both authenticate as the device, with
- * its credential; each pushed operation names the user who performed it.
+ * its credential; each pushed operation names the user who performed it. A revoked device may
+ * still push, and nothing else (`core-foundation` rule 23). Each records the server's time
+ * of the device's last sync.
  */
 export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
   const app = scope.withTypeProvider<ZodTypeProvider>();
@@ -24,7 +26,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
   app.post(
     "/push",
     {
-      config: { access: "device" },
+      config: { access: "deviceEvenRevoked" },
       schema: {
         tags,
         body: pushRequestSchema,
@@ -33,6 +35,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
     },
     async (request) => {
       const device = deviceOf(request);
+      await recordDeviceSync(context.tenants, device, context.clock.now());
       return pushOperations(context.tenants, device, request.body.operations, {
         clock: context.clock,
         newId: context.newId,
@@ -53,6 +56,7 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
     },
     async (request) => {
       const device = deviceOf(request);
+      await recordDeviceSync(context.tenants, device, context.clock.now());
       return context.tenants.withTenant(
         { tenantId: device.tenantId, deviceId: device.deviceId },
         (tx) => readChanges(tx, request.query),

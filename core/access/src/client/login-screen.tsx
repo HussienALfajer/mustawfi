@@ -29,6 +29,8 @@ function failureKey(error: unknown): string {
         return "login.throttled";
       case accessProblemCodes.deviceRequired:
         return "login.deviceRequired";
+      case accessProblemCodes.deviceRevoked:
+        return "login.deviceRevoked";
     }
   }
   return "login.refused";

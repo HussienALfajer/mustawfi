@@ -8,14 +8,20 @@
  * balances, stock is what was received minus what was sold, and every device holds every
  * product.
  *
+ * One device is revoked mid-run (`core-foundation` rule 23): it keeps selling until it hears,
+ * every sale it made still reaches the server, exactly the operations that arrived after the
+ * revoke are flagged `deviceRevoked`, and it ends with its local data wiped.
+ *
  * Replay a failing run with its seed: `SYNC_SIM_SEEDS=1234 pnpm test:agent sync-sim`.
  * Longer runs: `SYNC_SIM_STEPS=2000`.
  */
 import {
   accessLocalMigrations,
   type LocalDevice,
+  localDevice,
   registerThisDevice,
 } from "@mustawfi/core-access/client";
+import type { DeviceView } from "@mustawfi/core-access/shared";
 import {
   organizationLocalMigrations,
   organizationPullAppliers,
@@ -56,6 +62,7 @@ import {
   converge,
   convergenceProblems,
   createSimulatedNetwork,
+  type DeviceInvoice,
   type DeviceSnapshot,
   type FaultRates,
   type LinkStats,
@@ -157,6 +164,8 @@ interface SimDevice {
   readonly link: SimulatedLink;
   readonly clock: Clock;
   readonly newId: IdGenerator;
+  /** Every sale it made, as the POS answered: a wiped device keeps no record of them. */
+  readonly sales: DeviceInvoice[];
 }
 
 interface Store {
@@ -229,13 +238,14 @@ async function openDevice(
   const skew = random.int(-10, 10) * 60_000;
   const clock: Clock = { now: () => new Date(serverClock.now().getTime() + skew) };
   const db = openNodeLocalDb(":memory:");
-  await migrateLocalDb(db, [
+  const migrations = [
     ...accessLocalMigrations,
     ...syncLocalMigrations,
     ...inventoryLocalMigrations,
     ...salesLocalMigrations,
     ...organizationLocalMigrations,
-  ]);
+  ];
+  await migrateLocalDb(db, migrations);
   const { code } = await ownerRequest<{ code: string }>(
     "/api/v1/access/registration-codes",
     store.token,
@@ -248,6 +258,7 @@ async function openDevice(
   );
   const engine = createSyncEngine({
     db,
+    migrations,
     appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
     clock,
     transport: createApiSyncTransport({ fetch: link.fetch }),
@@ -258,11 +269,21 @@ async function openDevice(
     if (status.phase === "failed") failures.push(`${name}: ${status.failure ?? "?"}`);
   });
   const newId = uuidV7Generator({ clock, random: random.fork("ids").source });
-  return { name, db, local, engine, link, clock, newId };
+  return { name, db, local, engine, link, clock, newId, sales: [] };
 }
 
 async function deviceSnapshot(device: SimDevice): Promise<DeviceSnapshot> {
   const invoices = await listLocalInvoices(device.db, 1_000_000);
+  if (device.engine.status().phase === "removed") {
+    return {
+      name: device.name,
+      deviceId: device.local.deviceId,
+      prefix: device.local.prefix,
+      invoices: device.sales,
+      productIds: (await listLocalProducts(device.db)).map((product) => product.id),
+      wiped: true,
+    };
+  }
   return {
     name: device.name,
     deviceId: device.local.deviceId,
@@ -343,6 +364,38 @@ function serverSnapshot(store: Store): Promise<ServerSnapshot> {
   });
 }
 
+/** The revoked device's rows left on it once it wiped: every count must be zero. */
+async function leftAfterWipe(device: SimDevice): Promise<string[]> {
+  const left: string[] = [];
+  if ((await localDevice(device.db)) !== undefined) left.push("its registration");
+  const counts = await outboxCounts(device.db);
+  const outbox = await device.db.query("SELECT count(*) AS n FROM sync_outbox");
+  if (outbox[0]?.["n"] !== 0n) left.push(`${String(outbox[0]?.["n"])} outbox rows`);
+  if (counts.pending > 0) left.push(`${String(counts.pending)} pending operations`);
+  const invoices = await listLocalInvoices(device.db, 1_000_000);
+  if (invoices.length > 0) left.push(`${String(invoices.length)} invoices`);
+  return left;
+}
+
+/**
+ * The operations of `deviceId` the server accepted after its revoke at `revokedAt`: each must be
+ * flagged `deviceRevoked`, and nothing else. The server clock moves on right after the revoke,
+ * so an operation received with the revoke's own time came before it.
+ */
+async function pushedAfterRevoke(
+  store: Store,
+  deviceId: string,
+  revokedAt: string,
+): Promise<Set<string>> {
+  const { tenantId, ownerId } = store.tenant;
+  const rows = await tenants.withTenant({ tenantId, userId: ownerId }, (tx) =>
+    tx.execute<{ id: string }>(sql`
+      SELECT id FROM core_sync.received_ops
+      WHERE device_id = ${deviceId} AND status = 'accepted' AND created_at > ${revokedAt}::timestamptz`),
+  );
+  return new Set(rows.rows.map((row) => `${row.id} deviceRevoked`));
+}
+
 interface RunResult {
   readonly trace: readonly string[];
   readonly problems: readonly string[];
@@ -350,6 +403,8 @@ interface RunResult {
   readonly network: Readonly<LinkStats>;
   readonly outboxStates: Readonly<Record<string, number>>;
   readonly invoices: number;
+  /** Sales the revoked device made, and how many of them reached the server after its revoke. */
+  readonly revoked: { readonly sales: number; readonly flagged: number };
   readonly convergeRounds: number;
   readonly elapsedMs: number;
 }
@@ -386,12 +441,28 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
     );
   }
   const started = performance.now();
+  // The last device is revoked once, mid-run; it does not know until it next reaches the server.
+  const revokedDevice = devices[devices.length - 1];
+  if (revokedDevice === undefined) throw new Error("no devices");
+  let revokedAt: string | undefined;
+  async function revoke(): Promise<string> {
+    if (revokedDevice === undefined) throw new Error("no devices");
+    const view = await ownerRequest<DeviceView>(
+      `/api/v1/access/devices/${revokedDevice.local.deviceId}/revoke`,
+      store.token,
+      { reason: "أُعيد الجهاز إلى المورّد" },
+    );
+    revokedAt = view.revokedAt ?? undefined;
+    serverClock.advance(1);
+    return `owner revoked ${revokedDevice.name}`;
+  }
   const actions: SimAction[] = [
     {
       name: "sell",
       weight: 35,
       async run(step) {
         const device = step.pick(devices);
+        if ((await localDevice(device.db)) === undefined) return `${device.name} was wiped`;
         const products = await listLocalProducts(device.db);
         if (products.length === 0) return `${device.name} has no products yet`;
         for (const product of step.shuffle(products).slice(0, step.int(1, 3))) {
@@ -402,6 +473,13 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
           userId: store.tenant.ownerId,
           clock: device.clock,
           newId: device.newId,
+        });
+        device.sales.push({
+          id: sale.invoiceId,
+          number: sale.number,
+          total: sale.total.amount.toString(),
+          syncState: undefined,
+          rejectionCode: null,
         });
         return `${device.name} sold ${sale.number} for ${sale.total.amount.toString()}`;
       },
@@ -438,6 +516,16 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
       },
     },
     {
+      name: "revoke",
+      weight: 1,
+      run() {
+        // Once it has sold: some of its sales may still wait in its outbox.
+        if (revokedAt !== undefined) return Promise.resolve("already revoked");
+        if (revokedDevice.sales.length === 0) return Promise.resolve("nothing sold to revoke");
+        return revoke();
+      },
+    },
+    {
       name: "late",
       weight: 8,
       async run() {
@@ -471,6 +559,8 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
     beforeStep: (step) => serverClock.advance(step.int(1, 20) * 60_000),
   });
 
+  // A run whose revoke step never came revokes before the network heals.
+  const trace2 = revokedAt === undefined ? [await revoke()] : [];
   const convergeRounds = await converge({
     network,
     devices: devices.map((device) => ({
@@ -481,26 +571,39 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
   });
 
   const snapshots = await Promise.all(devices.map(deviceSnapshot));
-  const problems = convergenceProblems({
-    devices: snapshots,
-    server: await serverSnapshot(store),
-    received: store.received,
-  });
+  if (revokedAt === undefined) throw new Error("the device was not revoked");
+  const expectedFlags = await pushedAfterRevoke(store, revokedDevice.local.deviceId, revokedAt);
+  const problems = [
+    ...convergenceProblems({
+      devices: snapshots,
+      server: await serverSnapshot(store),
+      received: store.received,
+      expectedFlags,
+    }),
+    ...(revokedDevice.engine.status().phase === "removed"
+      ? (await leftAfterWipe(revokedDevice)).map((left) => `${revokedDevice.name} kept ${left}`)
+      : [
+          `${revokedDevice.name} was not wiped: ${revokedDevice.engine.status().phase} ${revokedDevice.engine.status().failure ?? ""}`,
+        ]),
+  ];
   const elapsedMs = performance.now() - started;
   const outboxStates: Record<string, number> = {};
-  for (const invoice of snapshots.flatMap((snapshot) => snapshot.invoices)) {
-    const state = invoice.syncState ?? "missing";
-    outboxStates[state] = (outboxStates[state] ?? 0) + 1;
+  for (const snapshot of snapshots) {
+    for (const invoice of snapshot.invoices) {
+      const state = invoice.syncState ?? (snapshot.wiped === true ? "wiped" : "missing");
+      outboxStates[state] = (outboxStates[state] ?? 0) + 1;
+    }
   }
   const total = network.stats()["total"];
   if (total === undefined) throw new Error("no network totals");
   return {
-    trace,
+    trace: [...trace, ...trace2],
     problems,
     failures,
     network: total,
     outboxStates,
     invoices: snapshots.reduce((sum, snapshot) => sum + snapshot.invoices.length, 0),
+    revoked: { sales: revokedDevice.sales.length, flagged: expectedFlags.size },
     convergeRounds,
     elapsedMs,
   };
@@ -535,7 +638,7 @@ describe("the sync simulation harness", () => {
       expect(result.outboxStates["duplicate"] ?? 0, context).toBeGreaterThan(0);
       expect(result.elapsedMs, `time budget — ${context}`).toBeLessThan(BUDGET_MS);
       console.info(
-        `sync-sim seed ${String(seed)}: ${String(STEPS)} steps, ${String(result.invoices)} invoices ${JSON.stringify(result.outboxStates)}, converged in ${String(result.convergeRounds)} rounds, ${String(Math.round(result.elapsedMs))} ms; network ${JSON.stringify(result.network)}`,
+        `sync-sim seed ${String(seed)}: ${String(STEPS)} steps, ${String(result.invoices)} invoices ${JSON.stringify(result.outboxStates)}, revoked device ${JSON.stringify(result.revoked)}, converged in ${String(result.convergeRounds)} rounds, ${String(Math.round(result.elapsedMs))} ms; network ${JSON.stringify(result.network)}`,
       );
     },
     BUDGET_MS + 60_000,

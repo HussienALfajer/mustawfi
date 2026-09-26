@@ -8,6 +8,7 @@ import {
 } from "@mustawfi/local-db";
 import { queryOptions } from "@tanstack/react-query";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { z } from "zod";
 import {
   type DeviceType,
   registeredDeviceSchema,
@@ -157,6 +158,22 @@ export async function registerThisDevice(
   });
   holdDeviceCredential(device.credential);
   return device;
+}
+
+/**
+ * Tells the server that this revoked device wiped its local data (`core-foundation` rule 23),
+ * with the credential it held; the wipe has already removed it from the local database.
+ */
+export async function reportDeviceWiped(
+  credential: string,
+  options: { readonly fetch?: typeof fetch } = {},
+): Promise<void> {
+  await apiRequest("/api/v1/access/devices/current/wipe", {
+    method: "POST",
+    schema: z.null(),
+    bearer: credential,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+  });
 }
 
 /**

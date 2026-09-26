@@ -134,6 +134,49 @@ describe("convergence checks", () => {
     ).toMatch(/operation op-7 was flagged numberGap/);
   });
 
+  it("accept the expected flags, and report an expected flag that is missing", () => {
+    const input = converged();
+    const flagged: ConvergenceInput = {
+      ...input,
+      server: {
+        ...input.server,
+        operationFlags: [{ opId: "op-7", code: "deviceRevoked" }],
+      },
+      expectedFlags: new Set(["op-7 deviceRevoked"]),
+    };
+    expect(convergenceProblems(flagged)).toEqual([]);
+    expect(
+      convergenceProblems({ ...input, expectedFlags: new Set(["op-8 deviceRevoked"]) }),
+    ).toEqual(["operation op-8 was not flagged deviceRevoked"]);
+  });
+
+  it("hold a wiped device to its sales being on the server, and to holding nothing", () => {
+    const wiped = (change: (device: Mutable<DeviceSnapshot>) => void) =>
+      broken(({ devices }) => {
+        const device = devices[1]!;
+        device.wiped = true;
+        device.productIds = [];
+        // What the harness saw it make: no outbox state is left to show.
+        device.invoices[0] = { ...device.invoices[0]!, syncState: undefined };
+        change(device);
+      });
+    expect(wiped(() => undefined)).toEqual([]);
+    expect(wiped((device) => device.productIds.push(P1))).toEqual([
+      "M3 still holds 1 products after its wipe",
+    ]);
+    expect(
+      wiped((device) => {
+        device.invoices.push({
+          id: "i4",
+          number: "M3-INV-000002",
+          total: "5",
+          syncState: undefined,
+          rejectionCode: null,
+        });
+      }).join("\n"),
+    ).toMatch(/M3 M3-INV-000002 is lost/);
+  });
+
   it("report a sale the server lost", () => {
     expect(broken(({ server }) => server.invoices.splice(1, 1)).join("\n")).toMatch(
       /K7 K7-INV-000002 is lost/,

@@ -184,6 +184,23 @@ describe("native adapter", () => {
     await native.db.close();
   });
 
+  it("deletes every backup of the database, and only its own", async () => {
+    const other = await openNativeLocalDb(startHost(), "kept");
+    await other.db.run("CREATE TABLE items (name TEXT)");
+    const kept = await other.backup();
+    await other.db.close();
+    const native = await openNativeLocalDb(startHost(), "wiped");
+    await native.db.run("CREATE TABLE items (name TEXT)");
+    await native.backup();
+    await native.backup();
+    expect(await native.removeBackups()).toBe(2);
+    const left = readdirSync(join(directory, "backups"));
+    expect(left.filter((name) => name.startsWith("wiped-"))).toEqual([]);
+    expect(left).toContain(kept);
+    expect(await native.removeBackups()).toBe(0);
+    await native.db.close();
+  });
+
   it("skips a backup while a transaction is open", async () => {
     const native = await openNativeLocalDb(startHost(), "busy");
     await native.db.run("CREATE TABLE items (name TEXT)");

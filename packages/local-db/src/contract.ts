@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ALL_TABLES, type ChangedTables, type LocalDb, LocalDbError } from "./local-db.ts";
 import { LocalMigrationMismatch, migrateLocalDb } from "./migrations.ts";
 import { int64, localOrm, safeInteger } from "./orm.ts";
+import { compactLocalDb, wipeLocalDb } from "./wipe.ts";
 
 export interface ContractAdapter {
   /** Opens a fresh, empty database. */
@@ -288,6 +289,51 @@ export function localDbContract(name: string, adapter: ContractAdapter): void {
           { id: "a.0001_items" },
           { id: "a.0002_index" },
         ]);
+      });
+    });
+
+    it("wipes every table, kept documents included, and rebuilds the empty schema", async () => {
+      await withDb(adapter, async (db) => {
+        const migrations = [
+          { id: "a.0001_items", statements: [ITEMS] },
+          {
+            id: "a.0002_kept",
+            // Recorded documents refuse deletes, and a child refers to its parent.
+            statements: [
+              'CREATE TABLE "kept items" (id INTEGER PRIMARY KEY, item TEXT NOT NULL REFERENCES items (name))',
+              `CREATE TRIGGER kept_items_kept BEFORE DELETE ON "kept items"
+                BEGIN SELECT RAISE(ABORT, 'kept'); END`,
+            ],
+          },
+        ];
+        await migrateLocalDb(db, migrations);
+        await db.transaction(async (tx) => {
+          await tx.run("INSERT INTO items (name, qty) VALUES ('a', 1), ('b', 2)");
+          await tx.run(`INSERT INTO "kept items" (id, item) VALUES (1, 'a')`);
+        });
+        const kept = async () =>
+          (await db.query('SELECT count(*) AS n FROM "kept items"'))[0]?.["n"];
+        await expect(db.run('DELETE FROM "kept items"')).rejects.toBeInstanceOf(LocalDbError);
+
+        // Not while the condition says no: nothing changes.
+        expect(await wipeLocalDb(db, { migrations, when: () => Promise.resolve(false) })).toBe(
+          false,
+        );
+        expect(await items(db)).toEqual(["a", "b"]);
+
+        expect(await wipeLocalDb(db, { migrations, when: () => Promise.resolve(true) })).toBe(true);
+        expect(await items(db)).toEqual([]);
+        expect(await kept()).toBe(0n);
+        expect(await db.query("SELECT id FROM local_migrations ORDER BY position")).toEqual([
+          { id: "a.0001_items" },
+          { id: "a.0002_kept" },
+        ]);
+        await compactLocalDb(db);
+        // The schema is whole again, its trigger included: the app starts on it.
+        await db.run("INSERT INTO items (name) VALUES ('c')");
+        await db.run(`INSERT INTO "kept items" (id, item) VALUES (2, 'c')`);
+        await expect(db.run('DELETE FROM "kept items"')).rejects.toBeInstanceOf(LocalDbError);
+        expect(await migrateLocalDb(db, migrations)).toEqual({ applied: [] });
       });
     });
 

@@ -19,6 +19,7 @@ export type NativeRequest =
   | { readonly kind: "open"; readonly name: string }
   | { readonly kind: "run"; readonly sql: string; readonly params: readonly WireValue[] }
   | { readonly kind: "backup"; readonly keep: number; readonly minAgeMs?: number }
+  | { readonly kind: "removeBackups" }
   | { readonly kind: "close" };
 
 export type NativeResponse =
@@ -30,6 +31,7 @@ export type NativeResponse =
       readonly changes: number;
     }
   | { readonly kind: "backedUp"; readonly file: string | null }
+  | { readonly kind: "backupsRemoved"; readonly removed: number }
   | { readonly kind: "closed" };
 
 /** Sends one request to the native core; rejects with the core's error message. */
@@ -95,6 +97,11 @@ export interface NativeLocalDb {
    * transaction was open — try again later).
    */
   backup(options?: { readonly minAgeMs?: number }): Promise<string | undefined>;
+  /**
+   * Deletes every backup of the database: a revoked device wipes its data, its copies included
+   * (`core-foundation` rule 23). Resolves to how many were deleted.
+   */
+  removeBackups(): Promise<number>;
 }
 
 /**
@@ -143,6 +150,11 @@ export async function openNativeLocalDb(
       });
       if (response.kind !== "backedUp") unexpected(response);
       return response.file ?? undefined;
+    },
+    async removeBackups() {
+      const response = await send(transport, { kind: "removeBackups" });
+      if (response.kind !== "backupsRemoved") unexpected(response);
+      return response.removed;
     },
   };
 }

@@ -27,7 +27,7 @@ export async function startLocalRuntime(
   queryClient: QueryClient,
   platform: ClientPlatform,
 ): Promise<LocalRuntime> {
-  const { db, backup } = await platform.openLocalDb();
+  const { db, backup, removeBackups } = await platform.openLocalDb();
   await migrateLocalDb(db, LOCAL_MIGRATIONS, {
     ...(backup === undefined
       ? {}
@@ -58,8 +58,11 @@ export async function startLocalRuntime(
   });
   const sync = createSyncEngine({
     db,
+    migrations: LOCAL_MIGRATIONS,
     appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
     clock: systemClock,
+    // A revoked device's wipe deletes the database copies too (`core-foundation` rule 23).
+    ...(removeBackups === undefined ? {} : { onWiped: removeBackups }),
   });
   // A round on each change of connectivity: "offline" shows at once, "online" sends the outbox.
   window.addEventListener("online", () => void sync.syncNow());
