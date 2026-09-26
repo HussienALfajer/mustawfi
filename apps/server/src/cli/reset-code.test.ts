@@ -15,6 +15,7 @@ import { createStaffUser } from "../staff.test-helpers.ts";
 import type { CreatedTenant } from "../tenants/create-tenant.ts";
 import { createLicensedTenant } from "../tenants/licensed-tenant.test-helpers.ts";
 import { resetCodeCommand } from "./reset-code.ts";
+import { testTotpKeys } from "../totp-keys.test-helpers.ts";
 
 /**
  * `access:reset-code` and `POST /api/v1/access/password-reset` (`core-foundation` rule 27).
@@ -53,7 +54,7 @@ beforeAll(async () => {
   env = { DATABASE_URL: database.url("app") };
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { tenants, ...dependencies },
+    services: { tenants, ...dependencies, totpKeys: testTotpKeys },
   });
 });
 

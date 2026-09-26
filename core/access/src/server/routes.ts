@@ -4,7 +4,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
+  accountViewSchema,
   changeOwnPasswordRequestSchema,
+  clearTwoFactorRequestSchema,
+  confirmTwoFactorRequestSchema,
+  disableTwoFactorRequestSchema,
+  recoveryCodesSchema,
+  startTwoFactorRequestSchema,
+  twoFactorEnrolmentSchema,
   changeOwnPinRequestSchema,
   currentDeviceSchema,
   currentSessionSchema,
@@ -51,11 +58,13 @@ import {
   sessionCookie,
 } from "./sessions.ts";
 import { signInThrottles } from "./throttle.ts";
+import { accountOf, confirmTwoFactor, disableTwoFactor, startTwoFactor } from "./two-factor.ts";
 import {
   addUser,
   changeOwnPassword,
   changeOwnPin,
   changeUser,
+  clearUserTwoFactor,
   deactivateUser,
   listUsers,
   reactivateUser,
@@ -573,6 +582,92 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       asManager(sessionOf(request), (tx, manager) =>
         setUserPassword(tx, manager, request.params.id, request.body.password, context),
       ),
+  );
+
+  app.post(
+    "/users/:id/two-factor/clear",
+    {
+      // Owners only (rule 26), checked by `clearUserTwoFactor`.
+      config: manageUsers,
+      schema: {
+        tags,
+        params: idParamsSchema,
+        body: clearTwoFactorRequestSchema,
+        response: { 200: userViewSchema, ...refusals },
+      },
+    },
+    async (request) =>
+      asManager(sessionOf(request), (tx, manager) =>
+        clearUserTwoFactor(tx, manager, request.params.id, request.body.reason, context),
+      ),
+  );
+
+  app.get(
+    "/me",
+    {
+      // The user's own account: any signed-in user (rule 17).
+      config: { access: "session" },
+      schema: { tags, response: { 200: accountViewSchema, ...refusals } },
+    },
+    async (request) => {
+      const session = sessionOf(request);
+      return context.tenants.withTenant(
+        { tenantId: session.tenantId, userId: session.user.id },
+        (tx) => accountOf(tx, session.user.id),
+      );
+    },
+  );
+
+  app.post(
+    "/me/two-factor/enrolment",
+    {
+      config: { access: "session" },
+      schema: {
+        tags,
+        body: startTwoFactorRequestSchema,
+        response: { 201: twoFactorEnrolmentSchema, ...refusals },
+      },
+    },
+    async (request, reply) => {
+      const enrolment = await asManager(sessionOf(request), (tx, actor) =>
+        startTwoFactor(tx, actor, request.body.currentPassword, context),
+      );
+      return reply.status(201).send(enrolment);
+    },
+  );
+
+  app.post(
+    "/me/two-factor/confirm",
+    {
+      config: { access: "session" },
+      schema: {
+        tags,
+        body: confirmTwoFactorRequestSchema,
+        response: { 200: recoveryCodesSchema, ...refusals },
+      },
+    },
+    async (request) =>
+      asManager(sessionOf(request), (tx, actor) =>
+        confirmTwoFactor(tx, actor, request.body.code, context),
+      ),
+  );
+
+  app.post(
+    "/me/two-factor/disable",
+    {
+      config: { access: "session" },
+      schema: {
+        tags,
+        body: disableTwoFactorRequestSchema,
+        response: { 204: z.null(), ...refusals },
+      },
+    },
+    async (request, reply) => {
+      await asManager(sessionOf(request), (tx, actor) =>
+        disableTwoFactor(tx, actor, request.body, context),
+      );
+      return reply.status(204).send(null);
+    },
   );
 
   app.put(

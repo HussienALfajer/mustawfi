@@ -32,6 +32,7 @@ import {
 import { ACCESS_NAMESPACE } from "../messages.ts";
 import {
   changeUser,
+  clearUserTwoFactor,
   createUser,
   deactivateUser,
   reactivateUser,
@@ -74,6 +75,8 @@ export function userProblem(error: unknown): string {
       return "ownAccessChange";
     case accessProblemCodes.useOwnAccount:
       return "useOwnAccount";
+    case accessProblemCodes.twoFactorNotEnabled:
+      return "twoFactorNotEnabled";
     case accessProblemCodes.userNotFound:
       return "notFound";
     case accessProblemCodes.userDeactivated:
@@ -473,7 +476,7 @@ export function UserPanel({
         </p>
       </form>
       {user !== null && editable && !isSelf ? (
-        <SecretsSection user={user} onSaved={settle} />
+        <SecretsSection user={user} viewerIsOwner={viewer.isOwner} onSaved={settle} />
       ) : null}
       {user === null ? null : (
         <ConfirmDialog
@@ -572,12 +575,17 @@ function ScopeFields({
   );
 }
 
-/** A manager resets someone's PIN or password; each is saved on its own. */
+/**
+ * A manager resets someone's PIN or password; each is saved on its own. An owner also clears
+ * someone's two-factor authentication (`core-foundation` rule 26), confirmed once with a reason.
+ */
 function SecretsSection({
   user,
+  viewerIsOwner,
   onSaved,
 }: {
   readonly user: UserView;
+  readonly viewerIsOwner: boolean;
   readonly onSaved: (user: UserView, message: string) => Promise<void>;
 }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
@@ -677,6 +685,88 @@ function SecretsSection({
           {t("users.panel.setPassword")}
         </Button>
       </form>
+      <TwoFactorRow user={user} canClear={viewerIsOwner} onSaved={onSaved} />
     </section>
+  );
+}
+
+/** Whether the user has two-factor authentication, and an owner's way to clear it. */
+function TwoFactorRow({
+  user,
+  canClear,
+  onSaved,
+}: {
+  readonly user: UserView;
+  readonly canClear: boolean;
+  readonly onSaved: (user: UserView, message: string) => Promise<void>;
+}) {
+  const { t } = useTranslation(ACCESS_NAMESPACE);
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState(false);
+  const clear = useMutation({
+    mutationFn: (why: string) => clearUserTwoFactor(user.id, why),
+    onSuccess: async (saved) => {
+      setConfirming(false);
+      setReason("");
+      await onSaved(saved, "users.panel.twoFactorCleared");
+    },
+  });
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={user.twoFactorEnabled ? "positive" : "neutral"}>
+          {t(user.twoFactorEnabled ? "users.panel.twoFactorOn" : "users.panel.twoFactorOff")}
+        </Badge>
+        {canClear && user.twoFactorEnabled ? (
+          <Button
+            variant="secondary"
+            onPress={() => {
+              clear.reset();
+              setConfirming(true);
+            }}
+          >
+            {t("users.panel.clearTwoFactor")}
+          </Button>
+        ) : null}
+      </div>
+      {clear.error === null ? null : (
+        <p role="alert" className="text-text-negative">
+          {t(`users.problem.${userProblem(clear.error)}`)}
+        </p>
+      )}
+      <ConfirmDialog
+        isOpen={confirming}
+        onOpenChange={setConfirming}
+        title={t("users.clearTwoFactor.title", { name: user.name })}
+        confirmLabel={t("users.clearTwoFactor.confirm")}
+        cancelLabel={t("users.clearTwoFactor.cancel")}
+        isPending={clear.isPending}
+        onConfirm={() => {
+          const why = reason.trim();
+          if (why === "") {
+            setReasonError(true);
+            return;
+          }
+          clear.mutate(why);
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          <p>{t("users.clearTwoFactor.body")}</p>
+          <TextArea
+            label={t("users.clearTwoFactor.reason")}
+            description={t("users.clearTwoFactor.reasonHelp")}
+            errorMessage={reasonError ? t("users.problem.clearReasonRequired") : undefined}
+            value={reason}
+            onChange={(value) => {
+              setReason(value);
+              if (value.trim() !== "") setReasonError(false);
+            }}
+            maxLength={500}
+            rows={2}
+          />
+        </div>
+      </ConfirmDialog>
+    </div>
   );
 }

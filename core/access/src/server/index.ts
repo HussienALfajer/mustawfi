@@ -42,6 +42,13 @@ export {
 export { accessModule } from "./manifest.ts";
 export { hashPassword, hashPin } from "./passwords.ts";
 export {
+  openSecret,
+  parseTotpKeys,
+  sealSecret,
+  type TotpKeyRing,
+  TotpKeysInvalid,
+} from "./sealed-secrets.ts";
+export {
   archiveRole,
   copyRole,
   createRole,
@@ -81,6 +88,7 @@ export {
   changeOwnPin,
   changeUser,
   type ChangeUser,
+  clearUserTwoFactor,
   createUser,
   deactivateUser,
   listUsers,

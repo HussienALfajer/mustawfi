@@ -46,6 +46,14 @@ export function reactivateUser(id: string): Promise<UserView> {
   return apiRequest(`${BASE}/${id}/reactivate`, { method: "POST", schema: userViewSchema });
 }
 
+export function clearUserTwoFactor(id: string, reason: string): Promise<UserView> {
+  return apiRequest(`${BASE}/${id}/two-factor/clear`, {
+    method: "POST",
+    body: { reason },
+    schema: userViewSchema,
+  });
+}
+
 export function setUserPin(id: string, pin: string): Promise<UserView> {
   return apiRequest(`${BASE}/${id}/pin`, { method: "PUT", body: { pin }, schema: userViewSchema });
 }

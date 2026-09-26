@@ -23,6 +23,7 @@ import type { AccessDependencies } from "./dependencies.ts";
 import { hashPassword, hashPin, verifyPassword } from "./passwords.ts";
 import { activeRole, holdingsOf } from "./roles.ts";
 import { roles, sessions, userDepartments, users } from "./schema.ts";
+import { clearTwoFactor } from "./two-factor.ts";
 
 export interface NewUser {
   readonly id: string;
@@ -201,6 +202,7 @@ function toView(user: UserRow, role: RoleRow, departments: readonly string[]): U
     status: user.status === "deactivated" ? "deactivated" : "active",
     hasPassword: user.passwordHash !== null,
     hasPin: user.pinVerifier !== null,
+    twoFactorEnabled: user.totpEnabledAt !== null,
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -242,7 +244,7 @@ function ownersOnly(): ProblemError {
 
 function useOwnAccount(): ProblemError {
   return new ProblemError(accessProblemCodes.useOwnAccount, 409, {
-    title: "Change your own PIN or password from your account, with the current one",
+    title: "Change your own PIN, password, or two-factor authentication from your account",
   });
 }
 
@@ -668,6 +670,31 @@ export async function setUserPassword(
     after: { hasPassword: true },
   });
   await revokeUserSessions(tx, manager, id, dependencies);
+  return viewOf(tx, id);
+}
+
+/**
+ * An owner clears another user's two-factor authentication (rule 26, flow 8) — for a user who
+ * lost their phone and their recovery codes — audited `access.twoFactor.cleared` with the reason
+ * typed. Owners only
+ * (403 `access.user.ownersOnly`); one's own is turned off from one's account (409
+ * `access.user.useOwnAccount`); 409 `access.twoFactor.notEnabled` when it is off.
+ */
+export async function clearUserTwoFactor(
+  tx: TenantTransaction,
+  manager: Manager,
+  id: string,
+  reason: string,
+  dependencies: AccessDependencies,
+): Promise<UserView> {
+  if (id === manager.userId) throw useOwnAccount();
+  if (!manager.isOwner) {
+    throw new ProblemError(accessProblemCodes.ownersOnly, 403, {
+      title: "Only an owner clears another user's two-factor authentication",
+    });
+  }
+  await lockedUser(tx, id);
+  await clearTwoFactor(tx, manager, id, reason, dependencies);
   return viewOf(tx, id);
 }
 

@@ -16,6 +16,7 @@ import { createStaffUser, STAFF_PASSWORD } from "./staff.test-helpers.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { installTenantLicense } from "./tenants/install-license.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 /**
  * `core-foundation` slice 8: sign-in rate limits (rule 21), sessions bound to their device
@@ -63,7 +64,7 @@ beforeAll(async () => {
   superuser = await database.connect("superuser");
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { tenants, ...dependencies },
+    services: { tenants, ...dependencies, totpKeys: testTotpKeys },
   });
 });
 

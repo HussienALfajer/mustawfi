@@ -16,6 +16,7 @@ import { invoiceOperation } from "./sales-operations.test-helpers.ts";
 import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 /**
  * Device revoke (`core-foundation` slice 9, rule 23, ADR-0030): the devices list, revoke with a
@@ -53,7 +54,7 @@ beforeAll(async () => {
   superuser = await database.connect("superuser");
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { ...dependencies, tenants },
+    services: { ...dependencies, tenants, totpKeys: testTotpKeys },
   });
 });
 

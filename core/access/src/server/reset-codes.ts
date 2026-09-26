@@ -14,6 +14,7 @@ import {
 import { hashPassword, hashPin } from "./passwords.ts";
 import { resetCodes, roles, users } from "./schema.ts";
 import { issueOneTimeCode, oneTimeCodeHash } from "./secrets.ts";
+import { removeTwoFactor } from "./two-factor.ts";
 import { revokeUserSessions } from "./users.ts";
 
 /** A support reset code works for thirty minutes (`core-foundation` rule 27). */
@@ -142,7 +143,9 @@ function resetCodeInvalid(): ProblemError {
  * `POST /api/v1/access/password-reset` (rule 27): the owner named by the store code and login
  * sets a new password (and PIN) with a support reset code, which is used up. Their sessions
  * end, their failed sign-ins are cleared, and the change is audited
- * `access.user.passwordReset` as done with support's code. Every refusal is the same 401
+ * `access.user.passwordReset` as done with support's code. Their two-factor authentication is
+ * cleared too (rule 26: they may have lost the phone with the password), audited
+ * `access.twoFactor.cleared` as done by support. Every refusal is the same 401
  * `access.resetCode.invalid` and counts against the source address like a failed sign-in.
  */
 export async function resetPasswordWithCode(
@@ -209,6 +212,19 @@ export async function resetPasswordWithCode(
           issuedBy: "support",
         },
       });
+      if (await removeTwoFactor(tx, user.id)) {
+        await recordAudit(tx, {
+          id: dependencies.newId(),
+          tenantId,
+          branchId: user.branchId,
+          occurredAt: now,
+          userId: user.id,
+          action: "access.twoFactor.cleared",
+          entity: { type: "access.user", id: user.id },
+          before: { twoFactor: true },
+          after: { twoFactor: false, clearedBy: "support", resetCodeId: used.id },
+        });
+      }
       await revokeUserSessions(tx, actor, user.id, dependencies);
       await clearLoginFailures(tx, login.data);
     });

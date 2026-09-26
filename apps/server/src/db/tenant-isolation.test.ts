@@ -189,9 +189,9 @@ const seeds: readonly Seed[] = [
     },
   },
   {
-    // Written by sign-in and the support CLI, which need the HTTP host or a store code; the
-    // rows as they would write them.
-    tables: ["core_access.login_attempts", "core_access.reset_codes"],
+    // Written by sign-in, the support CLI, and two-factor enrolment, which need the HTTP host,
+    // a store code, or a server key; the rows as they would write them.
+    tables: ["core_access.login_attempts", "core_access.reset_codes", "core_access.recovery_codes"],
     seed: async (tx, tenant) => {
       const at = systemClock.now();
       await tx.execute(sql`
@@ -203,6 +203,11 @@ const seeds: readonly Seed[] = [
           (id, tenant_id, branch_id, created_at, issued_by_support, issued_by, user_id, code_hash, expires_at)
         values (${newId()}, ${tenant.tenantId}, ${tenant.branchId}, ${at}, true, 'support',
           ${tenant.userId}, encode(sha256(convert_to(${tenant.tenantId}, 'UTF8')), 'hex'), ${at})`);
+      await tx.execute(sql`
+        insert into core_access.recovery_codes
+          (id, tenant_id, branch_id, created_at, created_by, user_id, code_hash)
+        values (${newId()}, ${tenant.tenantId}, ${tenant.branchId}, ${at}, ${tenant.userId},
+          ${tenant.userId}, encode(sha256(convert_to(${tenant.tenantId}, 'UTF8')), 'hex'))`);
     },
   },
   {

@@ -1,4 +1,4 @@
-import { accessModule } from "@mustawfi/core-access/server";
+import { accessModule, type TotpKeyRing } from "@mustawfi/core-access/server";
 import { auditModule } from "@mustawfi/core-audit/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
@@ -27,6 +27,8 @@ export interface HostContext {
   readonly newId: IdGenerator;
   /** Randomness for secrets: session tokens, device credentials, codes. */
   readonly random: RandomSource;
+  /** The keys sealing users' TOTP secrets, from `TOTP_KEYS_FILE` (`core-foundation` rule 26). */
+  readonly totpKeys: TotpKeyRing;
   /** The sync operations of the enabled modules (`hostSyncOperations`). */
   readonly syncOperations: SyncOperationTable;
   /** Every permission and limit the registered modules declare (`registry.permissions`). */

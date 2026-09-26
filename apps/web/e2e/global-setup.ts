@@ -1,5 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   APP_ROLE,
   connectionString,
@@ -12,29 +15,9 @@ import { issueTestLicense, testLicensePublicKeys } from "@mustawfi/tools-license
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import pg from "pg";
 import { E2E_API_PORT, E2E_STORE_ENV, type E2eStore } from "./environment.ts";
+import { runCli, SERVER_DIR } from "./server-cli.ts";
 
-const serverDir = resolve(import.meta.dirname, "../../server");
 const DATABASE = "mustawfi_e2e";
-
-/** Runs a server CLI to completion and returns its standard output. */
-function runCli(script: string, args: string[], env: Record<string, string>, stdin = "") {
-  return new Promise<string>((done, fail) => {
-    const child = spawn(process.execPath, [script, ...args], {
-      cwd: serverDir,
-      env: { ...process.env, ...env },
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-    child.on("error", fail);
-    child.on("close", (code) => {
-      if (code === 0) done(stdout);
-      else fail(new Error(`${script} exited with ${String(code)}:\n${stderr}`));
-    });
-    child.stdin.end(stdin);
-  });
-}
 
 /**
  * Stops a child and waits for it: SIGTERM for a graceful close, SIGKILL after five seconds.
@@ -79,9 +62,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     app: { user: APP_ROLE, password: "app-e2e-password" },
   };
   let server: ChildProcess | undefined;
+  // The key sealing TOTP secrets, made for this run and removed with it.
+  const secrets = mkdtempSync(join(tmpdir(), "mustawfi-e2e-"));
+  const totpKeysFile = join(secrets, "totp.keys");
+  writeFileSync(
+    totpKeysFile,
+    `e2e:${randomBytes(32).toString("base64url")}
+`,
+    { mode: 0o600 },
+  );
   const teardown = async () => {
     await stopProcess(server);
     await container.stop();
+    rmSync(secrets, { recursive: true, force: true });
   };
 
   try {
@@ -102,6 +95,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const store: Omit<E2eStore, "storeCode"> = {
       login: "owner",
       password: "correct horse battery staple",
+      databaseUrl: appUrl,
     };
     const created = await runCli(
       "src/cli/create-tenant.ts",
@@ -116,7 +110,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         store.login,
         "--license",
         // Journeys register the browser as a companion device, each in a fresh context.
-        (await issueTestLicense({ limits: { companionDevices: 20 } })).jws,
+        // Journeys add users too, each with its own login.
+        (await issueTestLicense({ limits: { companionDevices: 20, users: 20 } })).jws,
       ],
       { DATABASE_URL: appUrl, LICENSE_PUBLIC_KEYS: await testLicensePublicKeys() },
       `${store.password}\n`,
@@ -126,12 +121,13 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
     let output = "";
     server = spawn(process.execPath, ["src/main.ts"], {
-      cwd: serverDir,
+      cwd: SERVER_DIR,
       env: {
         ...process.env,
         DATABASE_URL: appUrl,
         HOST: "127.0.0.1",
         PORT: String(E2E_API_PORT),
+        TOTP_KEYS_FILE: totpKeysFile,
       },
     });
     server.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));
