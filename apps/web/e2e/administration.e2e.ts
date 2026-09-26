@@ -111,6 +111,8 @@ test("the side navigation collapses to icons and keeps its labels", async ({ pag
   await signIn(page);
   await expect(page).toHaveURL(/\/products$/);
   const navigation = page.getByRole("navigation", { name: "التنقل الرئيسي" });
+  // The frame mounts once it knows who is signed in; a shortcut pressed before is not heard.
+  await expect(navigation).toBeVisible();
   await page.keyboard.press("Control+B");
   await expect(navigation).toHaveAttribute("data-collapsed", "true");
   // The width animates; wait for it to settle.
