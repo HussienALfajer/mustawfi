@@ -1,6 +1,8 @@
+import type { BundlePart } from "@mustawfi/core-config/server";
 import type { Clock, IdGenerator } from "@mustawfi/kernel";
 import { desc } from "drizzle-orm";
 import {
+  LICENSE_BUNDLE_PART,
   type LicenseClaims,
   type LicensePublicKeys,
   LicenseRefusedError,
@@ -12,6 +14,8 @@ import { currentTenant } from "./tenants.ts";
 
 export interface InstalledLicense {
   readonly id: string;
+  /** The signed license as issued: the claims' source. */
+  readonly jws: string;
   readonly kid: string;
   readonly claims: LicenseClaims;
   readonly installedAt: Date;
@@ -75,7 +79,7 @@ export async function installLicense(
     installedAt,
     installedBy: license.installedBy ?? null,
   });
-  return { id, kid, claims, installedAt };
+  return { id, jws: license.jws.trim(), kid, claims, installedAt };
 }
 
 /**
@@ -93,6 +97,7 @@ export async function currentLicense(tx: TenantTransaction): Promise<InstalledLi
   if (row === undefined) return undefined;
   return {
     id: row.id,
+    jws: row.jws,
     kid: row.kid,
     installedAt: row.installedAt,
     claims: {
@@ -109,3 +114,16 @@ export async function currentLicense(tx: TenantTransaction): Promise<InstalledLi
     },
   };
 }
+
+/**
+ * The bundle's `license` part (ADR-0030): the installed license as issued, so devices verify it
+ * with the license keys themselves — the bundle key cannot vouch for a license (ADR-0021).
+ */
+export const licenseBundlePart: BundlePart<TenantTransaction> = {
+  name: LICENSE_BUNDLE_PART,
+  async build(tx) {
+    const license = await currentLicense(tx);
+    if (license === undefined) throw new Error("the tenant has no installed license");
+    return license.jws;
+  },
+};

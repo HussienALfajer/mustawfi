@@ -1,5 +1,12 @@
 import { accessLocalMigrations } from "@mustawfi/core-access/client";
-import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
+import {
+  ApiProblem,
+  ApiUnreachable,
+  bundleStatus,
+  type BundleVerifier,
+  configLocalMigrations,
+} from "@mustawfi/core-config/client";
+import type { BundleResponse } from "@mustawfi/core-config/shared";
 import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { type LocalDb, localOrm, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
@@ -104,6 +111,17 @@ class FakeServer implements SyncTransport {
     this.wipeReports.push(credential);
     return Promise.resolve();
   }
+
+  /** What `bundle` answers, and the versions the device said it held. */
+  bundleResponse: BundleResponse = { version: 1, bundle: null };
+  bundleAsks: number[] = [];
+
+  bundle(credential: string, version: number): Promise<BundleResponse> {
+    this.credentials.push(credential);
+    if (!this.reachable) return Promise.reject(new ApiUnreachable("down"));
+    this.bundleAsks.push(version);
+    return Promise.resolve(this.bundleResponse);
+  }
 }
 
 let db: LocalDb;
@@ -159,6 +177,7 @@ function change(id: string, row: Record<string, unknown> = {}): SyncChange {
 const MIGRATIONS = [
   ...accessLocalMigrations,
   ...syncLocalMigrations,
+  ...configLocalMigrations,
   { id: "test.0001_items", statements: ["CREATE TABLE test_items (id TEXT PRIMARY KEY)"] },
 ];
 
@@ -283,6 +302,7 @@ describe("the sync engine", () => {
       push: () => Promise.reject(new ApiProblem("access.device.required", 401)),
       pull: () => Promise.reject(new ApiProblem("access.device.required", 401)),
       reportWiped: () => Promise.resolve(),
+      bundle: () => Promise.reject(new ApiProblem("access.device.required", 401)),
     };
     await enqueue();
     const sync = createSyncEngine({
@@ -450,5 +470,75 @@ describe("a revoked device (core-foundation rule 23)", () => {
     expect(server.wipeReports).toEqual([]);
     expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
     expect(sync.status().phase).toBe("removed");
+  });
+});
+
+describe("the configuration bundle (core-foundation rules 11–12)", () => {
+  /** Trusts no key, so any bundle offered is refused: the engine's part, not verification's. */
+  const verifier: BundleVerifier = { keys: {}, decoders: [] };
+
+  function bundled() {
+    return createSyncEngine({
+      db,
+      migrations: MIGRATIONS,
+      appliers: [itemApplier],
+      clock,
+      transport: server,
+      bundle: verifier,
+    });
+  }
+
+  it("asks for it after push and pull, with the version the device holds", async () => {
+    await registerDevice();
+    await enqueue();
+    const sync = bundled();
+    await sync.syncNow();
+    expect(server.bundleAsks).toEqual([0]);
+    expect(sync.status()).toMatchObject({ phase: "idle", pending: 0 });
+    expect(await bundleStatus(db)).toEqual({ version: null, verifiedAt: null, refusal: null });
+  });
+
+  it("records a refused bundle without failing the round", async () => {
+    await registerDevice();
+    server.bundleResponse = {
+      version: 2,
+      bundle: { manifest: "not.a.jws", parts: {} },
+    };
+    const sync = bundled();
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "idle", failure: null });
+    expect(await bundleStatus(db)).toMatchObject({
+      version: null,
+      refusal: { reason: "malformed", refusedAt: "2026-09-25T10:00:00.000Z" },
+    });
+  });
+
+  it("is offline when the bundle cannot be fetched", async () => {
+    await registerDevice();
+    const transport: SyncTransport = {
+      push: (credential, operations) => server.push(credential, operations),
+      pull: (credential, cursor) => server.pull(credential, cursor),
+      reportWiped: (credential) => server.reportWiped(credential),
+      bundle: () => Promise.reject(new ApiUnreachable("down")),
+    };
+    const offline = createSyncEngine({
+      db,
+      migrations: MIGRATIONS,
+      appliers: [],
+      clock,
+      transport,
+      bundle: verifier,
+    });
+    await offline.syncNow();
+    expect(offline.status().phase).toBe("offline");
+  });
+
+  it("does not ask for it once the device is revoked", async () => {
+    await registerDevice();
+    server.revoked = true;
+    const sync = bundled();
+    await sync.syncNow();
+    expect(sync.status().phase).toBe("removed");
+    expect(server.bundleAsks).toEqual([]);
   });
 });

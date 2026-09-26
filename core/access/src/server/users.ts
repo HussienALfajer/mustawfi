@@ -166,7 +166,7 @@ export async function userAccess(
 }
 
 /** The active listed departments of each of `userIds` (rule 28: archived ones leave). */
-async function scopesOf(
+export async function scopesOf(
   tx: TenantTransaction,
   userIds: readonly string[],
 ): Promise<Map<string, string[]>> {

@@ -5,6 +5,7 @@ import {
   issueLicense,
   type LicenseKeyPair,
   licenseClaimsFor,
+  licensePrivateKeySchema,
   type LicenseTermsInput,
 } from "./license.ts";
 
@@ -15,12 +16,28 @@ import {
  */
 export const TEST_LICENSE_KID = "test";
 
+/**
+ * Where a test run that spans processes hands its test key down: the end-to-end run builds the
+ * web app with the public key before its global setup issues the store's license, so the
+ * Playwright config makes the key and every process of the run reads it from here.
+ */
+export const TEST_LICENSE_KEY_ENV = "MUSTAWFI_TEST_LICENSE_KEY";
+
 let testPair: Promise<LicenseKeyPair> | undefined;
 
-/** The test key pair of this process. */
+/** The test key pair of this process (or of the run, from `TEST_LICENSE_KEY_ENV`). */
 export function testLicenseKeyPair(): Promise<LicenseKeyPair> {
-  testPair ??= generateLicenseKeyPair(TEST_LICENSE_KID);
+  const handed = process.env[TEST_LICENSE_KEY_ENV];
+  testPair ??=
+    handed === undefined
+      ? generateLicenseKeyPair(TEST_LICENSE_KID)
+      : Promise.resolve(keyPairOf(handed));
   return testPair;
+}
+
+function keyPairOf(json: string): LicenseKeyPair {
+  const privateKey = licensePrivateKeySchema.parse(JSON.parse(json));
+  return { privateKey, publicKey: `${privateKey.kid}:${privateKey.x}` };
 }
 
 /** The public key set that trusts the test key, as a server's configuration would hold it. */

@@ -16,6 +16,7 @@
  * Longer runs: `SYNC_SIM_STEPS=2000`.
  */
 import {
+  accessBundlePart,
   accessLocalMigrations,
   type LocalDevice,
   localDevice,
@@ -23,9 +24,17 @@ import {
 } from "@mustawfi/core-access/client";
 import type { DeviceView } from "@mustawfi/core-access/shared";
 import {
+  organizationBundlePart,
   organizationLocalMigrations,
   organizationPullAppliers,
 } from "@mustawfi/core-organization/client";
+import {
+  type BundleVerifier,
+  configLocalMigrations,
+  loadBundle,
+} from "@mustawfi/core-config/client";
+import { licenseBundlePart } from "@mustawfi/core-tenancy/client";
+import { testLicenseKeys } from "@mustawfi/tools-license/testing";
 import {
   createApiSyncTransport,
   createSyncEngine,
@@ -82,6 +91,7 @@ import { migrationSets } from "../src/db/migration-sets.ts";
 import { createServerRegistry } from "../src/modules.ts";
 import type { CreatedTenant } from "../src/tenants/create-tenant.ts";
 import { createLicensedTenant } from "../src/tenants/licensed-tenant.test-helpers.ts";
+import { testBundleKey } from "../src/bundle-key.test-helpers.ts";
 import { testTotpKeys } from "../src/totp-keys.test-helpers.ts";
 
 function envInteger(name: string, fallback: number): number {
@@ -121,7 +131,7 @@ beforeAll(async () => {
   const registry = createServerRegistry();
   server = await buildHostServer({
     registry,
-    services: { ...serverDependencies, tenants, totpKeys: testTotpKeys },
+    services: { ...serverDependencies, tenants, totpKeys: testTotpKeys, bundleKey: testBundleKey },
   });
   baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   // The client code calls the API by path, as it does from the web app's origin; device
@@ -228,6 +238,30 @@ async function receiveStock(store: Store, productId: string, quantity: Decimal):
   store.received.set(productId, (store.received.get(productId) ?? Decimal.ZERO).plus(quantity));
 }
 
+/** How the devices check their configuration bundle: the test keys, the real part decoders. */
+async function bundleVerifier(): Promise<BundleVerifier> {
+  const [kid, x] = testBundleKey.publicKey.split(":") as [string, string];
+  return {
+    keys: { [kid]: x },
+    decoders: [
+      licenseBundlePart(await testLicenseKeys()),
+      accessBundlePart,
+      organizationBundlePart,
+    ],
+  };
+}
+
+/** Why a device that was not revoked does not hold a valid configuration bundle, if it does not. */
+async function bundleProblem(device: SimDevice): Promise<string | undefined> {
+  const loaded = await loadBundle(device.db, await bundleVerifier(), {
+    deviceId: device.local.deviceId,
+    tenantId: device.local.tenantId,
+  });
+  return loaded.state === "valid"
+    ? undefined
+    : `${device.name} holds no valid bundle: ${loaded.state === "refused" ? loaded.reason : "none"}`;
+}
+
 async function openDevice(
   store: Store,
   name: string,
@@ -245,6 +279,7 @@ async function openDevice(
     ...inventoryLocalMigrations,
     ...salesLocalMigrations,
     ...organizationLocalMigrations,
+    ...configLocalMigrations,
   ];
   await migrateLocalDb(db, migrations);
   const { code } = await ownerRequest<{ code: string }>(
@@ -263,6 +298,7 @@ async function openDevice(
     appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
     clock,
     transport: createApiSyncTransport({ fetch: link.fetch }),
+    bundle: await bundleVerifier(),
   });
   // A round the server refuses (`failed`) is a bug here: every device is valid.
   engine.subscribe(() => {
@@ -586,6 +622,11 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
       : [
           `${revokedDevice.name} was not wiped: ${revokedDevice.engine.status().phase} ${revokedDevice.engine.status().failure ?? ""}`,
         ]),
+    ...(
+      await Promise.all(
+        devices.filter((device) => device !== revokedDevice).map((device) => bundleProblem(device)),
+      )
+    ).filter((problem) => problem !== undefined),
   ];
   const elapsedMs = performance.now() - started;
   const outboxStates: Record<string, number> = {};

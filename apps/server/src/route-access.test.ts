@@ -13,6 +13,7 @@ import { createServerRegistry, serverPermissions } from "./modules.ts";
 import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testBundleKey } from "./bundle-key.test-helpers.ts";
 import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 const clock = manualClock(new Date("2026-09-26T08:00:00.000Z"));
@@ -31,7 +32,7 @@ beforeAll(async () => {
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { ...dependencies, tenants, totpKeys: testTotpKeys },
+    services: { ...dependencies, tenants, totpKeys: testTotpKeys, bundleKey: testBundleKey },
   });
   store = await createLicensedTenant(
     tenants,
@@ -116,6 +117,7 @@ describe("route authorization (core-foundation rule 17)", () => {
       "PUT /api/v1/access/me/password → session",
       "POST /api/v1/sync/push → deviceEvenRevoked",
       "GET /api/v1/sync/pull → device",
+      "GET /api/v1/sync/bundle → device",
       "GET /api/v1/organization/departments → session",
       "POST /api/v1/organization/departments → organization.departments.manage",
       "PATCH /api/v1/organization/departments/:id → organization.departments.manage",

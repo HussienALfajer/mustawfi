@@ -1,4 +1,9 @@
-import { base64url, errors, importJWK, jwtVerify } from "jose";
+import {
+  type PublicKeyRing,
+  publicKeyRingSchema,
+  signingKeyIdSchema,
+} from "@mustawfi/core-config/shared";
+import { errors, importJWK, jwtVerify } from "jose";
 import { z } from "zod";
 
 /**
@@ -14,13 +19,14 @@ export const LICENSE_TYPE = "mustawfi-license";
 
 const MS_PER_DAY = 86_400_000;
 
+/** The name of the configuration bundle's part that carries the license (ADR-0030). */
+export const LICENSE_BUNDLE_PART = "license";
+
 /** Days before `expiresAt` from which owners are warned (ADR-0008: reminders at 14 days). */
 export const EXPIRING_DAYS = 14;
 
 /** A key id: what the JWS header names and `LICENSE_PUBLIC_KEYS` lists. */
-export const licenseKeyIdSchema = z
-  .string()
-  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, "a key id is letters, digits, dots, dashes");
+export const licenseKeyIdSchema = signingKeyIdSchema;
 
 /** An instant on the wire: ISO 8601 in UTC with milliseconds, as `Date#toISOString` writes it. */
 const instantSchema = z.iso
@@ -72,36 +78,10 @@ export type LicenseClaims = z.infer<typeof licenseClaimsSchema>;
  * Ed25519 public key in base64url (what `license:keygen` prints). There is no built-in
  * default: a server without configured keys installs nothing.
  */
-export const licensePublicKeysSchema = z.string().transform((value, context) => {
-  const keys: Record<string, string> = {};
-  for (const entry of value.split(",").map((part) => part.trim())) {
-    if (entry === "") continue;
-    const separator = entry.indexOf(":");
-    const kid = entry.slice(0, separator);
-    const x = entry.slice(separator + 1);
-    if (
-      separator < 1 ||
-      !licenseKeyIdSchema.safeParse(kid).success ||
-      !isEd25519PublicKey(x) ||
-      Object.hasOwn(keys, kid)
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: `"${entry}" is not a unique kid:key pair`,
-      });
-      return z.NEVER;
-    }
-    keys[kid] = x;
-  }
-  if (Object.keys(keys).length === 0) {
-    context.addIssue({ code: "custom", message: "no license public key is configured" });
-    return z.NEVER;
-  }
-  return keys;
-});
+export const licensePublicKeysSchema = publicKeyRingSchema("license");
 
 /** Public keys by key id; each value is a raw Ed25519 public key in base64url. */
-export type LicensePublicKeys = Readonly<Record<string, string>>;
+export type LicensePublicKeys = PublicKeyRing;
 
 /** Why a license was not accepted. */
 export type LicenseRefusal =
@@ -181,15 +161,6 @@ export async function verifyLicense(
     throw new LicenseRefusedError("malformed", z.prettifyError(claims.error));
   }
   return { kid, claims: claims.data };
-}
-
-/** Whether `x` is a raw Ed25519 public key in base64url (32 bytes). */
-function isEd25519PublicKey(x: string): boolean {
-  try {
-    return /^[A-Za-z0-9_-]{43}$/.test(x) && base64url.decode(x).length === 32;
-  } catch {
-    return false;
-  }
 }
 
 /** The lifecycle states in order (ADR-0008); a license only moves forward through them. */

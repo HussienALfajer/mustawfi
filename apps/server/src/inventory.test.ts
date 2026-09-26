@@ -13,6 +13,7 @@ import { migrationSets } from "./db/migration-sets.ts";
 import { createServerRegistry } from "./modules.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testBundleKey } from "./bundle-key.test-helpers.ts";
 import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -53,6 +54,7 @@ beforeAll(async () => {
       newId,
       random: cryptoRandom,
       totpKeys: testTotpKeys,
+      bundleKey: testBundleKey,
     },
   });
   const input = {

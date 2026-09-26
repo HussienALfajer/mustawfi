@@ -55,7 +55,11 @@ test("keyboard only: a section cashier scoped to a new department, and a copied 
   const cashierOption = page.getByRole("option", { name: "كاشير القسم" });
   await pressUntilFocused(page, "ArrowDown", cashierOption);
   await page.keyboard.press("Enter");
-  await expect(panel.getByRole("button", { name: /الدور/ })).toContainText("كاشير القسم");
+  const roleButton = panel.getByRole("button", { name: /الدور/ });
+  await expect(roleButton).toContainText("كاشير القسم");
+  // The list closes and gives focus back to its button a moment later; a Tab before that would
+  // start from the top of the page.
+  await expect(roleButton).toBeFocused();
 
   // The scope: listed departments, then the new one (right to left: next is left).
   await tabTo(page, panel.getByRole("radio", { name: "كل الأقسام" }));

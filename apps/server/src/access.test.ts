@@ -15,6 +15,7 @@ import { createServerRegistry } from "./modules.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testBundleKey } from "./bundle-key.test-helpers.ts";
 import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
@@ -62,6 +63,7 @@ beforeAll(async () => {
       newId,
       random: cryptoRandom,
       totpKeys: testTotpKeys,
+      bundleKey: testBundleKey,
     },
   });
   store = await newTenant("متجر النور");

@@ -1,3 +1,4 @@
+export { organizationBundlePart } from "./bundle-part.ts";
 export type { OrganizationContext } from "./dependencies.ts";
 export {
   type Actor,

@@ -29,6 +29,20 @@
       "when": 1790370758198,
       "tag": "0003_operation_flags_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790431038151,
+      "tag": "0004_bundle_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790431039175,
+      "tag": "0005_bundle_versions_rules",
+      "breakpoints": true
     }
   ]
 }

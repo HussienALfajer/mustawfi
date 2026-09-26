@@ -71,7 +71,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | 14 | `repairs` | repairs | Not started |
 | 15 | `recharge` | recharge | Not started |
 | 16 | `customer-portal` | customer-portal | Not started |
-| 17 | `ops` | Production deployment (server configuration checked before go-live, `TRUST_PROXY` set to the reverse proxy — the server warns in its log when it is missing; the TOTP key file `TOTP_KEYS_FILE` created with `access:totp-key` (root-only, with an offline copy) and its rotation procedure — a key leaves the file only once nothing sealed with it remains), off-site backups and restore drill, monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
+| 17 | `ops` | Production deployment (server configuration checked before go-live, `TRUST_PROXY` set to the reverse proxy — the server warns in its log when it is missing; the TOTP key file `TOTP_KEYS_FILE` created with `access:totp-key` (root-only, with an offline copy) and its rotation procedure — a key leaves the file only once nothing sealed with it remains; the bundle key `BUNDLE_KEY_FILE` created with `bundle:keygen` (root-only, with an offline copy), the apps built with `VITE_BUNDLE_PUBLIC_KEYS` (current and next bundle keys) and `VITE_LICENSE_PUBLIC_KEYS` — a build without them trusts no bundle, and the bundle-key rotation procedure), off-site backups and restore drill, monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
 
 ## Phase C — Closed beta
 

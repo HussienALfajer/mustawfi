@@ -9,7 +9,8 @@
     "license:install": "node src/cli/install-license.ts",
     "access:reset-code": "node src/cli/reset-code.ts",
     "access:totp-key": "node src/cli/totp-key.ts",
-    "typecheck": "tsc -p tsconfig.json && tsc -p sync-sim/tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p sync-sim/tsconfig.json",
+    "bundle:keygen": "node src/cli/bundle-key.ts"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
@@ -27,6 +28,7 @@
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",
     "fastify-type-provider-zod": "7.0.0",
+    "jose": "6.2.12",
     "pg": "8.23.0",
     "zod": "4.6.5"
   },

@@ -59,6 +59,7 @@ import {
 import { type ReactNode, useMemo, useState } from "react";
 import { z } from "zod";
 import { useTranslation } from "react-i18next";
+import { bundleVerifier } from "./bundle-verifier.ts";
 import { SHELL_NAMESPACE } from "./messages.ts";
 import { PrinterScreen, ReceiptActions } from "./printing.tsx";
 
@@ -552,7 +553,7 @@ const storeProfileRoute = createRoute({
 
 function DevicePage() {
   const { deviceType } = deviceRoute.useRouteContext();
-  return <DeviceScreen deviceType={deviceType} />;
+  return <DeviceScreen deviceType={deviceType} bundleVerifier={bundleVerifier()} />;
 }
 
 const deviceRoute = createRoute({

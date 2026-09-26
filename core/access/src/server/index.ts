@@ -1,4 +1,5 @@
 export type { Manager } from "./actor.ts";
+export { accessBundlePart } from "./bundle-part.ts";
 export type { AccessContext, AccessDependencies } from "./dependencies.ts";
 export {
   authenticateDevice,

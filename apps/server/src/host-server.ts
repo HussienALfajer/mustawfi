@@ -9,8 +9,8 @@ export interface HostServerOptions extends Omit<
   "context" | "guard" | "registry"
 > {
   readonly registry: ModuleRegistry<HostContext>;
-  /** The host's services; the sync operations and permissions come from the registry. */
-  readonly services: Omit<HostContext, "syncOperations" | "permissionCatalogue">;
+  /** The host's services; sync operations, permissions, and bundle parts come from the registry. */
+  readonly services: Omit<HostContext, "syncOperations" | "permissionCatalogue" | "bundleParts">;
 }
 
 /**

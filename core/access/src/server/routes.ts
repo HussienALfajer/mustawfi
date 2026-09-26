@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
+  catalogueView,
   accountViewSchema,
   changeOwnPasswordRequestSchema,
   clearTwoFactorRequestSchema,
@@ -388,18 +389,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: viewUsers,
       schema: { tags, response: { 200: permissionCatalogueSchema, ...refusals } },
     },
-    () => ({
-      permissions: [...context.permissionCatalogue.permissions.values()].map((p) => ({
-        id: p.id,
-        moduleId: p.moduleId,
-        scoped: p.scoped,
-      })),
-      limits: [...context.permissionCatalogue.limits.values()].map((l) => ({
-        id: l.id,
-        moduleId: l.moduleId,
-        kind: l.kind,
-      })),
-    }),
+    () => catalogueView(context.permissionCatalogue),
   );
 
   app.get(

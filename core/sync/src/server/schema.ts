@@ -137,3 +137,32 @@ export const operationFlags = coreSync.table(
     ),
   ],
 );
+
+/**
+ * The configuration bundle each device was last offered (ADR-0030, `core-foundation` rule 12):
+ * its version increases whenever the digest of its parts changes, so a device holding the
+ * current version gets no bundle, and one that does not gets the new one. Server state, not a
+ * record: `mustawfi_app` may update it, and a trigger keeps the version moving forward.
+ */
+export const bundleVersions = coreSync.table(
+  "bundle_versions",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    /** Null: the server builds bundles, no user does. */
+    createdBy: uuid(),
+    /** References `core_access.devices` (FK in `0005_bundle_versions_rules.sql`). */
+    deviceId: uuid().notNull(),
+    version: bigint({ mode: "number" }).notNull(),
+    /** `bundleDigest` of the parts this version was built from. */
+    digest: text().notNull(),
+    /** The manifest's `issuedAt` for this version, so each version signs the same manifest. */
+    issuedAt: timestamp({ withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique("bundle_versions_device").on(t.tenantId, t.deviceId),
+    check("bundle_versions_version_positive", sql`${t.version} > 0`),
+  ],
+);

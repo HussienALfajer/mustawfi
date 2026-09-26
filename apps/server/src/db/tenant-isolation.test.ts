@@ -17,7 +17,7 @@ import {
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
-import { pushOperations } from "@mustawfi/core-sync/server";
+import { deviceBundle, pushOperations } from "@mustawfi/core-sync/server";
 import { createProduct } from "@mustawfi/inventory/server";
 import {
   cryptoRandom,
@@ -37,7 +37,13 @@ import { issueTestLicense, testLicenseKeys } from "@mustawfi/tools-license/testi
 import { sql } from "drizzle-orm";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createServerRegistry, hostSyncOperations, serverPermissions } from "../modules.ts";
+import { testBundleKey } from "../bundle-key.test-helpers.ts";
+import {
+  createServerRegistry,
+  hostBundleParts,
+  hostSyncOperations,
+  serverPermissions,
+} from "../modules.ts";
 import { invoiceOperation } from "../sales-operations.test-helpers.ts";
 import { applyMigrations } from "./migrate.ts";
 import { migrationSets } from "./migration-sets.ts";
@@ -308,6 +314,22 @@ const seeds: readonly Seed[] = [
         operations: hostSyncOperations(createServerRegistry()),
       });
       expect(pushed.results.map((r) => r.status)).toEqual(["accepted", "accepted"]);
+    },
+  },
+  {
+    // The configuration bundle offered to the seeded device.
+    tables: ["core_sync.bundle_versions"],
+    seedAfter: async (tenant) => {
+      const { credential = "" } = seeded.get(tenant.tenantId) ?? {};
+      const device = await authenticateDevice(tenants, credential);
+      if (device === undefined) throw new Error("the seeded device does not authenticate");
+      const offered = await deviceBundle(tenants, device, 0, {
+        clock: systemClock,
+        newId,
+        bundleKey: testBundleKey,
+        bundleParts: hostBundleParts(createServerRegistry()),
+      });
+      expect(offered.version).toBe(1);
     },
   },
   {

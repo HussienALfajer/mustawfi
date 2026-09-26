@@ -23,3 +23,20 @@ export {
   problemFieldErrorSchema,
   type ProblemDetails,
 } from "./problem.ts";
+export {
+  BUNDLE_ALGORITHM,
+  BUNDLE_TYPE,
+  type BundleManifest,
+  bundleManifestSchema,
+  bundlePartNameSchema,
+  bundleQuerySchema,
+  type BundleResponse,
+  bundleResponseSchema,
+  isEd25519PublicKey,
+  partDigestSchema,
+  type PublicKeyRing,
+  publicKeyRingSchema,
+  type SignedBundle,
+  signedBundleSchema,
+  signingKeyIdSchema,
+} from "./bundle.ts";
