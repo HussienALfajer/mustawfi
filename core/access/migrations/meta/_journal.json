@@ -92,6 +92,20 @@
       "when": 1790383558021,
       "tag": "0012_device_revoke_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790398662168,
+      "tag": "0013_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790398663124,
+      "tag": "0014_two_factor_rules",
+      "breakpoints": true
     }
   ]
 }

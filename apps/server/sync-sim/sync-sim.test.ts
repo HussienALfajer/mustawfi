@@ -82,6 +82,7 @@ import { migrationSets } from "../src/db/migration-sets.ts";
 import { createServerRegistry } from "../src/modules.ts";
 import type { CreatedTenant } from "../src/tenants/create-tenant.ts";
 import { createLicensedTenant } from "../src/tenants/licensed-tenant.test-helpers.ts";
+import { testTotpKeys } from "../src/totp-keys.test-helpers.ts";
 
 function envInteger(name: string, fallback: number): number {
   const value = process.env[name];
@@ -120,7 +121,7 @@ beforeAll(async () => {
   const registry = createServerRegistry();
   server = await buildHostServer({
     registry,
-    services: { ...serverDependencies, tenants },
+    services: { ...serverDependencies, tenants, totpKeys: testTotpKeys },
   });
   baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   // The client code calls the API by path, as it does from the web app's origin; device

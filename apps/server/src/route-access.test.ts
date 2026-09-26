@@ -13,6 +13,7 @@ import { createServerRegistry, serverPermissions } from "./modules.ts";
 import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 const clock = manualClock(new Date("2026-09-26T08:00:00.000Z"));
 const newId = uuidV7Generator({ clock, random: cryptoRandom });
@@ -30,7 +31,7 @@ beforeAll(async () => {
   tenants = await openTenantDatabase({ connectionString: database.url("app") });
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { ...dependencies, tenants },
+    services: { ...dependencies, tenants, totpKeys: testTotpKeys },
   });
   store = await createLicensedTenant(
     tenants,
@@ -106,6 +107,11 @@ describe("route authorization (core-foundation rule 17)", () => {
       "POST /api/v1/access/users/:id/reactivate → access.users.manage",
       "PUT /api/v1/access/users/:id/pin → access.users.manage",
       "PUT /api/v1/access/users/:id/password → access.users.manage",
+      "POST /api/v1/access/users/:id/two-factor/clear → access.users.manage",
+      "GET /api/v1/access/me → session",
+      "POST /api/v1/access/me/two-factor/enrolment → session",
+      "POST /api/v1/access/me/two-factor/confirm → session",
+      "POST /api/v1/access/me/two-factor/disable → session",
       "PUT /api/v1/access/me/pin → session",
       "PUT /api/v1/access/me/password → session",
       "POST /api/v1/sync/push → deviceEvenRevoked",

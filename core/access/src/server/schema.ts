@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -154,6 +155,19 @@ export const users = coreAccess.table(
      */
     pinVerifier: text(),
     pinChangedAt: timestamp({ withTimezone: true }),
+    /**
+     * The user's TOTP secret (`core-foundation` rule 26), encrypted with a server key
+     * (`sealSecret`), never in the clear. Set when enrolment starts; in force only once
+     * `totpEnabledAt` is set by the confirmation code.
+     */
+    totpSecret: text(),
+    /** When two-factor authentication was confirmed; null while off or only being set up. */
+    totpEnabledAt: timestamp({ withTimezone: true }),
+    /**
+     * The 30-second time step of the last TOTP code accepted: a code is accepted only for a
+     * later step, so a code seen once cannot be replayed.
+     */
+    totpLastStep: bigint({ mode: "number" }),
   },
   (t) => [
     unique("users_login_per_tenant").on(t.tenantId, t.login),
@@ -164,6 +178,45 @@ export const users = coreAccess.table(
     check("users_pin_changed_at", sql`(${t.pinVerifier} is null) = (${t.pinChangedAt} is null)`),
     check("users_password_argon2id", sql`${t.passwordHash} like '$argon2id$%'`),
     check("users_pin_argon2id", sql`${t.pinVerifier} like '$argon2id$%'`),
+    check(
+      "users_totp_enabled_has_secret",
+      sql`${t.totpEnabledAt} is null or ${t.totpSecret} is not null`,
+    ),
+    check(
+      "users_totp_needs_password",
+      sql`${t.totpSecret} is null or ${t.passwordHash} is not null`,
+    ),
+    check(
+      "users_totp_secret_sealed",
+      sql`${t.totpSecret} ~ '^v1\\.[A-Za-z0-9_-]{1,32}\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$'`,
+    ),
+  ],
+);
+
+/**
+ * The single-use recovery codes of a user with two-factor authentication (`core-foundation`
+ * rule 26): ten, shown once when it is enabled, kept as SHA-256 hashes. Deleted when
+ * two-factor authentication is disabled, cleared, or enabled again: they are credentials, not
+ * records (the audit log keeps what happened).
+ */
+export const recoveryCodes = coreAccess.table(
+  "recovery_codes",
+  {
+    id: uuid().primaryKey(),
+    tenantId: uuid().notNull(),
+    branchId: uuid().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull(),
+    createdBy: uuid().notNull(),
+    /** Tenant-scoped FK to `users` in `0014_two_factor_rules.sql`. */
+    userId: uuid().notNull(),
+    codeHash: text().notNull(),
+    /** Set once, when the code is used; a used code never works again. */
+    usedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    unique("recovery_codes_hash_per_tenant").on(t.tenantId, t.codeHash),
+    check("recovery_codes_hash_format", sql`${t.codeHash} ~ ${sql.raw(SHA256_HEX)}`),
+    index("recovery_codes_by_user").on(t.tenantId, t.userId),
   ],
 );
 

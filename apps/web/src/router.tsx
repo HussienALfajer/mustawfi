@@ -1,15 +1,17 @@
 import type { DeviceType } from "@mustawfi/core-access/shared";
 import {
+  AccountScreen,
   DeviceRemovedScreen,
   deviceFiltersSchema,
   DeviceScreen,
   DevicesScreen,
   localDeviceQueryOptions,
   LoginScreen,
+  PasswordResetScreen,
   roleFiltersSchema,
   RolesScreen,
   sessionQueryOptions,
-  SignOutButton,
+  UserMenu,
   userFiltersSchema,
   UsersScreen,
 } from "@mustawfi/core-access/client";
@@ -55,6 +57,7 @@ import {
   Users,
 } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
+import { z } from "zod";
 import { useTranslation } from "react-i18next";
 import { SHELL_NAMESPACE } from "./messages.ts";
 import { PrinterScreen, ReceiptActions } from "./printing.tsx";
@@ -143,10 +146,17 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 
 function LoginPage() {
   const navigate = useNavigate();
+  const { reset } = loginRoute.useSearch();
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-page p-4">
       <ProductMark />
       <LoginScreen
+        passwordWasReset={reset === true}
+        recoveryLink={(label) => (
+          <Link to="/recover" className="text-text-accent underline">
+            {label}
+          </Link>
+        )}
         onSignedIn={() => {
           void navigate({ to: "/products" });
         }}
@@ -155,14 +165,46 @@ function LoginPage() {
   );
 }
 
+/** Only for signed-out visitors: a session goes straight to the app. */
+async function signedOutOnly({ context }: { readonly context: RouterContext }) {
+  const session = await context.queryClient.ensureQueryData(sessionQueryOptions());
+  if (session !== null) redirect({ to: "/products", throw: true });
+}
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  beforeLoad: async ({ context }) => {
-    const session = await context.queryClient.ensureQueryData(sessionQueryOptions());
-    if (session !== null) redirect({ to: "/products", throw: true });
-  },
+  // `reset` marks the return from a support reset (`core-foundation` rule 27).
+  validateSearch: z.object({ reset: z.boolean().optional().catch(undefined) }),
+  beforeLoad: signedOutOnly,
   component: LoginPage,
+});
+
+function RecoverPage() {
+  const navigate = useNavigate();
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-page p-4">
+      <ProductMark />
+      <PasswordResetScreen
+        backLink={(label) => (
+          <Link to="/login" className="text-text-accent underline">
+            {label}
+          </Link>
+        )}
+        onReset={() => {
+          void navigate({ to: "/login", search: { reset: true } });
+        }}
+      />
+    </main>
+  );
+}
+
+/** Recovery with a support reset code (`core-foundation` rule 27), before sign-in. */
+const recoverRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/recover",
+  beforeLoad: signedOutOnly,
+  component: RecoverPage,
 });
 
 /** The component gallery: a review tool, open without a session (`screen-patterns.md`). */
@@ -309,13 +351,10 @@ function AppShell() {
           <h1 className="text-xl font-bold">{page.title === undefined ? null : t(page.title)}</h1>
           <div className="ms-auto flex items-center gap-3">
             <SyncStatusIndicator />
-            {session ? (
-              <span className="flex flex-col text-sm leading-tight">
-                <span className="text-text">{session.user.name}</span>
-                <span className="text-xs text-text-secondary">{session.user.role.name}</span>
-              </span>
-            ) : null}
-            <SignOutButton
+            <UserMenu
+              onAccount={() => {
+                void navigate({ to: "/account" });
+              }}
               onSignedOut={() => {
                 void navigate({ to: "/login" });
               }}
@@ -523,6 +562,14 @@ const deviceRoute = createRoute({
   component: DevicePage,
 });
 
+/** «My account» (`core-foundation` flow 11), from the top bar. */
+const accountRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/account",
+  staticData: { title: "pages.account", fill: true },
+  component: AccountScreen,
+});
+
 const printerRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/printer",
@@ -532,6 +579,7 @@ const printerRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  recoverRoute,
   galleryRoute,
   appRoute.addChildren([
     indexRoute,
@@ -545,6 +593,7 @@ const routeTree = rootRoute.addChildren([
     storeProfileRoute,
     deviceRoute,
     printerRoute,
+    accountRoute,
   ]),
 ]);
 

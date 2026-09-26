@@ -23,6 +23,7 @@ import { createStaffUser, signInAs, STAFF_PASSWORD } from "./staff.test-helpers.
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { installTenantLicense } from "./tenants/install-license.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 const OWNER_PASSWORD = "correct horse battery staple";
 const clock = manualClock(new Date("2026-09-26T08:00:00.000Z"));
@@ -42,7 +43,7 @@ beforeAll(async () => {
   superuser = await database.connect("superuser");
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { ...dependencies, tenants },
+    services: { ...dependencies, tenants, totpKeys: testTotpKeys },
   });
 });
 

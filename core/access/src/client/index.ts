@@ -25,18 +25,23 @@ export {
   filterDevices,
 } from "./devices/devices-screen.tsx";
 export { devicesQueryKey, devicesQueryOptions } from "./devices/queries.ts";
+export { AccountScreen } from "./account/account-screen.tsx";
+export { accountQueryKey, accountQueryOptions } from "./account/queries.ts";
 export { LoginScreen, type LoginScreenProps } from "./login-screen.tsx";
+export { PasswordResetScreen, type PasswordResetScreenProps } from "./password-reset-screen.tsx";
 export { ACCESS_NAMESPACE, accessMessages } from "./messages.ts";
 export {
   type CurrentSession,
   fetchSession,
+  type PasswordResetInput,
+  resetPasswordWithCode,
   sessionQueryKey,
   sessionQueryOptions,
   signIn,
   type SignInInput,
   signOut,
 } from "./session.ts";
-export { SignOutButton, type SignOutButtonProps } from "./sign-out-button.tsx";
+export { UserMenu, type UserMenuProps } from "./user-menu.tsx";
 export { limitLabelKey, moduleNamespace, permissionLabelKey } from "./permission-labels.ts";
 export {
   catalogueQueryKey,

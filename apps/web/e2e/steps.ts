@@ -36,6 +36,38 @@ export async function signIn(
   await page.keyboard.press("Enter");
 }
 
+/**
+ * Opens the top bar's user menu from the keyboard (the button carries the user's name) and
+ * picks `item`: Enter opens the menu on its first item, the down arrow moves.
+ */
+export async function chooseFromUserMenu(
+  page: Page,
+  userName: string,
+  item: "حسابي" | "تسجيل الخروج",
+  screens?: { readonly testInfo: TestInfo; readonly name: string },
+): Promise<void> {
+  const button = page.getByRole("banner").getByRole("button", { name: new RegExp(userName) });
+  await tabTo(page, button, 80);
+  await page.keyboard.press("Enter");
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await expectAccessible(page);
+  if (screens !== undefined) await attachScreens(page, screens.testInfo, screens.name);
+  const target = menu.getByRole("menuitem", { name: item });
+  for (let presses = 0; presses < 5; presses += 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) break;
+    await page.keyboard.press("ArrowDown");
+  }
+  await expect(target).toBeFocused();
+  await page.keyboard.press("Enter");
+}
+
+/** Signs out through the user menu, back to sign-in. */
+export async function signOut(page: Page, userName: string): Promise<void> {
+  await chooseFromUserMenu(page, userName, "تسجيل الخروج");
+  await expect(page).toHaveURL(/\/login/);
+}
+
 /** Screenshots of a screen in both themes, attached to the report for the slice review. */
 export async function attachScreens(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   // No colour transition between the themes: axe measures the final colours.

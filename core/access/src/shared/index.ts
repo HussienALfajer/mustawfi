@@ -48,6 +48,12 @@ export const loginRequestSchema = z.object({
   login: z.string().max(100),
   password: z.string().max(256),
   /**
+   * A code from the user's authenticator app, or one of their recovery codes, when they have
+   * two-factor authentication (`core-foundation` rule 26). Without it, a correct password of
+   * such a user is answered 401 `access.login.secondFactorRequired`.
+   */
+  secondFactor: z.string().max(40).optional(),
+  /**
    * How the session travels (ADR-0022): `bearer` returns the token for the desktop and
    * Android shells' secure store; `cookie` (the browser) sets an `HttpOnly` cookie instead and
    * never shows the token to scripts.
@@ -76,6 +82,70 @@ export const passwordResetRequestSchema = z.object({
   code: z.string().max(20),
   password: passwordSchema,
   pin: pinSchema.optional(),
+});
+
+/**
+ * A TOTP code as typed (six digits; spaces forgiven), or `undefined` when `typed` is not one —
+ * then it may be a recovery code.
+ */
+export function totpCodeOf(typed: string): string | undefined {
+  const code = typed.replace(/\s/g, "");
+  return /^\d{6}$/.test(code) ? code : undefined;
+}
+
+/** How many recovery codes a user receives when they enable two-factor authentication. */
+export const RECOVERY_CODE_COUNT = 10;
+
+/** `GET /api/v1/access/me`: the signed-in user's own account, for «My account» (flow 11). */
+export const accountViewSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  login: z.string().nullable(),
+  hasPassword: z.boolean(),
+  hasPin: z.boolean(),
+  twoFactor: z.object({
+    enabled: z.boolean(),
+    enabledAt: z.iso.datetime().nullable(),
+    /** Recovery codes not used yet. */
+    recoveryCodesLeft: z.int().min(0),
+  }),
+});
+
+export type AccountView = z.infer<typeof accountViewSchema>;
+
+/**
+ * `POST /api/v1/access/me/two-factor/enrolment`: starts setting up two-factor authentication,
+ * proved with the current password. Only users with a password have it (rule 26).
+ */
+export const startTwoFactorRequestSchema = z.object({
+  currentPassword: z.string().max(256),
+});
+
+/** The new secret, shown once: as a QR code of `uri` and as text to type into the app. */
+export const twoFactorEnrolmentSchema = z.object({
+  /** Base32, as authenticator apps take it by hand. */
+  secret: z.string(),
+  /** `otpauth://totp/…`, for the QR code. */
+  uri: z.string(),
+});
+
+export type TwoFactorEnrolment = z.infer<typeof twoFactorEnrolmentSchema>;
+
+/** `POST /api/v1/access/me/two-factor/confirm`: the first code from the app turns it on. */
+export const confirmTwoFactorRequestSchema = z.object({ code: z.string().max(40) });
+
+/** The recovery codes, shown once when two-factor authentication is turned on. */
+export const recoveryCodesSchema = z.object({
+  recoveryCodes: z.array(z.string()).length(RECOVERY_CODE_COUNT),
+});
+
+/**
+ * `POST /api/v1/access/me/two-factor/disable`: turns it off, proved with the current password
+ * and a code from the app or a recovery code.
+ */
+export const disableTwoFactorRequestSchema = z.object({
+  currentPassword: z.string().max(256),
+  code: z.string().max(40),
 });
 
 /** A user's department scope: every department, or the listed ones. */
@@ -186,6 +256,12 @@ export const reasonSchema = z.string().trim().min(1).max(500);
 /** `POST /api/v1/access/users/:id/deactivate`: the reason is kept in the audit log. */
 export const deactivateUserRequestSchema = z.object({ reason: reasonSchema });
 
+/**
+ * `POST /api/v1/access/users/:id/two-factor/clear`: an owner clears another user's two-factor
+ * authentication (rule 26); the reason is kept in the audit log.
+ */
+export const clearTwoFactorRequestSchema = z.object({ reason: reasonSchema });
+
 /** `PUT /api/v1/access/users/:id/pin`: a manager sets or resets someone's PIN. */
 export const setPinRequestSchema = z.object({ pin: pinSchema });
 
@@ -224,6 +300,8 @@ export const userViewSchema = z.object({
   status: userStatusSchema,
   hasPassword: z.boolean(),
   hasPin: z.boolean(),
+  /** Whether they sign in with a second factor (rule 26); an owner may clear it. */
+  twoFactorEnabled: z.boolean(),
   createdAt: z.iso.datetime(),
 });
 
@@ -337,6 +415,23 @@ export const accessProblemCodes = {
    * (429, rule 21); the detail says until when.
    */
   loginThrottled: "access.login.throttled",
+  /**
+   * The password is right and the user has two-factor authentication: sign in again with a code
+   * from the app or a recovery code (401, rule 26).
+   */
+  secondFactorRequired: "access.login.secondFactorRequired",
+  /** The code from the app or the recovery code is wrong, already used, or expired (401). */
+  secondFactorInvalid: "access.login.secondFactorInvalid",
+  /** Two-factor authentication needs a password: the user has none (409). */
+  twoFactorPasswordRequired: "access.twoFactor.passwordRequired",
+  /** Two-factor authentication is already on: turn it off first (409). */
+  twoFactorAlreadyEnabled: "access.twoFactor.alreadyEnabled",
+  /** Confirmation without a started enrolment (409). */
+  twoFactorNotStarted: "access.twoFactor.notStarted",
+  /** Two-factor authentication is off (409). */
+  twoFactorNotEnabled: "access.twoFactor.notEnabled",
+  /** The code from the app or the recovery code is wrong or already used (422). */
+  twoFactorCodeInvalid: "access.twoFactor.codeInvalid",
   /** Unknown store or login, not an owner, or a reset code that is unknown, used, or expired. */
   resetCodeInvalid: "access.resetCode.invalid",
   /** No session, or a malformed, unknown, expired, or revoked one. */

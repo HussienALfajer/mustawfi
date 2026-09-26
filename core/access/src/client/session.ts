@@ -44,6 +44,8 @@ export interface SignInInput {
   readonly storeCode: string;
   readonly login: string;
   readonly password: string;
+  /** The authenticator app's code or a recovery code, once the server asked for it. */
+  readonly secondFactor?: string | undefined;
 }
 
 /**
@@ -54,7 +56,13 @@ export async function signIn(input: SignInInput): Promise<CurrentSession> {
   const transport = sessionTransport();
   const answer = await apiRequest("/api/v1/access/login", {
     method: "POST",
-    body: { ...input, transport },
+    body: {
+      storeCode: input.storeCode,
+      login: input.login,
+      password: input.password,
+      ...(input.secondFactor === undefined ? {} : { secondFactor: input.secondFactor }),
+      transport,
+    },
     schema: loginResponseSchema,
   });
   if (transport === "bearer") {
@@ -62,6 +70,30 @@ export async function signIn(input: SignInInput): Promise<CurrentSession> {
     holdSessionToken(answer.token);
   }
   return { tenantId: answer.tenantId, expiresAt: answer.expiresAt, user: answer.user };
+}
+
+export interface PasswordResetInput {
+  readonly storeCode: string;
+  readonly login: string;
+  /** The one-time code Vertex support gave the owner. */
+  readonly code: string;
+  readonly password: string;
+  readonly pin?: string | undefined;
+}
+
+/** Sets an owner's new password with a support reset code (`core-foundation` rule 27). */
+export async function resetPasswordWithCode(input: PasswordResetInput): Promise<void> {
+  await apiRequest("/api/v1/access/password-reset", {
+    method: "POST",
+    body: {
+      storeCode: input.storeCode,
+      login: input.login,
+      code: input.code,
+      password: input.password,
+      ...(input.pin === undefined ? {} : { pin: input.pin }),
+    },
+    schema: z.null(),
+  });
 }
 
 /** Ends the session on the server, which also clears the cookie, and forgets a held token. */

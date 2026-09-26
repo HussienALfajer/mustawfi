@@ -22,12 +22,16 @@ import {
   sourceAddressKey,
   throttledUntil,
 } from "./throttle.ts";
+import type { TotpKeyRing } from "./sealed-secrets.ts";
+import { useSecondFactor } from "./two-factor.ts";
 import { userAccess } from "./users.ts";
 
 export interface LoginInput {
   readonly storeCode: string;
   readonly login: string;
   readonly password: string;
+  /** A code from the authenticator app or a recovery code, for a user with 2FA (rule 26). */
+  readonly secondFactor?: string | undefined;
 }
 
 export interface PinLoginInput {
@@ -56,11 +60,26 @@ export type SignInDependencies = AccessDependencies & {
   readonly permissionCatalogue: PermissionCatalogue;
   /** The server process's in-memory counters (`signInThrottles`). */
   readonly throttles: SignInThrottles;
+  /** Opens users' sealed TOTP secrets (rule 26). */
+  readonly totpKeys: TotpKeyRing;
 };
 
 function loginFailed(): ProblemError {
   return new ProblemError(accessProblemCodes.loginFailed, 401, {
     title: "The store code, login, or password is wrong",
+  });
+}
+
+/** The password is right; the user's two-factor authentication asks for a code (rule 26). */
+function secondFactorRequired(): ProblemError {
+  return new ProblemError(accessProblemCodes.secondFactorRequired, 401, {
+    title: "Two-factor authentication is on: add a code from the app or a recovery code",
+  });
+}
+
+function secondFactorInvalid(): ProblemError {
+  return new ProblemError(accessProblemCodes.secondFactorInvalid, 401, {
+    title: "The code from the app or the recovery code is wrong or already used",
   });
 }
 
@@ -274,6 +293,7 @@ async function presentedDevice(
 /** The refusals that count as failed guesses against the source address. */
 const GUESS_FAILURES = new Set<string>([
   accessProblemCodes.loginFailed,
+  accessProblemCodes.secondFactorInvalid,
   accessProblemCodes.resetCodeInvalid,
 ]);
 
@@ -312,12 +332,19 @@ interface VerifiedUser {
   readonly login: string | null;
 }
 
+/** How a sign-in was proved: its method, and the second factor of a password sign-in. */
+interface SignInProof {
+  readonly method: "password" | "pin";
+  readonly device: Device | undefined;
+  readonly secondFactor?: "totp" | "recoveryCode" | undefined;
+}
+
 /** Opens the session of a verified sign-in, audited `access.login.succeeded`. */
 async function openAuditedSession(
   tenants: TenantDatabase,
   tenantId: string,
   user: VerifiedUser,
-  how: { readonly method: "password" | "pin"; readonly device: Device | undefined },
+  how: SignInProof,
   dependencies: SignInDependencies,
 ): Promise<LoggedIn> {
   const now = dependencies.clock.now();
@@ -345,7 +372,11 @@ async function openAuditedSession(
         ...(deviceId === undefined ? {} : { deviceId }),
         action: "access.login.succeeded",
         entity: { type: "access.session", id: opened.sessionId },
-        after: { login: user.login, method: how.method },
+        after: {
+          login: user.login,
+          method: how.method,
+          ...(how.secondFactor === undefined ? {} : { secondFactor: how.secondFactor }),
+        },
       });
       const access = await userAccess(tx, user.id, dependencies.permissionCatalogue);
       if (access === undefined) throw new Error(`user ${user.id} vanished during sign-in`);
@@ -375,6 +406,12 @@ async function openAuditedSession(
  * Made on a registered device (its credential in `source`), the session is bound to it (rule
  * 22), and only the device's own store accepts the sign-in: another store code is answered
  * like an unknown one. A credential that is not a device's is a 401 `access.device.required`.
+ *
+ * A user with two-factor authentication (rule 26) also needs `secondFactor`: without it, the
+ * right password is answered 401 `access.login.secondFactorRequired` (not a failure); a wrong
+ * or replayed code, or a used recovery code, is 401 `access.login.secondFactorInvalid` and
+ * counts as a failed sign-in of the login and the address. A recovery code used is audited
+ * `access.twoFactor.recoveryCodeUsed` with how many are left.
  */
 export async function logIn(
   tenants: TenantDatabase,
@@ -428,6 +465,9 @@ export async function logIn(
                 login: users.login,
                 passwordHash: users.passwordHash,
                 status: users.status,
+                tenantId: users.tenantId,
+                totpSecret: users.totpSecret,
+                totpEnabledAt: users.totpEnabledAt,
               })
               .from(users)
               .where(eq(users.login, login))
@@ -438,9 +478,35 @@ export async function logIn(
           passwordHash === null
             ? await verifyNothing(input.password).then(() => false)
             : await verifyPassword(passwordHash, input.password);
-        if (found !== undefined && verified) {
+        let secondFactor: "totp" | "recoveryCode" | undefined;
+        if (found !== undefined && verified && found.totpEnabledAt !== null) {
+          if (input.secondFactor === undefined || input.secondFactor.trim() === "") {
+            return { secondFactorRequired: true } as const;
+          }
+          const factor = await useSecondFactor(tx, found, input.secondFactor, now, dependencies);
+          if (factor?.kind === "recoveryCode") {
+            await recordAudit(tx, {
+              id: dependencies.newId(),
+              tenantId,
+              branchId: found.branchId,
+              occurredAt: now,
+              userId: found.id,
+              ...(device === undefined ? {} : { deviceId: device.deviceId }),
+              action: "access.twoFactor.recoveryCodeUsed",
+              entity: { type: "access.user", id: found.id },
+              after: { recoveryCodeId: factor.id, remaining: factor.remaining },
+            });
+          }
+          secondFactor = factor?.kind;
+        }
+        const secondFactorFailed =
+          verified &&
+          found !== undefined &&
+          found.totpEnabledAt !== null &&
+          secondFactor === undefined;
+        if (found !== undefined && verified && !secondFactorFailed) {
           await clearFailures(tx, key);
-          return { user: found } as const;
+          return { user: found, secondFactor } as const;
         }
 
         const branchId = found?.branchId ?? tenant.defaultBranchId;
@@ -463,6 +529,7 @@ export async function logIn(
           ...entry,
           id: dependencies.newId(),
           action: "access.login.failed",
+          ...(secondFactorFailed ? { after: { secondFactor: "invalid" } } : {}),
         });
         if (throttledFrom !== undefined) {
           await recordAudit(tx, {
@@ -472,16 +539,26 @@ export async function logIn(
             after: { scope: "login", until: throttledFrom.toISOString() },
           });
         }
-        return { failed: true } as const;
+        return secondFactorFailed
+          ? ({ secondFactorFailed: true } as const)
+          : ({ failed: true } as const);
       }),
     );
     if ("throttled" in checked) throw signInThrottled(checked.throttled);
     if ("failed" in checked) throw loginFailed();
-    return checked.user;
+    if ("secondFactorRequired" in checked) throw secondFactorRequired();
+    if ("secondFactorFailed" in checked) throw secondFactorInvalid();
+    return checked;
   });
 
   if (tenantId === undefined) throw new Error("a sign-in verified without a store");
-  return openAuditedSession(tenants, tenantId, user, { method: "password", device }, dependencies);
+  return openAuditedSession(
+    tenants,
+    tenantId,
+    user.user,
+    { method: "password", device, secondFactor: user.secondFactor },
+    dependencies,
+  );
 }
 
 /**

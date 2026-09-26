@@ -64,6 +64,7 @@ function user(id: string, name: string, extra: Partial<UserView> = {}): UserView
     status: "active",
     hasPassword: false,
     hasPin: true,
+    twoFactorEnabled: false,
     createdAt: "2026-09-26T08:00:00.000Z",
     ...extra,
   };
@@ -334,6 +335,38 @@ describe("UsersScreen", () => {
       url: `/api/v1/access/users/${OMAR.id}/deactivate`,
       body: { reason: "ترك العمل" },
     });
+  });
+
+  it("lets an owner clear someone's two-factor authentication with a reason, and no one else", async () => {
+    const list = [SAMER, { ...OMAR, twoFactorEnabled: true }];
+    const calls = fakeApi(list, {
+      [`POST /api/v1/access/users/${OMAR.id}/two-factor/clear`]: () => {
+        list[1] = { ...OMAR, twoFactorEnabled: false };
+        return Response.json(list[1]);
+      },
+    });
+    renderScreen({ initial: { selected: OMAR.id } });
+    const panel = await screen.findByRole("complementary", { name: "عمر" });
+    expect(within(panel).getByText("التحقق بخطوتين مفعّل")).toBeVisible();
+    await userEvent.click(within(panel).getByRole("button", { name: /إلغاء التحقق بخطوتين/ }));
+    const dialog = screen.getByRole("alertdialog", { name: /إلغاء التحقق بخطوتين لـ«عمر»/ });
+    await userEvent.click(within(dialog).getByRole("button", { name: "إلغاء التحقق بخطوتين" }));
+    expect(calls.some((call) => call.url.endsWith("/two-factor/clear"))).toBe(false);
+    await userEvent.type(within(dialog).getByLabelText(/السبب/), "فقد هاتفه");
+    await userEvent.click(within(dialog).getByRole("button", { name: "إلغاء التحقق بخطوتين" }));
+    expect(await within(panel).findByText("التحقق بخطوتين غير مفعّل")).toBeVisible();
+    expect(calls).toContainEqual({
+      method: "POST",
+      url: `/api/v1/access/users/${OMAR.id}/two-factor/clear`,
+      body: { reason: "فقد هاتفه" },
+    });
+    cleanup();
+
+    fakeApi([SAMER, { ...OMAR, twoFactorEnabled: true }]);
+    renderScreen({ initial: { selected: OMAR.id }, isOwner: false });
+    const managerPanel = await screen.findByRole("complementary", { name: "عمر" });
+    expect(within(managerPanel).getByText("التحقق بخطوتين مفعّل")).toBeVisible();
+    expect(within(managerPanel).queryByRole("button", { name: /إلغاء التحقق بخطوتين/ })).toBeNull();
   });
 
   it("sends only what changed when a user is edited", async () => {

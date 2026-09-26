@@ -31,6 +31,7 @@ import { invoiceOperation, type InvoiceLineSpec } from "./sales-operations.test-
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
+import { testTotpKeys } from "./totp-keys.test-helpers.ts";
 
 const PASSWORD = "correct horse battery staple";
 const clock = manualClock(new Date("2026-09-25T10:00:00.000Z"));
@@ -64,7 +65,7 @@ beforeAll(async () => {
   const registry = createServerRegistry();
   server = await buildHostServer({
     registry,
-    services: { ...dependencies, tenants },
+    services: { ...dependencies, tenants, totpKeys: testTotpKeys },
   });
 });
 

@@ -67,6 +67,12 @@ export const serverEnvSchema = z.object({
    * listed, every client would share the proxy's address.
    */
   TRUST_PROXY: proxyList,
+  /**
+   * The file of the keys that seal users' TOTP secrets (`core-foundation` rule 26): `kid:key`
+   * lines, the first the current key (`parseTotpKeys`). A root-only secret file, like the other
+   * server keys (ADR-0021); required, with no built-in default.
+   */
+  TOTP_KEYS_FILE: z.string().trim().min(1),
 });
 
 export type ServerConfig = z.infer<typeof serverEnvSchema>;

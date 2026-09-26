@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { type ReactNode, useState } from "react";
 import { I18nextProvider } from "react-i18next";
@@ -10,6 +18,7 @@ import { Badge } from "./badge.tsx";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { DataTable } from "./data-table.tsx";
 import { enterMovesToNextField } from "./keyboard.ts";
+import { MenuButton } from "./menu-button.tsx";
 import { UI_NAMESPACE, uiMessages } from "./messages.ts";
 import { SearchField } from "./search-field.tsx";
 import { SegmentedControl } from "./segmented-control.tsx";
@@ -29,6 +38,7 @@ function wrap(node: ReactNode) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.localStorage.clear();
 });
 
@@ -203,6 +213,69 @@ describe("DataTable selection", () => {
     expect(screen.getByRole("row", { name: /الصيانة/ })).toHaveAttribute("aria-selected", "true");
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("status")).toHaveTextContent("none");
+  });
+});
+
+describe("MenuButton", () => {
+  it("opens from the keyboard on the first action, acts on Enter, and closes with Esc back to the button", async () => {
+    // Slow frames, as on a loaded CI machine: React Aria returns focus to the button in an
+    // animation frame after the menu unmounts, so every check of it must wait.
+    const frames = new Set<ReturnType<typeof setTimeout>>();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const frame = setTimeout(() => {
+        frames.delete(frame);
+        callback(0);
+      }, 50);
+      frames.add(frame);
+      return frame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: ReturnType<typeof setTimeout>) => {
+      clearTimeout(frame);
+      frames.delete(frame);
+    });
+    const onAction = vi.fn();
+    wrap(
+      <MenuButton
+        actions={[
+          { id: "account", label: "حسابي" },
+          { id: "signOut", label: "تسجيل الخروج" },
+        ]}
+        onAction={onAction}
+      >
+        سامر
+      </MenuButton>,
+    );
+    const button = screen.getByRole("button", { name: "سامر" });
+    expect(button).toHaveAttribute("aria-haspopup", "true");
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    const menu = await screen.findByRole("menu", { name: "سامر" });
+    await waitFor(() => {
+      expect(screen.getByRole("menuitem", { name: "حسابي" })).toHaveFocus();
+    });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(button).toHaveFocus();
+    });
+
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => {
+      expect(screen.getByRole("menuitem", { name: "تسجيل الخروج" })).toHaveFocus();
+    });
+    await userEvent.keyboard("{Enter}");
+    expect(onAction).toHaveBeenCalledExactlyOnceWith("signOut");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+    // Every slowed frame runs before the test's page is torn down.
+    await waitFor(() => {
+      expect(frames.size).toBe(0);
+    });
   });
 });
 

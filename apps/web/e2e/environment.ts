@@ -6,6 +6,8 @@ export interface E2eStore {
   readonly storeCode: string;
   readonly login: string;
   readonly password: string;
+  /** The API server's database as `mustawfi_app`, for the server CLIs a journey runs. */
+  readonly databaseUrl: string;
 }
 
 export const E2E_STORE_ENV = "MUSTAWFI_E2E_STORE";

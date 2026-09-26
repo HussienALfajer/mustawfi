@@ -42,6 +42,7 @@ export const shellMessages = {
     devices: "الأجهزة",
     device: "هذا الجهاز",
     printer: "الطابعة",
+    account: "حسابي",
   },
   registerDevice: "تسجيل هذا الجهاز",
   localDbUnavailable:
