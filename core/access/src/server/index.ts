@@ -2,6 +2,7 @@ export type { Manager } from "./actor.ts";
 export { accessBundlePart } from "./bundle-part.ts";
 export type { AccessContext, AccessDependencies } from "./dependencies.ts";
 export {
+  activeDeviceCount,
   authenticateDevice,
   deviceRevokedAt,
   DEVICE_PREFIXES,
@@ -69,6 +70,7 @@ export {
   type RouteAccessContext,
   type RouteAccessEntry,
   routeAccessTable,
+  type RouteConfig,
   sessionOf,
 } from "./route-access.ts";
 export {
@@ -83,6 +85,7 @@ export {
   type SessionUser,
 } from "./sessions.ts";
 export {
+  activeUserCount,
   addUser,
   type AddUser,
   changeOwnPassword,

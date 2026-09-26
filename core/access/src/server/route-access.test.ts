@@ -89,6 +89,11 @@ describe("installRouteAccess (core-foundation rule 17)", () => {
   it("lists every route with what it needs, scopes included", async () => {
     const server = guarded();
     route(server, "public", "/open");
+    server.post(
+      "/sign-out",
+      { config: { access: "session", allowedWhenReadOnly: true } },
+      () => ({}),
+    );
     await server.register(
       (scope, _options, done) => {
         route(scope, { permission: "audit.view" }, "/entries");
@@ -97,9 +102,25 @@ describe("installRouteAccess (core-foundation rule 17)", () => {
       { prefix: "/api/v1/audit" },
     );
     expect(routeAccessTable(server)).toEqual([
-      { method: "POST", url: "/open", access: "public" },
-      { method: "POST", url: "/api/v1/audit/entries", access: { permission: "audit.view" } },
+      { method: "POST", url: "/open", access: "public", allowedWhenReadOnly: false },
+      { method: "POST", url: "/sign-out", access: "session", allowedWhenReadOnly: true },
+      {
+        method: "POST",
+        url: "/api/v1/audit/entries",
+        access: { permission: "audit.view" },
+        allowedWhenReadOnly: false,
+      },
     ]);
+  });
+
+  it("refuses allowedWhenReadOnly other than true", () => {
+    expect(() => {
+      guarded().post(
+        "/thing",
+        { config: { access: "session", allowedWhenReadOnly: false as never } },
+        () => ({}),
+      );
+    }).toThrow(/allowedWhenReadOnly other than true/);
   });
 
   it("answers a public route without credentials", async () => {

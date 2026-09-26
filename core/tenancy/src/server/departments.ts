@@ -49,7 +49,8 @@ export async function lockTenant(
   return { tenantId: tenant.id, branchId: tenant.defaultBranchId };
 }
 
-async function activeCount(tx: TenantTransaction): Promise<number> {
+/** How many active departments count against the license's limit (rule 4). */
+export async function activeDepartmentCount(tx: TenantTransaction): Promise<number> {
   const [row] = await tx
     .select({ active: count() })
     .from(departments)
@@ -116,7 +117,7 @@ export async function createDepartment(
   const license = await currentLicense(tx);
   if (license === undefined) throw new Error("the tenant has no license");
   const allowed = license.claims.limits.departments;
-  if ((await activeCount(tx)) >= allowed) {
+  if ((await activeDepartmentCount(tx)) >= allowed) {
     throw new ProblemError(tenancyProblemCodes.departmentLimit, 409, {
       title: "The license's department limit is reached",
       detail: `the license allows ${allowed} active departments`,
@@ -182,7 +183,7 @@ export async function archiveDepartment(
   const before = await existing(tx, change.id);
   // The last-active rule first: while the default is never archived it is also the last active
   // one, and "last active" is the reason that holds whichever department it is.
-  if ((await activeCount(tx)) <= 1) {
+  if ((await activeDepartmentCount(tx)) <= 1) {
     throw new ProblemError(tenancyProblemCodes.lastActiveDepartment, 409, {
       title: "The last active department cannot be archived",
     });

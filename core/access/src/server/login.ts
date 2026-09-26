@@ -2,7 +2,9 @@ import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
+  currentLicenseStatus,
   currentTenant,
+  licenseSuspended,
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
@@ -24,7 +26,7 @@ import {
 } from "./throttle.ts";
 import type { TotpKeyRing } from "./sealed-secrets.ts";
 import { useSecondFactor } from "./two-factor.ts";
-import { userAccess } from "./users.ts";
+import { userAccess, type UserAccess } from "./users.ts";
 
 export interface LoginInput {
   readonly storeCode: string;
@@ -332,6 +334,25 @@ interface VerifiedUser {
   readonly login: string | null;
 }
 
+/**
+ * The access of a user whose credentials were just verified, or 403 `tenancy.license.suspended`
+ * when the license is suspended and they are not an owner (rule 5). Not a failed sign-in:
+ * nothing is counted or audited. Password sign-in asks before a second factor is used up.
+ */
+async function admittedAccess(
+  tx: TenantTransaction,
+  userId: string,
+  now: Date,
+  dependencies: SignInDependencies,
+): Promise<UserAccess> {
+  const access = await userAccess(tx, userId, dependencies.permissionCatalogue);
+  if (access === undefined) throw new Error(`user ${userId} vanished during sign-in`);
+  if (!access.role.isOwner && (await currentLicenseStatus(tx, now)).state === "suspended") {
+    throw licenseSuspended();
+  }
+  return access;
+}
+
 /** How a sign-in was proved: its method, and the second factor of a password sign-in. */
 interface SignInProof {
   readonly method: "password" | "pin";
@@ -339,7 +360,10 @@ interface SignInProof {
   readonly secondFactor?: "totp" | "recoveryCode" | undefined;
 }
 
-/** Opens the session of a verified sign-in, audited `access.login.succeeded`. */
+/**
+ * Opens the session of a verified sign-in, audited `access.login.succeeded`. While the license
+ * is suspended, only an owner's (403 `tenancy.license.suspended` otherwise, rule 5).
+ */
 async function openAuditedSession(
   tenants: TenantDatabase,
   tenantId: string,
@@ -352,6 +376,7 @@ async function openAuditedSession(
   const session = await tenants.withTenant(
     { tenantId, userId: user.id, ...(deviceId === undefined ? {} : { deviceId }) },
     async (tx) => {
+      const access = await admittedAccess(tx, user.id, now, dependencies);
       const opened = await openSession(
         tx,
         {
@@ -378,8 +403,6 @@ async function openAuditedSession(
           ...(how.secondFactor === undefined ? {} : { secondFactor: how.secondFactor }),
         },
       });
-      const access = await userAccess(tx, user.id, dependencies.permissionCatalogue);
-      if (access === undefined) throw new Error(`user ${user.id} vanished during sign-in`);
       return { ...opened, access };
     },
   );
@@ -478,6 +501,8 @@ export async function logIn(
           passwordHash === null
             ? await verifyNothing(input.password).then(() => false)
             : await verifyPassword(passwordHash, input.password);
+        // Before a second factor is used up: a suspended store turns non-owners away (rule 5).
+        if (found !== undefined && verified) await admittedAccess(tx, found.id, now, dependencies);
         let secondFactor: "totp" | "recoveryCode" | undefined;
         if (found !== undefined && verified && found.totpEnabledAt !== null) {
           if (input.secondFactor === undefined || input.secondFactor.trim() === "") {

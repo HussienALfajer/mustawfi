@@ -203,3 +203,38 @@ export function licenseState(terms: LicenseTerms, at: Date): LicenseState {
   }
   return state;
 }
+
+/**
+ * The time zone of the business day (`core-foundation` rule 6), the tenant's until it becomes a
+ * setting (`core-config`).
+ */
+export const BUSINESS_TIME_ZONE = "Asia/Damascus";
+
+/** The business date (`YYYY-MM-DD`) of `instant` in `timeZone`. */
+export function businessDate(instant: Date, timeZone: string = BUSINESS_TIME_ZONE): string {
+  if (Number.isNaN(instant.getTime())) throw new RangeError("the instant is not a valid date");
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/** The states that allow no new document and no write on the server (`core-foundation` rule 5). */
+export function isReadOnlyState(state: LicenseState): boolean {
+  return state === "readOnly" || state === "suspended";
+}
+
+/**
+ * The business date on which the license's read-only state begins (`core-foundation` rule 5,
+ * ADR-0030): a document dated on a later business day was made while the tenant was read-only
+ * and is flagged `licenseReadOnly`. Documents of that day itself are not flagged, since devices
+ * keep a day's state until the day ends.
+ */
+export function readOnlyBusinessDate(
+  terms: LicenseTerms,
+  timeZone: string = BUSINESS_TIME_ZONE,
+): string {
+  return businessDate(new Date(licenseStateStarts(terms).readOnly), timeZone);
+}

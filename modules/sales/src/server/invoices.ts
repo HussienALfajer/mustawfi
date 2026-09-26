@@ -296,5 +296,8 @@ export const invoicePostOperation: SyncOperationDefinition = {
     department: (payload) =>
       typeof payload["departmentId"] === "string" ? payload["departmentId"] : undefined,
   },
+  // Flagged `licenseReadOnly` when dated after the tenant became read-only (ADR-0030).
+  businessDate: (payload) =>
+    typeof payload["businessDate"] === "string" ? payload["businessDate"] : undefined,
   versions: { 1: postInvoiceV1 },
 };

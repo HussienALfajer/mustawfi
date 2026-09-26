@@ -14,6 +14,7 @@ export {
   type Tenant,
 } from "./tenants.ts";
 export {
+  activeDepartmentCount,
   archiveDepartment,
   createDepartment,
   defaultDepartment,
@@ -27,8 +28,13 @@ export {
 } from "./departments.ts";
 export {
   currentLicense,
+  currentLicenseStatus,
   installLicense,
   licenseBundlePart,
+  licenseReadOnly,
+  type LicenseStatus,
+  licenseSuspended,
+  requireWritableLicense,
   type InstallLicenseDependencies,
   type InstalledLicense,
 } from "./licenses.ts";

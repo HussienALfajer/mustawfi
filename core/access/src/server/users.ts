@@ -293,6 +293,12 @@ async function checkAnotherOwner(tx: TenantTransaction, userId: string): Promise
   }
 }
 
+/** How many users count against the license's limit: the active ones, owners included (rule 4). */
+export async function activeUserCount(tx: TenantTransaction): Promise<number> {
+  const [row] = await tx.select({ active: count() }).from(users).where(eq(users.status, "active"));
+  return row?.active ?? 0;
+}
+
 /**
  * Refuses one more active user beyond the license's `users` limit (rule 4); run under
  * `lockTenant`. Deactivated users do not count, and a lower limit deactivates nobody.
@@ -301,8 +307,7 @@ async function checkUserLimit(tx: TenantTransaction): Promise<void> {
   const license = await currentLicense(tx);
   if (license === undefined) throw new Error("the tenant has no license");
   const allowed = license.claims.limits.users;
-  const [row] = await tx.select({ active: count() }).from(users).where(eq(users.status, "active"));
-  if ((row?.active ?? 0) >= allowed) {
+  if ((await activeUserCount(tx)) >= allowed) {
     throw new ProblemError(tenancyProblemCodes.userLimit, 409, {
       title: "The license's user limit is reached",
       detail: `the license allows ${String(allowed)} active users`,

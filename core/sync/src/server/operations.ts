@@ -64,6 +64,14 @@ export type SyncOperationAccess =
 export interface SyncOperationDefinition {
   readonly type: string;
   readonly access: SyncOperationAccess;
+  /**
+   * For an operation that records a document: its business date (`YYYY-MM-DD`), read from its
+   * unchecked payload (`undefined` when it has none: the handler rejects it as malformed). A
+   * document dated on a business day after the tenant's license became read-only is accepted
+   * and flagged `licenseReadOnly` (`core-foundation` rule 5, ADR-0030). Operations that record
+   * no document, such as device audit events, leave it out.
+   */
+  readonly businessDate?: (payload: Readonly<Record<string, unknown>>) => string | undefined;
   readonly versions: Readonly<Record<number, SyncOperationHandler>>;
 }
 

@@ -1,7 +1,12 @@
 import { type Device, deviceRevokedAt, userAccess } from "@mustawfi/core-access/server";
 import { accessGrant } from "@mustawfi/core-access/shared";
 import { ProblemError } from "@mustawfi/core-config/server";
-import type { TenantDatabase, TenantTransaction } from "@mustawfi/core-tenancy/server";
+import {
+  currentLicense,
+  type TenantDatabase,
+  type TenantTransaction,
+} from "@mustawfi/core-tenancy/server";
+import { licenseStateStarts, readOnlyBusinessDate } from "@mustawfi/core-tenancy/shared";
 import { eq, max, sql } from "drizzle-orm";
 import {
   syncProblemCodes,
@@ -14,6 +19,7 @@ import {
   OperationRejected,
   type ReceivedOperation,
   type SyncHandlerDependencies,
+  type SyncOperationDefinition,
   type SyncOperationTable,
 } from "./operations.ts";
 import { flagOperation } from "./flags.ts";
@@ -234,6 +240,7 @@ async function processOperation(
       dependencies,
     );
   }
+  await flagIfLicenseReadOnly(tx, operation, definition, dependencies);
   const result: SyncValues = await handler(tx, operation, dependencies);
   await store(tx, operation, { status: "accepted", result });
   return {
@@ -242,6 +249,40 @@ async function processOperation(
     next: expected + 1,
     revoked,
   };
+}
+
+/**
+ * Flags a document dated on a business day after the tenant's license became read-only
+ * (`core-foundation` rule 5, ADR-0030): the tenant must be read-only (or suspended) by the
+ * server's clock when the document arrives, and the document dated after the business day that
+ * state began — the device keeps a day's state until the day ends, so that day's documents are
+ * not flagged. The current license decides: after a renewal nothing is flagged, since the
+ * renewal lifts the restriction at once.
+ */
+async function flagIfLicenseReadOnly(
+  tx: TenantTransaction,
+  operation: ReceivedOperation,
+  definition: SyncOperationDefinition,
+  dependencies: PushDependencies,
+): Promise<void> {
+  const documentDate = definition.businessDate?.(operation.payload);
+  if (documentDate === undefined) return;
+  const license = await currentLicense(tx);
+  if (license === undefined) throw new Error("the tenant has no installed license");
+  if (operation.receivedAt.getTime() < licenseStateStarts(license.claims).readOnly) return;
+  const readOnlyDate = readOnlyBusinessDate(license.claims);
+  // Both are `YYYY-MM-DD`, so they compare as strings; a malformed date is rejected by the
+  // handler, which rolls the flag back with it.
+  if (documentDate <= readOnlyDate) return;
+  await flagOperation(
+    tx,
+    operation,
+    {
+      code: "licenseReadOnly",
+      detail: { businessDate: documentDate, readOnlyBusinessDate: readOnlyDate },
+    },
+    dependencies,
+  );
 }
 
 async function store(

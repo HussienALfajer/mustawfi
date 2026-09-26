@@ -31,7 +31,9 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
   app.post(
     "/push",
     {
-      config: { access: "deviceEvenRevoked" },
+      // Push is accepted in every license state; a document dated after the tenant became
+      // read-only is flagged instead (`core-foundation` rule 5, ADR-0030).
+      config: { access: "deviceEvenRevoked", allowedWhenReadOnly: true },
       schema: {
         tags,
         body: pushRequestSchema,

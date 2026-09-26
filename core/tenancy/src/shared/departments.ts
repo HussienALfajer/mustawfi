@@ -27,6 +27,13 @@ export const tenancyProblemCodes = {
   mainPosDeviceLimit: "tenancy.limit.mainPosDevices",
   /** A new companion device would exceed the license's `companionDevices` limit (rule 4). */
   companionDeviceLimit: "tenancy.limit.companionDevices",
+  /**
+   * A write refused while the license is read-only or suspended (rule 5); sign-in, sign-out, the
+   * user's own account, push, and routes marked `allowedWhenReadOnly` stay open.
+   */
+  licenseReadOnly: "tenancy.license.readOnly",
+  /** The license is suspended: only owners' sessions are accepted (rule 5). */
+  licenseSuspended: "tenancy.license.suspended",
   /** Another active department has this name. */
   departmentNameTaken: "tenancy.department.nameTaken",
   /** No department with this id in the tenant. */

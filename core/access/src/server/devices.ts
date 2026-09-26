@@ -3,6 +3,7 @@ import { ProblemError } from "@mustawfi/core-config/server";
 import {
   currentLicense,
   currentTenant,
+  requireWritableLicense,
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
@@ -102,7 +103,8 @@ export function registrationFailed(): ProblemError {
  * `core-foundation` rule 4) after the code is checked, so only a holder of a valid code learns
  * the limit. The device gets a prefix no device of the tenant has ever had, chosen at random
  * among the free ones, and a fresh credential. A refusal throws and rolls everything back,
- * the code's use included.
+ * the code's use included. While the license is read-only or suspended, registration is a
+ * refused write (403 `tenancy.license.readOnly`, rule 5), again only after the code is checked.
  */
 export async function registerDevice(
   tx: TenantTransaction,
@@ -137,6 +139,8 @@ export async function registerDevice(
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`core_access.devices:${device.tenantId}`}, 0))`,
   );
+  // A public route: the guard cannot see the tenant, so registration checks the license itself.
+  await requireWritableLicense(tx, now);
   await checkDeviceLimit(tx, type);
   const taken = new Set(
     (await tx.select({ prefix: devices.prefix }).from(devices)).map((row) => row.prefix),
@@ -190,6 +194,15 @@ export async function registerDevice(
   };
 }
 
+/** How many devices of `type` count against the license's limit: those not revoked (rule 4). */
+export async function activeDeviceCount(tx: TenantTransaction, type: DeviceType): Promise<number> {
+  const [row] = await tx
+    .select({ devices: count() })
+    .from(devices)
+    .where(and(eq(devices.type, type), isNull(devices.revokedAt)));
+  return row?.devices ?? 0;
+}
+
 /**
  * Refuses one more device of `type` beyond the license's limit (rule 4); run under the
  * registration lock. A lower limit after a downgrade removes no device; revoked devices do not
@@ -203,11 +216,7 @@ async function checkDeviceLimit(tx: TenantTransaction, type: DeviceType): Promis
     type === "mainPos"
       ? [limits.mainPosDevices, tenancyProblemCodes.mainPosDeviceLimit]
       : [limits.companionDevices, tenancyProblemCodes.companionDeviceLimit];
-  const [row] = await tx
-    .select({ devices: count() })
-    .from(devices)
-    .where(and(eq(devices.type, type), isNull(devices.revokedAt)));
-  if ((row?.devices ?? 0) >= allowed) {
+  if ((await activeDeviceCount(tx, type)) >= allowed) {
     throw new ProblemError(code, 409, {
       title: "The license's device limit is reached",
       detail: `the license allows ${String(allowed)} ${type} devices`,

@@ -1,11 +1,15 @@
-import type { BundlePart } from "@mustawfi/core-config/server";
+import { type BundlePart, ProblemError } from "@mustawfi/core-config/server";
 import type { Clock, IdGenerator } from "@mustawfi/kernel";
 import { desc } from "drizzle-orm";
 import {
+  isReadOnlyState,
   LICENSE_BUNDLE_PART,
   type LicenseClaims,
   type LicensePublicKeys,
   LicenseRefusedError,
+  type LicenseState,
+  licenseState,
+  tenancyProblemCodes,
   verifyLicense,
 } from "../shared/index.ts";
 import { licenses, tenants } from "./schema.ts";
@@ -127,3 +131,49 @@ export const licenseBundlePart: BundlePart<TenantTransaction> = {
     return license.jws;
   },
 };
+
+/** The tenant's current license and its lifecycle state at an instant. */
+export interface LicenseStatus {
+  readonly license: InstalledLicense;
+  readonly state: LicenseState;
+}
+
+/**
+ * The current license of the tenant `tx` runs in and its state at `at` — the server clock's
+ * instant, never a device's (`core-foundation` rules 3 and 5). A tenant always has a license
+ * (rule 2), so a missing one is a bug, not a state.
+ */
+export async function currentLicenseStatus(
+  tx: TenantTransaction,
+  at: Date,
+): Promise<LicenseStatus> {
+  const license = await currentLicense(tx);
+  if (license === undefined) throw new Error("the tenant has no installed license");
+  return { license, state: licenseState(license.claims, at) };
+}
+
+/** 403 `tenancy.license.readOnly`: a write while the license is read-only or suspended (rule 5). */
+export function licenseReadOnly(): ProblemError {
+  return new ProblemError(tenancyProblemCodes.licenseReadOnly, 403, {
+    title: "The store's license is read-only",
+    detail: "renew the license to record or change anything",
+  });
+}
+
+/** 403 `tenancy.license.suspended`: a non-owner while the license is suspended (rule 5). */
+export function licenseSuspended(): ProblemError {
+  return new ProblemError(tenancyProblemCodes.licenseSuspended, 403, {
+    title: "The store's license is suspended",
+    detail: "only the store's owners may sign in until the license is renewed",
+  });
+}
+
+/**
+ * Refuses a write in the tenant `tx` runs in when its license is read-only or suspended at `at`
+ * (403 `tenancy.license.readOnly`, rule 5) — for a write the route guard cannot check first,
+ * such as a public route whose tenant only its handler learns.
+ */
+export async function requireWritableLicense(tx: TenantTransaction, at: Date): Promise<void> {
+  const { state } = await currentLicenseStatus(tx, at);
+  if (isReadOnlyState(state)) throw licenseReadOnly();
+}

@@ -48,7 +48,7 @@ import {
 import { type LoggedIn, logIn, logInWithPin, type SignInSource } from "./login.ts";
 import { resetPasswordWithCode } from "./reset-codes.ts";
 import { archiveRole, copyRole, editRole, listRoles } from "./roles.ts";
-import { deviceOf, type RouteAccess, sessionOf } from "./route-access.ts";
+import { deviceOf, type RouteAccess, type RouteConfig, sessionOf } from "./route-access.ts";
 import {
   CLEARED_SESSION_COOKIE,
   crossOriginRefused,
@@ -140,6 +140,15 @@ const signInRefusals = {
   429: problemDetailsSchema,
 };
 
+/**
+ * Sign-in, by password, PIN, or support reset code, stays open in every license state (rule 5);
+ * a suspended license turns non-owners away when the session would open.
+ */
+const signInAccess: RouteConfig = { access: "public", allowedWhenReadOnly: true };
+
+/** The user's own session and account stay open in every license state (rule 5). */
+const ownAccount: RouteConfig = { access: "session", allowedWhenReadOnly: true };
+
 /** `core.access` routes, under `/api/v1/access`. */
 export function accessRoutes(scope: FastifyInstance, context: AccessContext): void {
   const app = scope.withTypeProvider<ZodTypeProvider>();
@@ -149,7 +158,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/login",
     {
-      config: { access: "public" },
+      config: signInAccess,
       schema: {
         tags,
         body: loginRequestSchema,
@@ -169,7 +178,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     "/pin-login",
     {
       // The device credential (`Mustawfi-Device`) and the PIN are the credentials (rule 21).
-      config: { access: "public" },
+      config: signInAccess,
       schema: {
         tags,
         body: pinLoginRequestSchema,
@@ -193,7 +202,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     "/password-reset",
     {
       // The support reset code is the credential (rule 27).
-      config: { access: "public" },
+      config: signInAccess,
       schema: {
         tags,
         body: passwordResetRequestSchema,
@@ -209,7 +218,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/logout",
     {
-      config: { access: "session" },
+      config: { access: "session", allowedWhenReadOnly: true },
       schema: {
         tags,
         response: { 204: z.null(), 401: problemDetailsSchema, 403: problemDetailsSchema },
@@ -318,7 +327,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     "/devices/current/wipe",
     {
       // A revoked device reports its wipe with its credential, as it pushed (rule 23).
-      config: { access: "deviceEvenRevoked" },
+      config: { access: "deviceEvenRevoked", allowedWhenReadOnly: true },
       schema: {
         tags,
         response: { 204: z.null(), 401: problemDetailsSchema, 409: problemDetailsSchema },
@@ -595,8 +604,8 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.get(
     "/me",
     {
-      // The user's own account: any signed-in user (rule 17).
-      config: { access: "session" },
+      // The user's own account: any signed-in user (rule 17), in every license state (rule 5).
+      config: ownAccount,
       schema: { tags, response: { 200: accountViewSchema, ...refusals } },
     },
     async (request) => {
@@ -611,7 +620,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/me/two-factor/enrolment",
     {
-      config: { access: "session" },
+      config: ownAccount,
       schema: {
         tags,
         body: startTwoFactorRequestSchema,
@@ -629,7 +638,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/me/two-factor/confirm",
     {
-      config: { access: "session" },
+      config: ownAccount,
       schema: {
         tags,
         body: confirmTwoFactorRequestSchema,
@@ -645,7 +654,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.post(
     "/me/two-factor/disable",
     {
-      config: { access: "session" },
+      config: ownAccount,
       schema: {
         tags,
         body: disableTwoFactorRequestSchema,
@@ -663,8 +672,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.put(
     "/me/pin",
     {
-      // The user's own account: any signed-in user (rule 17).
-      config: { access: "session" },
+      config: ownAccount,
       schema: { tags, body: changeOwnPinRequestSchema, response: { 204: z.null(), ...refusals } },
     },
     async (request, reply) => {
@@ -679,7 +687,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   app.put(
     "/me/password",
     {
-      config: { access: "session" },
+      config: ownAccount,
       schema: {
         tags,
         body: changeOwnPasswordRequestSchema,

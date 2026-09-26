@@ -1,5 +1,6 @@
 import type { Messages } from "@mustawfi/i18n";
 import { departmentsMessages } from "./departments/messages.ts";
+import { licenseMessages } from "./license/messages.ts";
 import { storeProfileMessages } from "./store-profile/messages.ts";
 
 /** The `organization` namespace (ADR-0023: one namespace per module, shipped in its client entry). */
@@ -12,6 +13,7 @@ export const organizationMessages = {
   permission: {
     profile: { edit: "تعديل بيانات المتجر" },
     departments: { manage: "إدارة الأقسام" },
+    license: { view: "عرض الترخيص والباقة" },
   },
   /** Labels of this module's audit actions: `organization.department.created` → `audit.department.created`. */
   audit: {
@@ -30,4 +32,5 @@ export const organizationMessages = {
   },
   departments: departmentsMessages,
   profile: storeProfileMessages,
+  license: licenseMessages,
 } satisfies Messages;
