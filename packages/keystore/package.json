@@ -1,0 +1,21 @@
+{
+  "name": "@mustawfi/keystore",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tauri": "./src/tauri.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@mustawfi/config": "workspace:*",
+    "@types/node": "24.13.6",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  }
+}

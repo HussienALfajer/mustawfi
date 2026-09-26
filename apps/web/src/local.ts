@@ -1,4 +1,8 @@
-import { holdLocalDeviceCredential, restoreDeviceSession } from "@mustawfi/core-access/client";
+import {
+  holdLocalDeviceCredential,
+  moveDeviceCredentialToSecureStore,
+  restoreDeviceSession,
+} from "@mustawfi/core-access/client";
 import { IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
 import { organizationPullAppliers } from "@mustawfi/core-organization/client";
 import { createSyncEngine, type SyncEngine } from "@mustawfi/core-sync/client";
@@ -41,10 +45,21 @@ export async function startLocalRuntime(
           },
         }),
   });
+  // The Windows app keeps the device credential in Credential Manager (ADR-0022): one an
+  // earlier version kept in the database moves there, and the copies of the file that held it
+  // are replaced. A failure never stops the till; a store that fails leaves the credential in
+  // the file until the next start.
+  await moveDeviceCredentialToSecureStore(
+    db,
+    undefined,
+    backup === undefined || removeBackups === undefined ? undefined : { backup, removeBackups },
+  ).catch((error: unknown) => {
+    console.error("the device credential could not be moved to the secure store", error);
+  });
   // A session opened on this device is accepted only with its credential (rule 22).
   await holdLocalDeviceCredential(db);
-  // A session left idle is over, and a cookie this device's user did not open is not sent
-  // (rules 24–25).
+  // The session of the last run comes back, unless it was left idle; a cookie this device's
+  // user did not open is not sent (rules 24–25).
   await restoreDeviceSession(db, systemClock, IDLE_LOCK_MS);
   if (backup !== undefined) {
     const daily = () => {

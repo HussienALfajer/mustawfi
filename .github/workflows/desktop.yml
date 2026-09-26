@@ -12,6 +12,7 @@ on:
     paths:
       - apps/desktop/**
       - apps/web/**
+      - packages/keystore/**
       - packages/local-db/**
       - packages/printing/**
       - Cargo.toml

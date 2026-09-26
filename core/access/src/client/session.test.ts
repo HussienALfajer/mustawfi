@@ -1,7 +1,13 @@
 import { configureApi } from "@mustawfi/core-config/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accessProblemCodes } from "../shared/index.ts";
-import { fetchSession, signIn, signOut } from "./session.ts";
+import {
+  endServerSessionInBackground,
+  fetchSession,
+  serverSessionEnded,
+  signIn,
+  signOut,
+} from "./session.ts";
 
 const ORIGIN = "http://127.0.0.1:3000";
 const user = {
@@ -134,5 +140,37 @@ describe("the browser's session (cookie transport)", () => {
     });
     await fetchSession().catch(() => undefined);
     expect(calls[1]?.authorization).toBeUndefined();
+  });
+});
+
+describe("a sign-in after a session ended in the background", () => {
+  it("waits for the logout's answer, which clears the cookie, before signing in", async () => {
+    configureApi({ origin: "", session: "cookie" });
+    const order: string[] = [];
+    let answerLogout: () => void = () => undefined;
+    vi.stubGlobal("fetch", (url: string) => {
+      order.push(`sent ${url}`);
+      if (url.endsWith("/logout")) {
+        return new Promise<Response>((resolve) => {
+          answerLogout = () => {
+            order.push("logout answered");
+            resolve(new Response(null, { status: 204 }));
+          };
+        });
+      }
+      return Promise.resolve(Response.json(session));
+    });
+    // A lock, or an idle session ended at start-up (`restoreDeviceSession`).
+    endServerSessionInBackground(4_000);
+    const signingIn = signIn({ storeCode: "AB2CD3", login: "owner", password: "secret" });
+    await vi.waitFor(() => expect(order).toEqual(["sent /api/v1/access/logout"]));
+    answerLogout();
+    await signingIn;
+    await serverSessionEnded();
+    expect(order).toEqual([
+      "sent /api/v1/access/logout",
+      "logout answered",
+      "sent /api/v1/access/login",
+    ]);
   });
 });

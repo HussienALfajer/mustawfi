@@ -1,15 +1,17 @@
 //! Mustawfi for Windows (ADR-0010): the web client in a WebView2 window, with its local
 //! database in a real SQLite file owned by this process (ADR-0019), and receipts sent to the
-//! printer as raw ESC/POS bytes through the Windows spooler (ADR-0025).
+//! printer as raw ESC/POS bytes through the Windows spooler (ADR-0025). The device credential and
+//! the session token are kept in Windows Credential Manager (ADR-0022).
 
 // A release build is a GUI app: no console window behind it.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use mustawfi_keystore::Keystore;
 use mustawfi_local_db::{Locate, Request, Response, Session};
 use mustawfi_printing::PrinterInfo;
 use tauri::{Manager, State};
@@ -38,6 +40,20 @@ async fn local_db(request: Request, state: State<'_, LocalDbSession>) -> Result<
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     session.handle(request, &state.directory)
+}
+
+/// The `SecureStore` of `@mustawfi/keystore/tauri`: the app's own secrets in Credential Manager.
+/// The Credential Manager calls block, so they run off the async runtime.
+#[tauri::command]
+async fn secure_store(
+    request: mustawfi_keystore::Request,
+    keystore: State<'_, Arc<Keystore>>,
+) -> Result<Option<String>, String> {
+    let keystore = Arc::clone(&keystore);
+    tauri::async_runtime::spawn_blocking(move || keystore.handle(request))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
 }
 
 /// The printers this Windows user can print to (`@mustawfi/printing/tauri`).
@@ -72,9 +88,16 @@ fn main() {
                 session: Mutex::new(Session::default()),
                 directory: AppLocalData(directory),
             });
+            // Under the app's identifier, like its data directory.
+            app.manage(Arc::new(Keystore::windows(&app.config().identifier)?));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![local_db, printers, print_raw])
+        .invoke_handler(tauri::generate_handler![
+            local_db,
+            secure_store,
+            printers,
+            print_raw
+        ])
         .run(tauri::generate_context!());
     if let Err(error) = result {
         eprintln!("mustawfi failed to start: {error}");

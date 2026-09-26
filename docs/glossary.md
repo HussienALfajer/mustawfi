@@ -207,6 +207,7 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | قيد تدقيق | Audit entry | `auditEntry` |
 | حدث تدقيق من الجهاز | Device audit event (queued in the outbox as `audit.entry.record`; `source = device`) | `DeviceAuditEvent`, `AuditSink` |
 | اعتماد الجهاز | Device credential | `deviceCredential` |
+| المخزن الآمن للنظام | OS secure store (Windows Credential Manager in the Windows app; holds the device credential and the session token) | `SecureStore` |
 | رمز PIN | PIN | `pin` |
 | جلسة | Session | `session` |
 | عملية مزامنة | Sync operation (identified by `opId`) | `SyncOperation` |

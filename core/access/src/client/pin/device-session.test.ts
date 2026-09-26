@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   acceptBundle,
+  type ApiEndpoint,
   type AuditSink,
   type BundleVerifier,
   configLocalMigrations,
@@ -9,7 +10,9 @@ import {
   hasSessionCredential,
   holdDeviceCredential,
   holdSession,
+  sessionKept,
 } from "@mustawfi/core-config/client";
+import { memorySecureStore } from "@mustawfi/keystore";
 import { BUNDLE_ALGORITHM, BUNDLE_TYPE, signedBundleSchema } from "@mustawfi/core-config/shared";
 import { manualClock } from "@mustawfi/kernel";
 import { type LocalDb, migrateLocalDb } from "@mustawfi/local-db";
@@ -457,6 +460,50 @@ describe("the device's session at start-up and at a lock (rules 24–25)", () =>
     expect(await localSession(db)).toBeUndefined();
     expect(hasSessionCredential()).toBe(false);
     expect(await lastActivityAt(db)).toBeDefined();
+  });
+
+  it("keeps the Windows app's session across a restart, until it is left idle (slice 18)", async () => {
+    const store = memorySecureStore();
+    const windowsApp: ApiEndpoint = {
+      origin: "https://store.example",
+      session: "bearer",
+      secureStore: store,
+    };
+    configureApi(windowsApp);
+    holdDeviceCredential("d1.credential");
+    answer = () => Response.json({ ...sessionAnswer(CASHIER), token: "s1.token" });
+    const outcome = await signInWithPin(db, { userId: CASHIER, pin: "2580" }, dependencies);
+    expect(outcome).toMatchObject({ outcome: "signedIn" });
+    await sessionKept();
+
+    // The app starts again within the idle time: the same user, with the same server session.
+    configureApi(windowsApp);
+    clock.advance(4 * MINUTE);
+    await restoreDeviceSession(db, clock, 5 * MINUTE);
+    expect(await localSession(db)).toMatchObject({ userId: CASHIER, serverSession: true });
+    answer = () => Response.json(sessionAnswer(CASHIER));
+    const signedIn = await fetchSignedIn(db, verifier);
+    expect(signedIn?.server?.user.id).toBe(CASHIER);
+    expect((requests.at(-1)?.init.headers as Record<string, string>)["authorization"]).toBe(
+      "Bearer s1.token",
+    );
+
+    // Past the idle time the session is over: the server is told with the token it held, and
+    // the store forgets it.
+    configureApi(windowsApp);
+    clock.advance(5 * MINUTE);
+    requests = [];
+    answer = () => new Response(null, { status: 204 });
+    await restoreDeviceSession(db, clock, 5 * MINUTE);
+    await sessionKept();
+    expect(await localSession(db)).toBeUndefined();
+    expect(hasSessionCredential()).toBe(false);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]?.url).toBe("https://store.example/api/v1/access/logout");
+    expect((requests[0]?.init.headers as Record<string, string>)["authorization"]).toBe(
+      "Bearer s1.token",
+    );
+    expect(store.secrets.has("sessionToken")).toBe(false);
   });
 
   it("sends no cookie of a session the device's user did not open here", async () => {

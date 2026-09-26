@@ -32,7 +32,6 @@ const device: LocalDevice = {
   prefix: "K7",
   name: "الصندوق الرئيسي",
   type: "mainPos",
-  credential: "d1.fixture",
   baseCurrency: "SYP",
   registeredAt: clock.now().toISOString(),
 };

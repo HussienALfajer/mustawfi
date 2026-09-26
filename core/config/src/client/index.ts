@@ -1,3 +1,4 @@
+import type { SecureStore } from "@mustawfi/keystore";
 import type { z } from "zod";
 import {
   DEVICE_CREDENTIAL_HEADER,
@@ -34,6 +35,7 @@ export {
   type DeviceAuditValues,
 } from "./audit.ts";
 export { type ClientRuntime, ClientRuntimeProvider, useClientRuntime } from "./runtime.tsx";
+export type { SecretName, SecureStore } from "@mustawfi/keystore";
 
 /** The API answered with problem details; `code` picks the Arabic message (ADR-0014). */
 export class ApiProblem extends Error {
@@ -57,12 +59,18 @@ export class ApiUnreachable extends Error {
  * Where the API is and how the session travels (ADR-0022), set once by the app's composition
  * root. The browser calls its own origin and the session is an `HttpOnly` cookie; the Windows
  * app is served from its own origin, so it calls the server's origin and sends the session as
- * a bearer token, which it holds in memory only (the OS secure store comes later).
+ * a bearer token, which it keeps in the OS secure store.
  */
 export interface ApiEndpoint {
   /** The server's origin, `https://…`; `""` for the page's own origin. */
   readonly origin: string;
   readonly session: "cookie" | "bearer";
+  /**
+   * The OS secure store of a native shell (Windows Credential Manager): it keeps the bearer
+   * token across restarts, and the device credential (`core.access`). Without one a bearer
+   * token is held in memory only.
+   */
+  readonly secureStore?: SecureStore;
 }
 
 let endpoint: ApiEndpoint = { origin: "", session: "cookie" };
@@ -75,11 +83,63 @@ let sessionBearer: string | undefined;
  */
 let sessionHeld = true;
 let deviceCredential: string | undefined;
+/** The secure store's writes of the token, one after another in the order they were asked. */
+let tokenWrites: Promise<void> = Promise.resolve();
 
 export function configureApi(next: ApiEndpoint): void {
   endpoint = next;
   sessionBearer = undefined;
   sessionHeld = next.session === "cookie";
+  tokenWrites = Promise.resolve();
+}
+
+/** The platform's OS secure store, if it has one (`ApiEndpoint.secureStore`). */
+export function secureStore(): SecureStore | undefined {
+  return endpoint.secureStore;
+}
+
+/** The store that keeps the bearer token: none for the cookie transport. */
+function tokenStore(): SecureStore | undefined {
+  return endpoint.session === "bearer" ? endpoint.secureStore : undefined;
+}
+
+/**
+ * Keeps the bearer token (or its absence) in the secure store, after the writes asked before.
+ * A write that fails leaves the session held in memory for this run; the next start finds the
+ * previous token, which `restoreDeviceSession` and the server judge like any other.
+ */
+function keepToken(token: string | undefined): void {
+  const store = tokenStore();
+  if (store === undefined) return;
+  tokenWrites = tokenWrites
+    .then(() =>
+      token === undefined ? store.delete("sessionToken") : store.set("sessionToken", token),
+    )
+    .catch((error: unknown) => {
+      console.error("the secure store did not keep the session token", error);
+    });
+}
+
+/** Resolves once the secure store holds what `holdSession` and `forgetSession` last left. */
+export function sessionKept(): Promise<void> {
+  return tokenWrites;
+}
+
+/**
+ * At start-up, before anything calls the API: the bearer token the secure store kept from the
+ * last run, so the session survives a restart of the Windows app. A store that cannot be read
+ * leaves this client without a session.
+ */
+export async function restoreSession(): Promise<void> {
+  const store = tokenStore();
+  if (store === undefined) return;
+  await tokenWrites;
+  try {
+    sessionBearer = await store.get("sessionToken");
+  } catch (error) {
+    console.error("the secure store could not be read for the session token", error);
+    sessionBearer = undefined;
+  }
 }
 
 /** How this client's session travels: the login asks the server for that transport. */
@@ -88,18 +148,24 @@ export function sessionTransport(): ApiEndpoint["session"] {
 }
 
 /**
- * Keeps the session a sign-in just opened: the bearer transport's token, or — for the cookie
- * transport, whose answer carries no token — the cookie the answer set.
+ * Keeps the session a sign-in just opened: the bearer transport's token — in the secure store
+ * too, where the platform has one — or, for the cookie transport, whose answer carries no token,
+ * the cookie the answer set.
  */
 export function holdSession(token: string | undefined): void {
   sessionBearer = token;
   sessionHeld = endpoint.session === "cookie" || token !== undefined;
+  keepToken(token);
 }
 
-/** Forgets the session: the held token, or the cookie until a sign-in sets a new one. */
+/**
+ * Forgets the session: the held token, in the secure store too, or the cookie until a sign-in
+ * sets a new one.
+ */
 export function forgetSession(): void {
   sessionBearer = undefined;
   sessionHeld = false;
+  keepToken(undefined);
 }
 
 /**
