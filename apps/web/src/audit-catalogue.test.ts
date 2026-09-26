@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ACCESS_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-access/shared";
 import { auditLabelKey } from "@mustawfi/core-audit/client";
 import { TENANCY_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-tenancy/shared";
 import ts from "typescript";
@@ -28,6 +29,10 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "access.login.failed" },
   { action: "access.login.succeeded" },
   { action: "access.login.throttled" },
+  { action: "access.pin.failed", device: true },
+  { action: "access.pin.lockedOut", device: true },
+  { action: "access.pin.signedIn", device: true },
+  { action: "access.pin.unlocked", device: true },
   { action: "access.registrationCode.issued" },
   { action: "access.resetCode.issued" },
   { action: "access.role.archived" },
@@ -68,7 +73,10 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
 ];
 
 /** The device events the server accepts, from the modules' own declarations. */
-const DEVICE_AUDIT_ACTIONS = new Set(TENANCY_DEVICE_AUDIT_ACTIONS);
+const DEVICE_AUDIT_ACTIONS = new Set([
+  ...TENANCY_DEVICE_AUDIT_ACTIONS,
+  ...ACCESS_DEVICE_AUDIT_ACTIONS,
+]);
 
 /**
  * The events of non-negotiable 10 that `core-foundation` audits (its spec's list), each with the
@@ -81,10 +89,16 @@ const UNIT_EVENTS: readonly (
 )[] = [
   {
     event: "sign-in by password or PIN: success, failure, throttled",
-    actions: ["access.login.succeeded", "access.login.failed", "access.login.throttled"],
+    actions: [
+      "access.login.succeeded",
+      "access.login.failed",
+      "access.login.throttled",
+      "access.pin.signedIn",
+      "access.pin.failed",
+    ],
   },
   { event: "sign-out", actions: ["access.session.revoked"] },
-  { event: "lockout and unlock", pending: "core-foundation slice 15" },
+  { event: "lockout and unlock", actions: ["access.pin.lockedOut", "access.pin.unlocked"] },
   { event: "auto-lock", notAudited: "too frequent; the next sign-in is audited" },
   { event: "session revoked", actions: ["access.session.revoked"] },
   { event: "user created", actions: ["access.user.created"] },
@@ -170,6 +184,7 @@ const PASS_THROUGH: Readonly<Record<string, string>> = {
   "core/sync/src/client/audit-sink.ts": "queues the action its caller names",
   "core/organization/src/server/departments.ts": "reads DEPARTMENT_AUDIT, written out whole",
   "core/tenancy/src/client/device-license.ts": "reads DEVICE_LICENSE_EVENTS, written out whole",
+  "core/access/src/client/pin/local-sign-in.ts": "reads PIN_DEVICE_EVENTS, written out whole",
 };
 
 function sourceFiles(dir: string): string[] {

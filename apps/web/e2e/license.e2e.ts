@@ -3,7 +3,14 @@ import type { LicenseTermsInput } from "@mustawfi/tools-license";
 import { issueTestLicense, testLicensePublicKeys } from "@mustawfi/tools-license/testing";
 import { e2eStore } from "./environment.ts";
 import { runCli } from "./server-cli.ts";
-import { addProduct, attachScreens, registerDevice, signIn, signOut } from "./steps.ts";
+import {
+  addProduct,
+  attachScreens,
+  registerDevice,
+  signIn,
+  signInAgainOnDevice,
+  signOut,
+} from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 /**
@@ -150,7 +157,7 @@ test("the device keeps the day's state, goes read-only at the next day's sign-in
   await expect(complete).toBeEnabled();
   await expect(page.getByTestId("license-restriction")).toHaveCount(0);
 
-  // The app opened again is that day's first sign-in: read-only, and the POS says why.
+  // The app opened again is that day's first session: read-only, and the POS says why.
   await page.reload();
   await expect(notice(page)).toHaveText("المتجر للقراءة فقط");
   const restriction = page.getByTestId("license-restriction");
@@ -175,6 +182,9 @@ test("the device keeps the day's state, goes read-only at the next day's sign-in
   await cutOff.resume();
   await page.clock.setFixedTime(new Date());
   await page.reload();
+  // Two days back since the last input: the session is over (rule 24), so sign in again.
+  await signInAgainOnDevice(page, PASSWORD, "owner", store.storeCode);
+  await page.getByRole("link", { name: "البيع" }).click();
   await expect(sync.getByTestId("sync-phase")).toHaveText("متزامن");
   await expect(page.getByTestId("license-restriction")).toHaveCount(0);
   await expect(complete).toBeEnabled();
@@ -198,6 +208,9 @@ test("a clock moved back, or one far from the server's, stops the POS until it i
   const cutOff = await withoutServerTime(page);
   await page.clock.setFixedTime(new Date(now - HOUR));
   await page.reload();
+  // A clock an hour off is as far as an hour idle: the session is over (rule 24).
+  await signInAgainOnDevice(page, PASSWORD, "owner", store.storeCode);
+  await page.getByRole("link", { name: "البيع" }).click();
   await expect(notice(page)).toHaveText("ساعة الجهاز متأخرة");
   await expect(page.getByTestId("license-restriction")).toContainText(
     "صحّح التاريخ والوقت في الجهاز",
@@ -215,6 +228,8 @@ test("a clock moved back, or one far from the server's, stops the POS until it i
   // The clock set right again, the next round with the server lifts it.
   await page.clock.setFixedTime(new Date());
   await page.reload();
+  await signInAgainOnDevice(page, PASSWORD, "owner", store.storeCode);
+  await page.getByRole("link", { name: "البيع" }).click();
   await expect(sync.getByTestId("sync-phase")).toHaveText("متزامن");
   await expect(page.getByTestId("license-restriction")).toHaveCount(0);
   await expect(notice(page)).toHaveCount(0);

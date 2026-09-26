@@ -1,4 +1,5 @@
-import { holdLocalDeviceCredential } from "@mustawfi/core-access/client";
+import { holdLocalDeviceCredential, restoreDeviceSession } from "@mustawfi/core-access/client";
+import { IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
 import { organizationPullAppliers } from "@mustawfi/core-organization/client";
 import { createSyncEngine, type SyncEngine } from "@mustawfi/core-sync/client";
 import { inventoryPullAppliers } from "@mustawfi/inventory/client";
@@ -42,6 +43,9 @@ export async function startLocalRuntime(
   });
   // A session opened on this device is accepted only with its credential (rule 22).
   await holdLocalDeviceCredential(db);
+  // A session left idle is over, and a cookie this device's user did not open is not sent
+  // (rules 24–25).
+  await restoreDeviceSession(db, systemClock, IDLE_LOCK_MS);
   if (backup !== undefined) {
     const daily = () => {
       // A missed daily copy must not stop the till; the next check tries again.

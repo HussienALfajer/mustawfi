@@ -66,3 +66,26 @@ export {
   type UsersScreenProps,
 } from "./users/users-screen.tsx";
 export { accessBundlePart } from "./bundle-part.ts";
+export { useAutoLock, type AutoLockOptions } from "./pin/auto-lock.ts";
+export { checkPinWithArgon2 } from "./pin/check-pin.ts";
+export {
+  beginDeviceSession,
+  fetchSignedIn,
+  lockDevice,
+  type PinSignInDependencies,
+  type PinSignInOutcome,
+  restoreDeviceSession,
+  type SignedIn,
+  signedInQueryKey,
+  signedInQueryOptions,
+  signInWithPin,
+  unlockOnDevice,
+} from "./pin/device-session.ts";
+export {
+  type LocalSession,
+  localSession,
+  pinLocalMigrations,
+  type UnlockOutcome,
+} from "./pin/local-sign-in.ts";
+export { PinScreen, type PinScreenProps } from "./pin/pin-screen.tsx";
+export { pinScreenQueryKey, pinScreenQueryOptions } from "./pin/queries.ts";

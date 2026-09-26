@@ -2,7 +2,8 @@ import {
   ApiProblem,
   apiRequest,
   hasSessionCredential,
-  holdSessionToken,
+  holdSession,
+  forgetSession,
   sessionTransport,
 } from "@mustawfi/core-config/client";
 import { queryOptions } from "@tanstack/react-query";
@@ -23,7 +24,7 @@ export async function fetchSession(signal?: AbortSignal): Promise<CurrentSession
     });
   } catch (error) {
     if (error instanceof ApiProblem && error.code === accessProblemCodes.sessionRequired) {
-      holdSessionToken(undefined);
+      forgetSession();
       return null;
     }
     throw error;
@@ -64,11 +65,12 @@ export async function signIn(input: SignInInput): Promise<CurrentSession> {
       transport,
     },
     schema: loginResponseSchema,
+    opensSession: true,
   });
-  if (transport === "bearer") {
-    if (answer.token === undefined) throw new Error("the bearer sign-in returned no token");
-    holdSessionToken(answer.token);
+  if (transport === "bearer" && answer.token === undefined) {
+    throw new Error("the bearer sign-in returned no token");
   }
+  holdSession(answer.token);
   return {
     tenantId: answer.tenantId,
     expiresAt: answer.expiresAt,
@@ -108,10 +110,10 @@ export async function signOut(): Promise<void> {
   } catch (error) {
     // Already signed out (expired or revoked elsewhere): the goal is reached.
     if (error instanceof ApiProblem && error.code === accessProblemCodes.sessionRequired) {
-      holdSessionToken(undefined);
+      forgetSession();
       return;
     }
     throw error;
   }
-  holdSessionToken(undefined);
+  forgetSession();
 }

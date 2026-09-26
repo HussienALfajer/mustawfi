@@ -7,7 +7,8 @@ import {
   configureApi,
   hasSessionCredential,
   holdDeviceCredential,
-  holdSessionToken,
+  holdSession,
+  forgetSession,
 } from "./index.ts";
 
 interface Sent {
@@ -52,7 +53,7 @@ describe("the device credential beside the session (core-foundation rule 22)", (
     expect(deviceHeader(sent[1])).toBe("d1.device");
 
     configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
-    holdSessionToken("s1.session");
+    holdSession("s1.session");
     await apiRequest("/api/v1/access/login", { method: "POST", body: {}, schema: okSchema, fetch });
     expect(deviceHeader(sent[2])).toBe("d1.device");
     expect(authorization(sent[2])).toBe("Bearer s1.session");
@@ -69,7 +70,7 @@ describe("the device credential beside the session (core-foundation rule 22)", (
 describe("apiRequest endpoints (ADR-0022)", () => {
   it("in the browser, calls its own origin with the session cookie and no bearer", async () => {
     configureApi({ origin: "", session: "cookie" });
-    holdSessionToken("s1.ignored");
+    holdSession("s1.ignored");
     const { fetch, sent } = recordingFetch();
     await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
     expect(sent[0]?.url).toBe("/api/v1/access/session");
@@ -87,7 +88,7 @@ describe("apiRequest endpoints (ADR-0022)", () => {
     expect(sent[0]?.init.credentials).toBe("omit");
     expect(authorization(sent[0])).toBeUndefined();
 
-    holdSessionToken("s1.session");
+    holdSession("s1.session");
     expect(hasSessionCredential()).toBe(true);
     await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
     expect(authorization(sent[1])).toBe("Bearer s1.session");
@@ -96,14 +97,38 @@ describe("apiRequest endpoints (ADR-0022)", () => {
     await apiRequest("/api/v1/sync/pull", { schema: okSchema, fetch, bearer: "d1.device" });
     expect(authorization(sent[2])).toBe("Bearer d1.device");
 
-    holdSessionToken(undefined);
+    forgetSession();
     await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
     expect(authorization(sent[3])).toBeUndefined();
   });
 
+  it("in the browser, sends no cookie once the session is forgotten, until a sign-in sets one (rule 25)", async () => {
+    configureApi({ origin: "", session: "cookie" });
+    const { fetch, sent } = recordingFetch();
+    forgetSession();
+    expect(hasSessionCredential()).toBe(false);
+    await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
+    expect(sent[0]?.init.credentials).toBe("omit");
+
+    // The sign-in may carry cookies, so the browser keeps the one its answer sets.
+    await apiRequest("/api/v1/access/pin-login", {
+      method: "POST",
+      body: {},
+      schema: okSchema,
+      fetch,
+      opensSession: true,
+    });
+    expect(sent[1]?.init.credentials).toBe("same-origin");
+
+    holdSession(undefined);
+    expect(hasSessionCredential()).toBe(true);
+    await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
+    expect(sent[2]?.init.credentials).toBe("same-origin");
+  });
+
   it("forgets a held token when the endpoint is configured again", () => {
     configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
-    holdSessionToken("s1.session");
+    holdSession("s1.session");
     configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
     expect(hasSessionCredential()).toBe(false);
   });
@@ -112,7 +137,7 @@ describe("apiRequest endpoints (ADR-0022)", () => {
 describe("apiBlob", () => {
   it("fetches bytes with the held bearer token, which an <img> could not send", async () => {
     configureApi({ origin: "https://store.example", session: "bearer" });
-    holdSessionToken("s1.token");
+    holdSession("s1.token");
     const sent: Sent[] = [];
     const fake = (url: string, init: RequestInit = {}) => {
       sent.push({ url, init });

@@ -1,6 +1,7 @@
 import type { Messages } from "@mustawfi/i18n";
 import { accountMessages } from "./account/messages.ts";
 import { devicesMessages } from "./devices/messages.ts";
+import { pinMessages } from "./pin/messages.ts";
 import { rolesMessages } from "./roles/messages.ts";
 import { usersMessages } from "./users/messages.ts";
 
@@ -65,6 +66,12 @@ export const accessMessages = {
       revoked: "إبطال جهاز",
       wiped: "مسح الجهاز المُبطَل بياناته",
     },
+    pin: {
+      signedIn: "دخول بالرمز السري على الجهاز دون اتصال",
+      failed: "رمز سري خاطئ على الجهاز دون اتصال",
+      lockedOut: "قفل مستخدم على الجهاز بعد خمسة رموز خاطئة",
+      unlocked: "فتح مشرف قفل مستخدم على الجهاز",
+    },
   },
   login: {
     title: "تسجيل الدخول",
@@ -124,6 +131,7 @@ export const accessMessages = {
   account: accountMessages,
   userMenu: {
     account: "حسابي",
+    switchUser: "تبديل المستخدم",
   },
   signOut: {
     action: "تسجيل الخروج",
@@ -176,6 +184,7 @@ export const accessMessages = {
     },
   },
   devices: devicesMessages,
+  pin: pinMessages,
   users: usersMessages,
   roles: rolesMessages,
 } satisfies Messages;
