@@ -28,3 +28,4 @@ export {
   type StoreProfileScreenProps,
 } from "./store-profile/store-profile-screen.tsx";
 export { storeProfileQueryKey, storeProfileQueryOptions } from "./store-profile/queries.ts";
+export { organizationBundlePart } from "./bundle-part.ts";

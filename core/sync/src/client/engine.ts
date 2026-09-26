@@ -6,12 +6,16 @@ import {
 } from "@mustawfi/core-access/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import {
+  acceptBundle,
   ApiProblem,
   apiRequest,
   ApiUnreachable,
+  type BundleVerifier,
   holdDeviceCredential,
   holdSessionToken,
+  storedBundleVersion,
 } from "@mustawfi/core-config/client";
+import { type BundleResponse, bundleResponseSchema } from "@mustawfi/core-config/shared";
 import type { Clock } from "@mustawfi/kernel";
 import {
   type ChangedTables,
@@ -59,6 +63,8 @@ export interface SyncTransport {
   pull(credential: string, cursor: string): Promise<PullResponse>;
   /** A revoked device reports its wipe with the credential it held (rule 23). */
   reportWiped(credential: string): Promise<void>;
+  /** The configuration bundle, unless the device already holds `version` (rule 12). */
+  bundle(credential: string, version: number): Promise<BundleResponse>;
 }
 
 export interface ApiSyncTransportOptions {
@@ -84,6 +90,11 @@ export function createApiSyncTransport(options: ApiSyncTransportOptions = {}): S
         { schema: pullResponseSchema, bearer: credential, ...via },
       ),
     reportWiped: (credential) => reportDeviceWiped(credential, via),
+    bundle: (credential, version) =>
+      apiRequest(
+        `/api/v1/sync/bundle?${new URLSearchParams({ version: String(version) }).toString()}`,
+        { schema: bundleResponseSchema, bearer: credential, ...via },
+      ),
   };
 }
 
@@ -142,6 +153,12 @@ export interface SyncEngineOptions {
    * (ADR-0019). A failure does not undo the wipe, which has already happened.
    */
   readonly onWiped?: () => Promise<unknown>;
+  /**
+   * How this app checks configuration bundles (keys and part decoders). With it, every round
+   * that reaches the server fetches the bundle once push and pull are done, and a new version
+   * is verified before it replaces the stored one (`core-foundation` rules 11–12).
+   */
+  readonly bundle?: BundleVerifier;
 }
 
 /** Pages a round pulls at most, so a long catch-up yields to pushes in between. */
@@ -159,6 +176,9 @@ const PUSH_BATCHES_PER_ROUND = 20;
  * data — dropping every table in one transaction that first checks that nothing is pending, so
  * a sale committed meanwhile is sent first, then rebuilding the empty schema — forgets its
  * credential, and reports the wipe if it can.
+ *
+ * After push and pull, the device asks for its configuration bundle with the version it holds;
+ * a refused bundle is recorded and the previous one kept, without failing the round.
  */
 export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const { db, clock } = options;
@@ -248,6 +268,17 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     }
   }
 
+  async function refreshBundle(device: LocalDevice, verifier: BundleVerifier): Promise<void> {
+    const response = await transport.bundle(device.credential, await storedBundleVersion(db));
+    await acceptBundle(
+      db,
+      response,
+      verifier,
+      { deviceId: device.deviceId, tenantId: device.tenantId },
+      clock,
+    );
+  }
+
   async function round(): Promise<void> {
     const device = await localDevice(db);
     if (device === undefined) {
@@ -261,6 +292,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       try {
         revoked = await push(device.credential, device.deviceId);
         if (!revoked) await pull(device.credential);
+        if (!revoked && options.bundle !== undefined) await refreshBundle(device, options.bundle);
       } catch (error) {
         // Pull refused the credential: the device was revoked while its outbox was empty.
         if (!(error instanceof ApiProblem && error.code === accessProblemCodes.deviceRevoked)) {

@@ -1,6 +1,7 @@
 import {
   limitIdSchema,
   limitValueSchema,
+  type PermissionCatalogue,
   permissionIdSchema,
   ROLE_TEMPLATES,
 } from "@mustawfi/core-config/shared";
@@ -349,6 +350,8 @@ export const permissionCatalogueSchema = z.object({
   ),
 });
 
+export type PermissionCatalogueView = z.infer<typeof permissionCatalogueSchema>;
+
 export const registrationCodeResponseSchema = z.object({
   /** Typed on the new device together with the store code; single use. */
   code: z.string(),
@@ -497,3 +500,59 @@ export const accessProblemCodes = {
   /** One's own PIN or password is changed from one's account, proved by the current one. */
   useOwnAccount: "access.user.useOwnAccount",
 } as const;
+
+/** A permission catalogue as the API and the bundle carry it: ids, modules, scope, kinds. */
+export function catalogueView(catalogue: PermissionCatalogue): PermissionCatalogueView {
+  return {
+    permissions: [...catalogue.permissions.values()].map((p) => ({
+      id: p.id,
+      moduleId: p.moduleId,
+      scoped: p.scoped,
+    })),
+    limits: [...catalogue.limits.values()].map((l) => ({
+      id: l.id,
+      moduleId: l.moduleId,
+      kind: l.kind,
+    })),
+  };
+}
+
+/** The name of the configuration bundle's part that carries access (ADR-0030). */
+export const ACCESS_BUNDLE_PART = "access";
+
+/**
+ * The bundle's `access` part (ADR-0030): what a device needs to sign users in and check what
+ * they may do without the server — the declared catalogue (the client resolves grants against
+ * it, slice 16), the roles of the users allowed on the device, and those users with their PIN
+ * verifiers. Every active user of the tenant is allowed on every device in V1.
+ */
+export const accessPartSchema = z.strictObject({
+  catalogue: permissionCatalogueSchema,
+  roles: z.array(
+    z.strictObject({
+      id: z.uuid(),
+      name: z.string(),
+      /** Every permission, no department restriction, no limit (rule 14). */
+      isOwner: z.boolean(),
+      /** Sorted; every declared permission for the owner role. */
+      permissions: z.array(permissionIdSchema),
+      /** Limit values by limit id; none for the owner role. */
+      limits: z.record(z.string(), limitValueSchema),
+    }),
+  ),
+  users: z.array(
+    z.strictObject({
+      id: z.uuid(),
+      name: z.string(),
+      roleId: z.uuid(),
+      departmentScope: departmentScopeSchema,
+      /** The active departments of a `listed` scope; empty for `all`. */
+      departments: z.array(z.uuid()),
+      /** The Argon2id PHC string of the user's PIN; null while they have none. */
+      pinVerifier: z.string().startsWith("$argon2id$").nullable(),
+      pinChangedAt: z.iso.datetime().nullable(),
+    }),
+  ),
+});
+
+export type AccessPart = z.infer<typeof accessPartSchema>;

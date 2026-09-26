@@ -28,6 +28,7 @@ export {
 export {
   currentLicense,
   installLicense,
+  licenseBundlePart,
   type InstallLicenseDependencies,
   type InstalledLicense,
 } from "./licenses.ts";

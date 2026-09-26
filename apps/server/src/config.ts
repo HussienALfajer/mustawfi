@@ -73,6 +73,12 @@ export const serverEnvSchema = z.object({
    * server keys (ADR-0021); required, with no built-in default.
    */
   TOTP_KEYS_FILE: z.string().trim().min(1),
+  /**
+   * The file of the key that signs configuration bundles (ADR-0021, `core-foundation` rule 11):
+   * one Ed25519 private JWK with its key id, as `bundle:keygen` writes it. A root-only secret
+   * file; required, with no built-in default.
+   */
+  BUNDLE_KEY_FILE: z.string().trim().min(1),
 });
 
 export type ServerConfig = z.infer<typeof serverEnvSchema>;

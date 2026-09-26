@@ -18,3 +18,9 @@ export function e2eStore(): E2eStore {
     throw new Error("run through `playwright test`: the global setup is missing");
   return JSON.parse(value) as E2eStore;
 }
+
+/** The run's bundle key, a private JWK with its kid, made by the Playwright config. */
+export const E2E_BUNDLE_KEY_ENV = "MUSTAWFI_E2E_BUNDLE_KEY";
+
+/** The run's test license key; `@mustawfi/tools-license/testing` reads it from here. */
+export const E2E_LICENSE_KEY_ENV = "MUSTAWFI_TEST_LICENSE_KEY";

@@ -15,6 +15,7 @@ import { createStaffUser } from "../staff.test-helpers.ts";
 import type { CreatedTenant } from "../tenants/create-tenant.ts";
 import { createLicensedTenant } from "../tenants/licensed-tenant.test-helpers.ts";
 import { resetCodeCommand } from "./reset-code.ts";
+import { testBundleKey } from "../bundle-key.test-helpers.ts";
 import { testTotpKeys } from "../totp-keys.test-helpers.ts";
 
 /**
@@ -54,7 +55,7 @@ beforeAll(async () => {
   env = { DATABASE_URL: database.url("app") };
   server = await buildHostServer({
     registry: createServerRegistry(),
-    services: { tenants, ...dependencies, totpKeys: testTotpKeys },
+    services: { tenants, ...dependencies, totpKeys: testTotpKeys, bundleKey: testBundleKey },
   });
 });
 

@@ -1,4 +1,5 @@
 import { accessLocalMigrations } from "@mustawfi/core-access/client";
+import { configLocalMigrations } from "@mustawfi/core-config/client";
 import { organizationLocalMigrations } from "@mustawfi/core-organization/client";
 import { syncLocalMigrations } from "@mustawfi/core-sync/client";
 import { inventoryLocalMigrations } from "@mustawfi/inventory/client";
@@ -16,4 +17,5 @@ export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   ...inventoryLocalMigrations,
   ...salesLocalMigrations,
   ...organizationLocalMigrations,
+  ...configLocalMigrations,
 ];

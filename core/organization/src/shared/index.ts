@@ -1,4 +1,8 @@
-import { departmentNameSchema, tenantNameSchema } from "@mustawfi/core-tenancy/shared";
+import {
+  departmentNameSchema,
+  departmentSchema,
+  tenantNameSchema,
+} from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
 
 export { type DocumentNumber, formatDocumentNumber, parseDocumentNumber } from "./numbering.ts";
@@ -108,3 +112,18 @@ export const organizationProblemCodes = {
   /** The store has no logo to fetch. */
   logoNotFound: "organization.logo.notFound",
 } as const;
+
+/** The name of the configuration bundle's part that carries the organization (ADR-0030). */
+export const ORGANIZATION_BUNDLE_PART = "organization";
+
+/**
+ * The bundle's `organization` part: every department, archived ones included (documents keep
+ * naming them), and the store profile without the logo's bytes — the logo is fetched on its own
+ * and checked against the hash the profile carries.
+ */
+export const organizationPartSchema = z.strictObject({
+  departments: z.array(departmentSchema),
+  profile: storeProfileSchema,
+});
+
+export type OrganizationPart = z.infer<typeof organizationPartSchema>;

@@ -36,6 +36,7 @@ export {
 export {
   EXPIRING_DAYS,
   LICENSE_ALGORITHM,
+  LICENSE_BUNDLE_PART,
   LICENSE_STATES,
   LICENSE_TYPE,
   type LicenseClaims,

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parseTotpKeys } from "@mustawfi/core-access/server";
+import { parseBundleSigningKey } from "@mustawfi/core-config/server";
 import { openTenantDatabase } from "@mustawfi/core-tenancy/server";
 import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import { buildHostServer } from "./host-server.ts";
@@ -12,6 +13,7 @@ const registry = createServerRegistry(config.DISABLED_MODULES);
 // Read before anything opens: a missing or malformed key file stops the start (the reason names
 // the line, never a key).
 const totpKeys = parseTotpKeys(readFileSync(config.TOTP_KEYS_FILE, "utf8"));
+const bundleKey = await parseBundleSigningKey(readFileSync(config.BUNDLE_KEY_FILE, "utf8"));
 const tenants = await openTenantDatabase({ connectionString: config.DATABASE_URL });
 const app = await buildHostServer({
   registry,
@@ -21,12 +23,15 @@ const app = await buildHostServer({
     random: cryptoRandom,
     newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
     totpKeys,
+    bundleKey,
   },
   logger: true,
   clientOrigins: config.CLIENT_ORIGINS,
   trustProxy: config.TRUST_PROXY,
 });
 app.addHook("onClose", () => tenants.close());
+// The public half: what the apps must be built with to trust this server's bundles.
+app.log.info({ bundleKey: bundleKey.publicKey }, "configuration bundles are signed with this key");
 app.log.info(
   { trustProxy: config.TRUST_PROXY },
   config.TRUST_PROXY.length === 0

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,7 +13,7 @@ import {
 import { issueTestLicense, testLicensePublicKeys } from "@mustawfi/tools-license/testing";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import pg from "pg";
-import { E2E_API_PORT, E2E_STORE_ENV, type E2eStore } from "./environment.ts";
+import { E2E_API_PORT, E2E_BUNDLE_KEY_ENV, E2E_STORE_ENV, type E2eStore } from "./environment.ts";
 import { runCli, SERVER_DIR } from "./server-cli.ts";
 
 const DATABASE = "mustawfi_e2e";
@@ -64,6 +64,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   // The key file sealing TOTP secrets, made for this run and removed with it.
   const secrets = mkdtempSync(join(tmpdir(), "mustawfi-e2e-"));
   const totpKeysFile = join(secrets, "totp.keys");
+  // The bundle key the Playwright config made: the app was built with its public half.
+  const bundleKeyFile = join(secrets, "bundle.key");
   const teardown = async () => {
     await stopProcess(server);
     await container.stop();
@@ -86,6 +88,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
     await runCli("src/cli/migrate.ts", [], { DATABASE_OWNER_URL: ownerUrl });
     await runCli("src/cli/totp-key.ts", ["--kid", "e2e", "--out", totpKeysFile], {});
+    const bundleKey = process.env[E2E_BUNDLE_KEY_ENV];
+    if (bundleKey === undefined) throw new Error("the Playwright config made no bundle key");
+    writeFileSync(bundleKeyFile, bundleKey, { mode: 0o600 });
     const store: Omit<E2eStore, "storeCode"> = {
       login: "owner",
       password: "correct horse battery staple",
@@ -122,6 +127,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         HOST: "127.0.0.1",
         PORT: String(E2E_API_PORT),
         TOTP_KEYS_FILE: totpKeysFile,
+        BUNDLE_KEY_FILE: bundleKeyFile,
       },
     });
     server.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString()));

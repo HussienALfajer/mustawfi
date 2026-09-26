@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { publicKeyRingSchema } from "@mustawfi/core-config/shared";
 import { defineConfig, loadEnv } from "vite";
 
 /**
@@ -23,8 +24,31 @@ function checkDesktopOrigin(mode: string): void {
   }
 }
 
+/**
+ * The public keys the app trusts are built in (ADR-0021): a malformed list stops the build. A
+ * missing one builds an app that trusts no configuration bundle (every device stays read-only),
+ * which suits a development build only, so the Windows build says so.
+ */
+function checkPublicKeys(mode: string): void {
+  const env = { ...loadEnv(mode, import.meta.dirname, "VITE_"), ...process.env };
+  for (const name of ["VITE_BUNDLE_PUBLIC_KEYS", "VITE_LICENSE_PUBLIC_KEYS"]) {
+    const value = env[name] ?? "";
+    if (value === "") {
+      if (mode === "desktop") {
+        console.warn(`${name} is not set: this build trusts no configuration bundle`);
+      }
+    } else {
+      const keys = publicKeyRingSchema(name).safeParse(value);
+      if (!keys.success) {
+        throw new Error(`${name}: ${keys.error.issues[0]?.message ?? "malformed"}`);
+      }
+    }
+  }
+}
+
 export default defineConfig(({ mode }) => {
   checkDesktopOrigin(mode);
+  checkPublicKeys(mode);
   return {
     plugins: [react(), tailwindcss()],
     server: { proxy },

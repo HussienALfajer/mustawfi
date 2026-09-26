@@ -40,6 +40,9 @@ test("keyboard only: register this browser from the devices screen, then revoke 
   await page.keyboard.press("Enter");
   const prefix = (await page.getByTestId("device-prefix").textContent()) ?? "";
   expect(prefix).toMatch(/^[A-HJ-NP-Z2-9]{2}$/);
+  // Its first sync brings the signed configuration bundle, verified in the browser: Ed25519 and
+  // SHA-256 through WebCrypto, the license by the license key (`core-foundation` rule 11).
+  await expect(page.getByTestId("device-bundle")).toHaveText(/^الإصدار [0-9٠-٩]+، موثّقة$/);
 
   // The list shows it: type, prefix, last sync, status, and that it is this one.
   await tabTo(page, navigation.getByRole("link", { name: "الأجهزة" }), 40);

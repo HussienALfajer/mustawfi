@@ -65,3 +65,4 @@ export {
   UsersScreen,
   type UsersScreenProps,
 } from "./users/users-screen.tsx";
+export { accessBundlePart } from "./bundle-part.ts";

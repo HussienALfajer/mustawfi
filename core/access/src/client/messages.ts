@@ -147,6 +147,11 @@ export const accessMessages = {
       type: "نوع الجهاز",
       state: "الحالة",
       ready: "مسجّل وجاهز للبيع",
+      bundle: "إعدادات المتجر الموقّعة",
+      bundleNone: "لم تصل بعد؛ تصل مع أول مزامنة",
+      bundleValid: "الإصدار {version}، موثّقة",
+      bundleRefused: "رُفضت آخر نسخة وصلت لأنها لم تجتز التحقق؛ يبقى الإصدار السابق",
+      bundleRefusedNone: "رُفضت النسخة التي وصلت لأنها لم تجتز التحقق",
     },
     types: {
       mainPos: "جهاز رئيسي (كاشير)",

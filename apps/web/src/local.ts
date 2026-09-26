@@ -5,6 +5,7 @@ import { inventoryPullAppliers } from "@mustawfi/inventory/client";
 import { systemClock } from "@mustawfi/kernel";
 import { type LocalDb, migrateLocalDb, touchesLocalTables } from "@mustawfi/local-db";
 import type { QueryClient } from "@tanstack/react-query";
+import { bundleVerifier } from "./bundle-verifier.ts";
 import { LOCAL_MIGRATIONS } from "./local-migrations.ts";
 import type { ClientPlatform } from "./platform.ts";
 
@@ -61,6 +62,8 @@ export async function startLocalRuntime(
     migrations: LOCAL_MIGRATIONS,
     appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
     clock: systemClock,
+    // The configuration bundle, fetched after each round and verified (`core-foundation` rule 11).
+    bundle: bundleVerifier(),
     // A revoked device's wipe deletes the database copies too (`core-foundation` rule 23).
     ...(removeBackups === undefined ? {} : { onWiped: removeBackups }),
   });

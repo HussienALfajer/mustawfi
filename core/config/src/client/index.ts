@@ -5,6 +5,27 @@ import {
   problemDetailsSchema,
 } from "../shared/index.ts";
 
+export {
+  acceptBundle,
+  type BundleDevice,
+  type BundleOutcome,
+  type BundlePartDecoder,
+  type BundleRefusal,
+  BundleRefusedError,
+  type BundleStatus,
+  bundleStatus,
+  bundleStatusQueryOptions,
+  type BundleVerifier,
+  CONFIG_BUNDLE_REFUSAL_TABLE,
+  CONFIG_BUNDLE_TABLE,
+  configLocalMigrations,
+  type LoadedBundle,
+  loadBundle,
+  loadedBundleQueryOptions,
+  storedBundleVersion,
+  type VerifiedBundle,
+  verifyBundle,
+} from "./bundle.ts";
 export { type ClientRuntime, ClientRuntimeProvider, useClientRuntime } from "./runtime.tsx";
 
 /** The API answered with problem details; `code` picks the Arabic message (ADR-0014). */

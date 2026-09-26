@@ -1,5 +1,9 @@
 import { deviceOf, recordDeviceSync } from "@mustawfi/core-access/server";
-import { problemDetailsSchema } from "@mustawfi/core-config/shared";
+import {
+  bundleQuerySchema,
+  bundleResponseSchema,
+  problemDetailsSchema,
+} from "@mustawfi/core-config/shared";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import {
@@ -8,6 +12,7 @@ import {
   pushRequestSchema,
   pushResponseSchema,
 } from "../shared/index.ts";
+import { deviceBundle } from "./bundle.ts";
 import { readChanges } from "./changes.ts";
 import type { SyncContext } from "./dependencies.ts";
 import { pushOperations } from "./push.ts";
@@ -17,8 +22,8 @@ const tags = ["sync"];
 /**
  * `core.sync` routes, under `/api/v1/sync` (ADR-0020). Both authenticate as the device, with
  * its credential; each pushed operation names the user who performed it. A revoked device may
- * still push, and nothing else (`core-foundation` rule 23). Each records the server's time
- * of the device's last sync.
+ * still push, and nothing else (`core-foundation` rule 23). Push and pull record the server's
+ * time of the device's last sync; the device fetches its configuration bundle after them.
  */
 export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
   const app = scope.withTypeProvider<ZodTypeProvider>();
@@ -62,5 +67,24 @@ export function syncRoutes(scope: FastifyInstance, context: SyncContext): void {
         (tx) => readChanges(tx, request.query),
       );
     },
+  );
+
+  app.get(
+    "/bundle",
+    {
+      config: { access: "device" },
+      schema: {
+        tags,
+        querystring: bundleQuerySchema,
+        response: { 200: bundleResponseSchema, 401: problemDetailsSchema },
+      },
+    },
+    (request) =>
+      deviceBundle(context.tenants, deviceOf(request), request.query.version, {
+        clock: context.clock,
+        newId: context.newId,
+        bundleKey: context.bundleKey,
+        bundleParts: context.bundleParts,
+      }),
   );
 }

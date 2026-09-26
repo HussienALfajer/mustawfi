@@ -1,3 +1,4 @@
+export { type BundleDependencies, deviceBundle } from "./bundle.ts";
 export { type ChangeInput, readChanges, recordChange } from "./changes.ts";
 export type { SyncContext } from "./dependencies.ts";
 export { flagOperation, type OperationFlag } from "./flags.ts";

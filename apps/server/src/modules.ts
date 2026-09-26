@@ -1,21 +1,28 @@
-import { accessModule, type TotpKeyRing } from "@mustawfi/core-access/server";
+import { accessBundlePart, accessModule, type TotpKeyRing } from "@mustawfi/core-access/server";
 import { auditModule } from "@mustawfi/core-audit/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
+  type BundlePart,
+  type BundleSigningKey,
   configModule,
   createModuleRegistry,
   type ModuleManifest,
   type ModuleRegistry,
 } from "@mustawfi/core-config/server";
 import { ledgerModule } from "@mustawfi/core-ledger/server";
-import { organizationModule } from "@mustawfi/core-organization/server";
+import { organizationBundlePart, organizationModule } from "@mustawfi/core-organization/server";
 import {
   createSyncOperationTable,
   syncModule,
   type SyncOperationDefinition,
   type SyncOperationTable,
 } from "@mustawfi/core-sync/server";
-import { tenancyModule, type TenantDatabase } from "@mustawfi/core-tenancy/server";
+import {
+  licenseBundlePart,
+  tenancyModule,
+  type TenantDatabase,
+  type TenantTransaction,
+} from "@mustawfi/core-tenancy/server";
 import { inventoryModule } from "@mustawfi/inventory/server";
 import type { Clock, IdGenerator, RandomSource } from "@mustawfi/kernel";
 import { salesModule, salesSyncOperations } from "@mustawfi/sales/server";
@@ -33,6 +40,10 @@ export interface HostContext {
   readonly syncOperations: SyncOperationTable;
   /** Every permission and limit the registered modules declare (`registry.permissions`). */
   readonly permissionCatalogue: PermissionCatalogue;
+  /** The key that signs configuration bundles, from `BUNDLE_KEY_FILE` (ADR-0021). */
+  readonly bundleKey: BundleSigningKey;
+  /** The configuration bundle's parts of the enabled modules (`hostBundleParts`). */
+  readonly bundleParts: readonly BundlePart<TenantTransaction>[];
 }
 
 /** Every module this server runs. A module missing here fails `modules.test.ts`. */
@@ -71,17 +82,48 @@ export function hostSyncOperations(registry: ModuleRegistry<HostContext>): SyncO
 }
 
 /**
+ * The parts each module contributes to the configuration bundle (ADR-0030), by module id; the
+ * access part resolves roles against the registry's permissions.
+ */
+function moduleBundleParts(
+  registry: ModuleRegistry<HostContext>,
+): Readonly<Record<string, readonly BundlePart<TenantTransaction>[]>> {
+  return {
+    "core.tenancy": [licenseBundlePart],
+    "core.access": [accessBundlePart(registry.permissions)],
+    "core.organization": [organizationBundlePart],
+  };
+}
+
+/** The bundle's parts: those of the registry's enabled modules, each name once. */
+export function hostBundleParts(
+  registry: ModuleRegistry<HostContext>,
+): readonly BundlePart<TenantTransaction>[] {
+  const byModule = moduleBundleParts(registry);
+  const parts = registry.enabled.flatMap((module) => byModule[module.id] ?? []);
+  const names = new Set<string>();
+  for (const part of parts) {
+    if (names.has(part.name))
+      throw new Error(`two modules contribute the bundle part ${part.name}`);
+    names.add(part.name);
+  }
+  return parts;
+}
+
+/**
  * The context every module's routes receive, from the registry and the host's services: the
- * sync operations of its enabled modules and the permissions of all its modules.
+ * sync operations and bundle parts of its enabled modules and the permissions of all its
+ * modules.
  */
 export function hostContext(
   registry: ModuleRegistry<HostContext>,
-  services: Omit<HostContext, "syncOperations" | "permissionCatalogue">,
+  services: Omit<HostContext, "syncOperations" | "permissionCatalogue" | "bundleParts">,
 ): HostContext {
   return {
     ...services,
     syncOperations: hostSyncOperations(registry),
     permissionCatalogue: registry.permissions,
+    bundleParts: hostBundleParts(registry),
   };
 }
 

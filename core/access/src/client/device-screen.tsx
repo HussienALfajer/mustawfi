@@ -1,4 +1,10 @@
-import { ApiProblem, ApiUnreachable, useClientRuntime } from "@mustawfi/core-config/client";
+import {
+  ApiProblem,
+  ApiUnreachable,
+  type BundleVerifier,
+  loadedBundleQueryOptions,
+  useClientRuntime,
+} from "@mustawfi/core-config/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { useLocalDb } from "@mustawfi/local-db";
 import { Button, TextInput } from "@mustawfi/ui";
@@ -10,6 +16,7 @@ import { z } from "zod";
 import { accessProblemCodes, deviceNameSchema, type DeviceType } from "../shared/index.ts";
 import {
   DeviceAlreadyRegistered,
+  type LocalDevice,
   localDeviceQueryKey,
   localDeviceQueryOptions,
   registerThisDevice,
@@ -163,6 +170,45 @@ function RegisterSection(props: { readonly deviceType: DeviceType }) {
 export interface DeviceScreenProps {
   /** What this client registers as: the app shell decides (ADR-0022). */
   readonly deviceType: DeviceType;
+  /** How this app checks configuration bundles, to show the one in use. */
+  readonly bundleVerifier: BundleVerifier;
+}
+
+/**
+ * The configuration bundle this device uses, verified as it is read (`core-foundation` rule 11),
+ * so the screen never calls valid a bundle the device itself would refuse.
+ */
+function BundleState(props: { readonly device: LocalDevice; readonly verifier: BundleVerifier }) {
+  const { t } = useTranslation(ACCESS_NAMESPACE);
+  const db = useLocalDb();
+  const loaded = useQuery(
+    loadedBundleQueryOptions(db, props.verifier, {
+      deviceId: props.device.deviceId,
+      tenantId: props.device.tenantId,
+    }),
+  );
+  const data = loaded.data;
+  return (
+    <dd data-testid="device-bundle">
+      {loaded.isError ? (
+        <span className="text-text-negative">{t("device.localFailed")}</span>
+      ) : data === undefined ? null : data.state === "refused" ? (
+        <span className="text-text-negative">
+          {t(
+            data.bundle === undefined
+              ? "device.registered.bundleRefusedNone"
+              : "device.registered.bundleRefused",
+          )}
+        </span>
+      ) : data.state === "none" ? (
+        <span className="text-text-secondary">{t("device.registered.bundleNone")}</span>
+      ) : (
+        <span className="text-text">
+          {t("device.registered.bundleValid", { version: data.bundle.version })}
+        </span>
+      )}
+    </dd>
+  );
 }
 
 /**
@@ -205,6 +251,8 @@ export function DeviceScreen(props: DeviceScreenProps) {
           </dd>
           <dt className="text-text-secondary">{t("device.registered.state")}</dt>
           <dd className="text-text-positive">{t("device.registered.ready")}</dd>
+          <dt className="text-text-secondary">{t("device.registered.bundle")}</dt>
+          <BundleState device={device.data} verifier={props.bundleVerifier} />
         </dl>
       )}
     </div>
