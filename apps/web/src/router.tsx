@@ -1,6 +1,10 @@
 import type { DeviceType } from "@mustawfi/core-access/shared";
 import {
+  DeviceRemovedScreen,
+  deviceFiltersSchema,
   DeviceScreen,
+  DevicesScreen,
+  localDeviceQueryOptions,
   LoginScreen,
   roleFiltersSchema,
   RolesScreen,
@@ -15,7 +19,8 @@ import {
   departmentsQueryOptions,
   StoreProfileScreen,
 } from "@mustawfi/core-organization/client";
-import { SyncStatusIndicator } from "@mustawfi/core-sync/client";
+import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/core-sync/client";
+import { useLocalDb } from "@mustawfi/local-db";
 import { ProductsScreen } from "@mustawfi/inventory/client";
 import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
 import {
@@ -24,7 +29,7 @@ import {
   SideNavigation,
   useNavigationCollapsed,
 } from "@mustawfi/ui";
-import { type QueryClient, useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createRootRouteWithContext,
   createRoute,
@@ -38,6 +43,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import {
+  Laptop,
   Layers,
   MonitorSmartphone,
   Package,
@@ -106,8 +112,31 @@ function NotFound() {
   );
 }
 
+/**
+ * Every page, unless this device was removed from its store: once a revoked device has sent
+ * everything and wiped its data (`core-foundation` rule 23), the notice takes the whole window
+ * until the user goes on — to registering this client again (sign-in first, if needed).
+ */
+function Root() {
+  const phase = useSyncStatus().phase;
+  const sync = useSyncEngine();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  if (phase !== "removed") return <Outlet />;
+  return (
+    <DeviceRemovedScreen
+      onContinue={() => {
+        // Nothing read before the wipe may show again: the session ended with the device.
+        queryClient.clear();
+        // Back to registering this client, after signing in again if its session ended.
+        void sync.acknowledgeRemoval().then(() => navigate({ to: "/device" }));
+      }}
+    />
+  );
+}
+
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: Outlet,
+  component: Root,
   errorComponent: RouteError,
   notFoundComponent: NotFound,
 });
@@ -151,6 +180,7 @@ type NavPath =
   | "/admin/departments"
   | "/admin/users"
   | "/admin/roles"
+  | "/admin/devices"
   | "/device"
   | "/printer";
 
@@ -212,6 +242,7 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
         ),
         ...item("users", "/admin/users", <Users {...ICON_PROPS} />, "access.users.view"),
         ...item("roles", "/admin/roles", <ShieldCheck {...ICON_PROPS} />, "access.users.view"),
+        ...item("devices", "/admin/devices", <Laptop {...ICON_PROPS} />, "access.devices.manage"),
       ],
     },
     {
@@ -427,6 +458,35 @@ const rolesRoute = createRoute({
   component: RolesPage,
 });
 
+function DevicesPage() {
+  const filters = devicesRoute.useSearch();
+  const navigate = devicesRoute.useNavigate();
+  // The device this client is, from its own database, marked in the list.
+  const current = useQuery(localDeviceQueryOptions(useLocalDb())).data;
+  const sync = useSyncEngine();
+  return (
+    <DevicesScreen
+      filters={filters}
+      currentDeviceId={current?.deviceId ?? null}
+      onRevoked={(device) => {
+        // This device was revoked: it sends what it holds and wipes now, not at the next tick.
+        if (device.id === current?.deviceId) void sync.syncNow();
+      }}
+      onFiltersChange={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  );
+}
+
+const devicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/devices",
+  staticData: { title: "pages.devices", fill: true },
+  validateSearch: deviceFiltersSchema,
+  component: DevicesPage,
+});
+
 function StoreProfilePage() {
   const [dirty, setDirty] = useState(false);
   const blocker = useBlocker({
@@ -481,6 +541,7 @@ const routeTree = rootRoute.addChildren([
     departmentsRoute,
     usersRoute,
     rolesRoute,
+    devicesRoute,
     storeProfileRoute,
     deviceRoute,
     printerRoute,

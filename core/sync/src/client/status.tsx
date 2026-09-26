@@ -35,6 +35,8 @@ const PHASE_TONE: Record<SyncPhase, string> = {
   syncing: "text-text-secondary",
   offline: "text-text-warning",
   failed: "text-text-negative",
+  revoked: "text-text-warning",
+  removed: "text-text-negative",
 };
 
 /**
@@ -55,7 +57,7 @@ export function SyncStatusIndicator() {
       <span className={PHASE_TONE[status.phase]} data-testid="sync-phase">
         {t(`status.${status.phase}`)}
       </span>
-      {status.phase === "unregistered" ? null : (
+      {status.phase === "unregistered" || status.phase === "removed" ? null : (
         <span className="text-text-secondary" data-testid="sync-pending">
           {t("status.pending", { count: status.pending })}
         </span>

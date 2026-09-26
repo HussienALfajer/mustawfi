@@ -8,15 +8,17 @@ import {
 } from "@mustawfi/core-tenancy/server";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { randomIndex, UNAMBIGUOUS_ALPHABET } from "@mustawfi/kernel";
-import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import {
   accessProblemCodes,
   deviceNameSchema,
   deviceTypeSchema,
   type DeviceType,
+  type DeviceView,
 } from "../shared/index.ts";
+import { auditAs, type RoleActor } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
-import { devices, registrationCodes } from "./schema.ts";
+import { devices, registrationCodes, sessions, users } from "./schema.ts";
 import { bearerToken } from "./sessions.ts";
 import { issueBearer, issueOneTimeCode, readBearer, oneTimeCodeHash } from "./secrets.ts";
 
@@ -190,8 +192,8 @@ export async function registerDevice(
 
 /**
  * Refuses one more device of `type` beyond the license's limit (rule 4); run under the
- * registration lock. A lower limit after a downgrade removes no device. Revoked devices will
- * stop counting with revoke (slice 9).
+ * registration lock. A lower limit after a downgrade removes no device; revoked devices do not
+ * count.
  */
 async function checkDeviceLimit(tx: TenantTransaction, type: DeviceType): Promise<void> {
   const license = await currentLicense(tx);
@@ -201,7 +203,10 @@ async function checkDeviceLimit(tx: TenantTransaction, type: DeviceType): Promis
     type === "mainPos"
       ? [limits.mainPosDevices, tenancyProblemCodes.mainPosDeviceLimit]
       : [limits.companionDevices, tenancyProblemCodes.companionDeviceLimit];
-  const [row] = await tx.select({ devices: count() }).from(devices).where(eq(devices.type, type));
+  const [row] = await tx
+    .select({ devices: count() })
+    .from(devices)
+    .where(and(eq(devices.type, type), isNull(devices.revokedAt)));
   if ((row?.devices ?? 0) >= allowed) {
     throw new ProblemError(code, 409, {
       title: "The license's device limit is reached",
@@ -218,9 +223,14 @@ export interface Device {
   readonly prefix: string;
   readonly type: DeviceType;
   readonly name: string;
+  /** Set once the device is revoked: its credential then opens push alone (rule 23). */
+  readonly revokedAt: Date | null;
 }
 
-/** The device a credential belongs to, or `undefined` for a malformed or unknown one. */
+/**
+ * The device a credential belongs to, revoked or not, or `undefined` for a malformed or
+ * unknown one. Callers refuse a revoked device where rule 23 says so.
+ */
 export async function authenticateDevice(
   tenants: TenantDatabase,
   credential: string,
@@ -236,6 +246,7 @@ export async function authenticateDevice(
         prefix: devices.prefix,
         type: devices.type,
         name: devices.name,
+        revokedAt: devices.revokedAt,
       })
       .from(devices)
       .where(eq(devices.credentialHash, bearer.hash)),
@@ -245,17 +256,21 @@ export async function authenticateDevice(
 
 /**
  * The device of a request's `Authorization: Bearer` device credential, or a 401
- * `access.device.required` — the same refusal whatever was wrong with it. The route guard
- * calls this for `device` routes (sync): a device syncs as itself, and each operation names the user who performed it (ADR-0022).
+ * `access.device.required` — the same refusal whatever was wrong with it. A revoked device is a
+ * 401 `access.device.revoked` unless `allowRevoked` (push and the wipe report, rule 23). The
+ * route guard calls this for `device` routes (sync): a device syncs as itself, and each
+ * operation names the user who performed it (ADR-0022).
  */
 export async function requireDevice(
   request: { readonly headers: { readonly authorization?: string | undefined } },
   context: { readonly tenants: TenantDatabase },
+  options: { readonly allowRevoked?: boolean } = {},
 ): Promise<Device> {
   const credential = bearerToken(request.headers.authorization);
   const device =
     credential === undefined ? undefined : await authenticateDevice(context.tenants, credential);
   if (device === undefined) throw deviceRequired();
+  if (device.revokedAt !== null && options.allowRevoked !== true) throw deviceRevoked();
   return device;
 }
 
@@ -264,4 +279,193 @@ export function deviceRequired(): ProblemError {
   return new ProblemError(accessProblemCodes.deviceRequired, 401, {
     title: "This device is not registered",
   });
+}
+
+/** 401 `access.device.revoked`: the credential is a revoked device's (rule 23). */
+export function deviceRevoked(): ProblemError {
+  return new ProblemError(accessProblemCodes.deviceRevoked, 401, {
+    title: "This device was removed from the store",
+  });
+}
+
+function deviceNotFound(): ProblemError {
+  return new ProblemError(accessProblemCodes.deviceNotFound, 404, {
+    title: "No such device in this store",
+  });
+}
+
+interface DeviceRow {
+  readonly id: string;
+  readonly name: string;
+  readonly type: string;
+  readonly prefix: string;
+  readonly createdAt: Date;
+  readonly lastSyncAt: Date | null;
+  readonly revokedAt: Date | null;
+  readonly revokeReason: string | null;
+  readonly wipedAt: Date | null;
+  readonly revokedById: string | null;
+  readonly revokedByName: string | null;
+}
+
+function deviceView(row: DeviceRow): DeviceView {
+  return {
+    id: row.id,
+    name: row.name,
+    type: deviceTypeSchema.parse(row.type),
+    prefix: row.prefix,
+    registeredAt: row.createdAt.toISOString(),
+    lastSyncAt: row.lastSyncAt?.toISOString() ?? null,
+    status: row.revokedAt === null ? "active" : "revoked",
+    revokedAt: row.revokedAt?.toISOString() ?? null,
+    revokedBy:
+      row.revokedById === null ? null : { id: row.revokedById, name: row.revokedByName ?? "" },
+    revokeReason: row.revokeReason,
+    wipedAt: row.wipedAt?.toISOString() ?? null,
+  };
+}
+
+/** Devices with the name of whoever revoked them. */
+function selectDevices(tx: TenantTransaction) {
+  return tx
+    .select({
+      id: devices.id,
+      name: devices.name,
+      type: devices.type,
+      prefix: devices.prefix,
+      createdAt: devices.createdAt,
+      lastSyncAt: devices.lastSyncAt,
+      revokedAt: devices.revokedAt,
+      revokeReason: devices.revokeReason,
+      wipedAt: devices.wipedAt,
+      revokedById: users.id,
+      revokedByName: users.name,
+    })
+    .from(devices)
+    .leftJoin(users, eq(users.id, devices.revokedBy));
+}
+
+/** Every device of the tenant in `tx`, revoked ones included, in registration order. */
+export async function listDevices(tx: TenantTransaction): Promise<DeviceView[]> {
+  const rows = await selectDevices(tx).orderBy(asc(devices.createdAt), asc(devices.id));
+  return rows.map(deviceView);
+}
+
+/**
+ * Revokes a device in `tx` (flow 9, rule 23), by `actor` (who holds
+ * `access.devices.manage`), with a reason: its sessions end now, its credential opens push
+ * alone from the next request, and it stops counting against the license's device limit. Its
+ * prefix stays taken. Audited `access.device.revoked` with the reason and the sessions it ended.
+ * 404 `access.device.notFound`, 409 `access.device.alreadyRevoked`.
+ */
+export async function revokeDevice(
+  tx: TenantTransaction,
+  actor: RoleActor,
+  change: { readonly deviceId: string; readonly reason: string },
+  dependencies: Pick<AccessDependencies, "newId">,
+): Promise<DeviceView> {
+  const [device] = await tx
+    .select({ id: devices.id, revokedAt: devices.revokedAt })
+    .from(devices)
+    .where(eq(devices.id, change.deviceId))
+    .for("update");
+  if (device === undefined) throw deviceNotFound();
+  if (device.revokedAt !== null) {
+    throw new ProblemError(accessProblemCodes.deviceAlreadyRevoked, 409, {
+      title: "This device is already revoked",
+    });
+  }
+  await tx
+    .update(devices)
+    .set({ revokedAt: actor.at, revokedBy: actor.userId, revokeReason: change.reason })
+    .where(eq(devices.id, change.deviceId));
+  const ended = await tx
+    .update(sessions)
+    .set({ revokedAt: actor.at, revokedBy: actor.userId })
+    .where(and(eq(sessions.deviceId, change.deviceId), isNull(sessions.revokedAt)))
+    .returning({ id: sessions.id });
+  await auditAs(tx, actor, dependencies, {
+    action: "access.device.revoked",
+    entity: { type: "access.device", id: change.deviceId },
+    before: { status: "active" },
+    after: { status: "revoked", sessionsRevoked: ended.length },
+    reason: change.reason,
+  });
+  const [view] = await selectDevices(tx).where(eq(devices.id, change.deviceId));
+  if (view === undefined) throw new Error(`device ${change.deviceId} vanished while revoked`);
+  return deviceView(view);
+}
+
+/**
+ * Records the server's time of a device's push or pull (`last_sync_at`, for the devices
+ * screen), in its own transaction. It only moves forward.
+ */
+export async function recordDeviceSync(
+  tenants: TenantDatabase,
+  device: Device,
+  at: Date,
+): Promise<void> {
+  await tenants.withTenant({ tenantId: device.tenantId, deviceId: device.deviceId }, (tx) =>
+    tx
+      .update(devices)
+      .set({
+        lastSyncAt: sql`greatest(coalesce(${devices.lastSyncAt}, ${at}::timestamptz), ${at}::timestamptz)`,
+      })
+      .where(eq(devices.id, device.deviceId)),
+  );
+}
+
+/**
+ * A revoked device reports that it wiped its local data (rule 23), once every operation it
+ * held had an answer. Recorded once and audited `access.device.wiped` with the device and no
+ * user; a repeated report changes nothing. 409 `access.device.notRevoked` for a device that is
+ * not revoked.
+ */
+export async function reportDeviceWiped(
+  tenants: TenantDatabase,
+  device: Device,
+  dependencies: Pick<AccessDependencies, "clock" | "newId">,
+): Promise<void> {
+  const now = dependencies.clock.now();
+  await tenants.withTenant({ tenantId: device.tenantId, deviceId: device.deviceId }, async (tx) => {
+    const [row] = await tx
+      .select({ revokedAt: devices.revokedAt, wipedAt: devices.wipedAt })
+      .from(devices)
+      .where(eq(devices.id, device.deviceId))
+      .for("update");
+    if (row === undefined || row.revokedAt === null) {
+      throw new ProblemError(accessProblemCodes.deviceNotRevoked, 409, {
+        title: "Only a revoked device wipes its data",
+      });
+    }
+    if (row.wipedAt !== null) return;
+    await tx.update(devices).set({ wipedAt: now }).where(eq(devices.id, device.deviceId));
+    await recordAudit(tx, {
+      id: dependencies.newId(),
+      tenantId: device.tenantId,
+      branchId: device.branchId,
+      occurredAt: now,
+      userId: null,
+      deviceId: device.deviceId,
+      action: "access.device.wiped",
+      entity: { type: "access.device", id: device.deviceId },
+    });
+  });
+}
+
+/**
+ * When the device was revoked, or `null` while it is not, read in `tx`: push checks it in each
+ * operation's own transaction, so an operation received after a revoke is flagged even when its
+ * push began before it.
+ */
+export async function deviceRevokedAt(
+  tx: TenantTransaction,
+  deviceId: string,
+): Promise<Date | null> {
+  const [row] = await tx
+    .select({ revokedAt: devices.revokedAt })
+    .from(devices)
+    .where(eq(devices.id, deviceId));
+  if (row === undefined) throw new Error(`device ${deviceId} is not in this tenant`);
+  return row.revokedAt;
 }

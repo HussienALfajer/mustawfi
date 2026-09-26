@@ -1,4 +1,5 @@
 import type { Messages } from "@mustawfi/i18n";
+import { devicesMessages } from "./devices/messages.ts";
 import { rolesMessages } from "./roles/messages.ts";
 import { usersMessages } from "./users/messages.ts";
 
@@ -44,6 +45,10 @@ export const accessMessages = {
     resetCode: {
       issued: "إصدار الدعم الفني رمز استعادة لكلمة مرور المالك",
     },
+    device: {
+      revoked: "إبطال جهاز",
+      wiped: "مسح الجهاز المُبطَل بياناته",
+    },
   },
   login: {
     title: "تسجيل الدخول",
@@ -57,6 +62,8 @@ export const accessMessages = {
     failed: "رمز المتجر أو اسم الدخول أو كلمة المرور غير صحيح",
     throttled: "محاولات فاشلة كثيرة. انتظر ربع ساعة ثم حاول مجددًا",
     deviceRequired: "لم يعد هذا الجهاز معروفًا لدى المتجر. سجّله من جديد أو ادخل من متصفح آخر",
+    deviceRevoked:
+      "أُزيل هذا الجهاز من المتجر. ادخل من جهاز آخر، أو اطلب من صاحب المتجر تسجيله من جديد",
     unreachable: "تعذّر الوصول إلى الخادم. تحقّق من الاتصال ثم حاول مجددًا",
     refused: "رُفض الطلب. أعد تحميل الصفحة ثم حاول مجددًا",
   },
@@ -76,15 +83,11 @@ export const accessMessages = {
     mainPosLimit: "بلغ المتجر عدد الأجهزة الرئيسية الذي يسمح به اشتراكه",
     companionLimit: "بلغ المتجر عدد الأجهزة المساعدة الذي يسمح به اشتراكه",
     alreadyRegistered: "هذا الجهاز مسجّل من قبل",
-    issue: {
-      title: "إصدار رمز تسجيل",
-      help: "يصدره صاحب المتجر، ويصلح لجهاز واحد خلال خمس عشرة دقيقة",
-      action: "إصدار رمز تسجيل",
-      issued: "رمز التسجيل:",
-    },
     register: {
       title: "تسجيل هذا الجهاز",
       help: "يبيع الجهاز المسجّل دون اتصال، ويرسل مبيعاته إلى الخادم عند عودة الاتصال",
+      codeHelp:
+        "يصدر صاحب المتجر رمز التسجيل من «الإدارة ← الأجهزة»، ويصلح لجهاز واحد خلال خمس عشرة دقيقة",
       storeCode: "رمز المتجر",
       registrationCode: "رمز التسجيل",
       name: "اسم الجهاز",
@@ -102,7 +105,14 @@ export const accessMessages = {
       mainPos: "جهاز رئيسي (كاشير)",
       companion: "جهاز مساعد",
     },
+    removed: {
+      title: "أُزيل هذا الجهاز من المتجر",
+      body: "أبطل صاحب المتجر هذا الجهاز. أُرسلت مبيعاته كلها إلى الخادم أولًا، ثم مُسحت بيانات المتجر منه.",
+      next: "لاستخدامه مع المتجر من جديد، يسجّله صاحب المتجر برمز تسجيل جديد.",
+      action: "متابعة",
+    },
   },
+  devices: devicesMessages,
   users: usersMessages,
   roles: rolesMessages,
 } satisfies Messages;

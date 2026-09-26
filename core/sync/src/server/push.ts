@@ -1,4 +1,4 @@
-import { type Device, userAccess } from "@mustawfi/core-access/server";
+import { type Device, deviceRevokedAt, userAccess } from "@mustawfi/core-access/server";
 import { accessGrant } from "@mustawfi/core-access/shared";
 import { ProblemError } from "@mustawfi/core-config/server";
 import type { TenantDatabase, TenantTransaction } from "@mustawfi/core-tenancy/server";
@@ -23,16 +23,25 @@ export interface PushDependencies extends SyncHandlerDependencies {
   readonly operations: SyncOperationTable;
 }
 
-/** What processing one operation came to. */
+/** What processing one operation came to, and whether its device was revoked by then. */
 type Outcome =
-  | { readonly kind: "done"; readonly result: OperationResult; readonly next: number }
-  | { readonly kind: "gap"; readonly next: number };
+  | {
+      readonly kind: "done";
+      readonly result: OperationResult;
+      readonly next: number;
+      readonly revoked: boolean;
+    }
+  | { readonly kind: "gap"; readonly next: number; readonly revoked: boolean };
 
 /**
  * Receives a device's pushed operations (ADR-0020): in `deviceSeq` order, each in its own
  * transaction, idempotent by `opId`. Processing stops at the first gap in `deviceSeq`, and the
  * answer names the number the device resends from. A push carrying another device's operation
  * is refused whole.
+ *
+ * A revoked device still pushes (`core-foundation` rule 23, ADR-0030): every operation it gets
+ * accepted is flagged `deviceRevoked`, and the answer says `revoked`, so the device wipes its
+ * data once every operation has an answer.
  */
 export async function pushOperations(
   tenants: TenantDatabase,
@@ -48,13 +57,15 @@ export async function pushOperations(
   const ordered = [...operations].sort((a, b) => a.deviceSeq - b.deviceSeq);
   const results: OperationResult[] = [];
   let next = 1;
+  let revoked = device.revokedAt !== null;
   for (const operation of ordered) {
     const outcome = await receiveOperation(tenants, device, operation, dependencies);
     next = outcome.next;
-    if (outcome.kind === "gap") return { results, nextDeviceSeq: next, gap: true };
+    revoked ||= outcome.revoked;
+    if (outcome.kind === "gap") return { results, nextDeviceSeq: next, gap: true, revoked };
     results.push(outcome.result);
   }
-  return { results, nextDeviceSeq: next, gap: false };
+  return { results, nextDeviceSeq: next, gap: false, revoked };
 }
 
 /**
@@ -123,6 +134,10 @@ async function processOperation(
     .from(receivedOps)
     .where(eq(receivedOps.deviceId, operation.device.id));
   const expected = (last?.seq ?? 0) + 1;
+  // Read under the device's lock, in this operation's transaction: a revoke that committed
+  // before it flags it, whenever its push began.
+  const revokedAt = await deviceRevokedAt(tx, operation.device.id);
+  const revoked = revokedAt !== null;
 
   if (stored !== undefined) {
     // `received_ops_outcome` guarantees a result for an accepted row and a code for a rejected one.
@@ -138,9 +153,9 @@ async function processOperation(
             code: stored.problemCode ?? "",
             ...(stored.problemDetail === null ? {} : { detail: stored.problemDetail }),
           };
-    return { kind: "done", result, next: expected };
+    return { kind: "done", result, next: expected, revoked };
   }
-  if (base.deviceSeq > expected) return { kind: "gap", next: expected };
+  if (base.deviceSeq > expected) return { kind: "gap", next: expected, revoked };
   if (base.deviceSeq < expected) {
     const result: OperationResult = {
       ...base,
@@ -148,7 +163,7 @@ async function processOperation(
       code: syncProblemCodes.seqTaken,
       detail: `deviceSeq ${String(base.deviceSeq)} belongs to another operation`,
     };
-    return { kind: "done", result, next: expected };
+    return { kind: "done", result, next: expected, revoked };
   }
 
   if (rejection !== null) {
@@ -163,7 +178,7 @@ async function processOperation(
       code: rejection.code,
       ...(rejection.detail === undefined ? {} : { detail: rejection.detail }),
     };
-    return { kind: "done", result, next: expected + 1 };
+    return { kind: "done", result, next: expected + 1, revoked };
   }
 
   const definition = dependencies.operations.get(operation.type);
@@ -210,9 +225,23 @@ async function processOperation(
       );
     }
   }
+  if (revokedAt !== null) {
+    // Accepted all the same: a sale made before the device heard is a real sale (ADR-0030).
+    await flagOperation(
+      tx,
+      operation,
+      { code: "deviceRevoked", detail: { revokedAt: revokedAt.toISOString() } },
+      dependencies,
+    );
+  }
   const result: SyncValues = await handler(tx, operation, dependencies);
   await store(tx, operation, { status: "accepted", result });
-  return { kind: "done", result: { ...base, status: "accepted", result }, next: expected + 1 };
+  return {
+    kind: "done",
+    result: { ...base, status: "accepted", result },
+    next: expected + 1,
+    revoked,
+  };
 }
 
 async function store(

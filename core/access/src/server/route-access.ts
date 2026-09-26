@@ -12,13 +12,16 @@ import { requireSession, type Session } from "./sessions.ts";
  * `config: { access }`:
  * - `public` — no credential: sign-in, device registration (by its code), health, OpenAPI;
  * - `session` — any signed-in user: their own session and account, and reads every user needs;
- * - `device` — a registered device's credential (sync);
+ * - `device` — a registered device's credential, not revoked (pull, the device's own view);
+ * - `deviceEvenRevoked` — a registered device's credential, a revoked one included: push and
+ *   the wipe report, the only calls a revoked device may still make (rule 23);
  * - `{ permission }` — a signed-in user whose role holds this unscoped permission.
  *
  * A scoped permission needs a department, which only the handler knows: such a route declares
  * `session` and checks `session.grant.can(permission, department)` itself.
  */
-export type RouteAccess = "public" | "session" | "device" | { readonly permission: string };
+export type RouteAccess =
+  "public" | "session" | "device" | "deviceEvenRevoked" | { readonly permission: string };
 
 declare module "fastify" {
   interface FastifyContextConfig {
@@ -80,7 +83,7 @@ export function installRouteAccess(app: FastifyInstance, context: RouteAccessCon
           `route ${name} needs the scoped ${access.permission}: declare "session" and check it in the handler`,
         );
       }
-    } else if (!["public", "session", "device"].includes(access)) {
+    } else if (!["public", "session", "device", "deviceEvenRevoked"].includes(access)) {
       throw new Error(`route ${name} declares unknown access ${JSON.stringify(access)}`);
     }
     for (const method of methods) table.push({ method, url: route.url, access });
@@ -91,8 +94,9 @@ export function installRouteAccess(app: FastifyInstance, context: RouteAccessCon
     const access = request.routeOptions.config.access;
     if (access === undefined) throw permissionDenied();
     if (access === "public") return;
-    if (access === "device") {
-      devices.set(request, await requireDevice(request, context));
+    if (access === "device" || access === "deviceEvenRevoked") {
+      const allowRevoked = access === "deviceEvenRevoked";
+      devices.set(request, await requireDevice(request, context, { allowRevoked }));
       return;
     }
     const session = await requireSession(request, context);
@@ -119,7 +123,7 @@ export function sessionOf(request: FastifyRequest): Session {
   return session;
 }
 
-/** The device the guard authenticated for a `device` route. */
+/** The device the guard authenticated for a `device` or `deviceEvenRevoked` route. */
 export function deviceOf(request: FastifyRequest): Device {
   const device = devices.get(request);
   if (device === undefined) {

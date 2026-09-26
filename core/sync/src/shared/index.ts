@@ -75,6 +75,11 @@ export const pushResponseSchema = z.object({
    * not processed, and the device resends from there.
    */
   gap: z.boolean(),
+  /**
+   * The device is revoked (`core-foundation` rule 23): what it pushed was still accepted, and
+   * flagged `deviceRevoked`. Once every operation it holds has an answer, it wipes its data.
+   */
+  revoked: z.boolean(),
 });
 
 export type PushResponse = z.infer<typeof pushResponseSchema>;

@@ -10,7 +10,6 @@ import { z } from "zod";
 import { accessProblemCodes, deviceNameSchema, type DeviceType } from "../shared/index.ts";
 import {
   DeviceAlreadyRegistered,
-  issueRegistrationCode,
   localDeviceQueryKey,
   localDeviceQueryOptions,
   registerThisDevice,
@@ -43,53 +42,6 @@ function registerFailureKey(error: unknown): string {
     }
   }
   return "device.refused";
-}
-
-function IssueCodeSection(props: { readonly onIssued: (storeCode: string) => void }) {
-  const { t } = useTranslation(ACCESS_NAMESPACE);
-  const mutation = useMutation({
-    mutationFn: issueRegistrationCode,
-    onSuccess: (issued) => {
-      props.onIssued(issued.storeCode);
-    },
-  });
-  const issued = mutation.data;
-  return (
-    <section aria-labelledby="issue-code-title" className="flex flex-col gap-density-gap">
-      <h2 id="issue-code-title" className="text-lg font-semibold text-text">
-        {t("device.issue.title")}
-      </h2>
-      <p className="text-text-secondary">{t("device.issue.help")}</p>
-      <div>
-        <Button
-          variant="secondary"
-          isPending={mutation.isPending}
-          onPress={() => {
-            mutation.mutate();
-          }}
-        >
-          {t("device.issue.action")}
-        </Button>
-      </div>
-      {mutation.isError ? (
-        <p role="alert" className="text-text-negative">
-          {t(mutation.error instanceof ApiUnreachable ? "device.unreachable" : "device.refused")}
-        </p>
-      ) : null}
-      {issued === undefined ? null : (
-        <p role="status" className="text-text">
-          {t("device.issue.issued")}{" "}
-          <bdi
-            dir="ltr"
-            data-testid="registration-code"
-            className="font-mono text-lg font-semibold"
-          >
-            {issued.code}
-          </bdi>
-        </p>
-      )}
-    </section>
-  );
 }
 
 function RegisterSection(props: { readonly deviceType: DeviceType }) {
@@ -127,11 +79,7 @@ function RegisterSection(props: { readonly deviceType: DeviceType }) {
         {t("device.register.title")}
       </h2>
       <p className="text-text-secondary">{t("device.register.help")}</p>
-      <IssueCodeSection
-        onIssued={(storeCode) => {
-          form.setValue("storeCode", storeCode);
-        }}
-      />
+      <p className="text-text-secondary">{t("device.register.codeHelp")}</p>
       <form
         noValidate
         aria-labelledby="register-title"
@@ -219,7 +167,7 @@ export interface DeviceScreenProps {
 
 /**
  * This client as a device (flow 4): its registration, or the form that registers it with a
- * registration code the owner issues.
+ * registration code the owner issues on the devices screen.
  */
 export function DeviceScreen(props: DeviceScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);

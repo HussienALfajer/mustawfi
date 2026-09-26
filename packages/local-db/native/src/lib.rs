@@ -94,6 +94,9 @@ pub enum Request {
         keep: usize,
         min_age_ms: Option<u64>,
     },
+    /// Deletes every backup of the open database: a revoked device wipes its data, copies
+    /// included (`core-foundation` rule 23).
+    RemoveBackups,
     Close,
 }
 
@@ -114,6 +117,10 @@ pub enum Response {
     /// The copy's file name, or `None` when the backup was skipped.
     BackedUp {
         file: Option<String>,
+    },
+    /// How many backups were deleted.
+    BackupsRemoved {
+        removed: usize,
     },
     Closed,
 }
@@ -179,6 +186,7 @@ impl Session {
             }
             Request::Run { sql, params } => run(&self.connection()?.connection, &sql, params),
             Request::Backup { keep, min_age_ms } => backup(self.connection()?, keep, min_age_ms),
+            Request::RemoveBackups => remove_backups(self.connection()?),
             Request::Close => {
                 self.open = None;
                 Ok(Response::Closed)
@@ -295,6 +303,22 @@ fn backup_due(newest: Option<u64>, now: u64, min_age_ms: Option<u64>) -> bool {
     }
 }
 
+fn backups_directory(open: &Open) -> PathBuf {
+    open.path
+        .parent()
+        .map_or_else(|| PathBuf::from("backups"), |p| p.join("backups"))
+}
+
+fn remove_backups(open: &Open) -> Result<Response, String> {
+    let backups = existing_backups(&backups_directory(open), &open.name)?;
+    for (_, path) in &backups {
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    Ok(Response::BackupsRemoved {
+        removed: backups.len(),
+    })
+}
+
 fn backup(open: &Open, keep: usize, min_age_ms: Option<u64>) -> Result<Response, String> {
     if keep == 0 {
         return Err("a backup must keep at least one copy".to_owned());
@@ -303,10 +327,7 @@ fn backup(open: &Open, keep: usize, min_age_ms: Option<u64>) -> Result<Response,
     if !open.connection.is_autocommit() {
         return Ok(Response::BackedUp { file: None });
     }
-    let directory = open
-        .path
-        .parent()
-        .map_or_else(|| PathBuf::from("backups"), |p| p.join("backups"));
+    let directory = backups_directory(open);
     let now = now_ms()?;
     let backups = existing_backups(&directory, &open.name)?;
     if !backup_due(backups.first().map(|(newest, _)| *newest), now, min_age_ms) {

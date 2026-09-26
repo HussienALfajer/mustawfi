@@ -20,4 +20,5 @@ export {
   migrateLocalDb,
 } from "./migrations.ts";
 export { int64, localOrm, safeInteger } from "./orm.ts";
+export { compactLocalDb, type WipeOptions, wipeLocalDb } from "./wipe.ts";
 export { LocalDbProvider, type LocalQueryMeta, touchesLocalTables, useLocalDb } from "./react.tsx";

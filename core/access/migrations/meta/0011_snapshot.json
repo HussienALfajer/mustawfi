@@ -1,0 +1,1212 @@
+{
+  "id": "dcbf37d9-5c92-4dfb-a9c8-ed08a1b5b815",
+  "prevId": "590ba379-3d18-4c19-b1ad-0fa7f0f1d7fe",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core_access.devices": {
+      "name": "devices",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credential_hash": {
+          "name": "credential_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration_code_id": {
+          "name": "registration_code_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoke_reason": {
+          "name": "revoke_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wiped_at": {
+          "name": "wiped_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_sync_at": {
+          "name": "last_sync_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "devices_created_by_users_id_fk": {
+          "name": "devices_created_by_users_id_fk",
+          "tableFrom": "devices",
+          "tableTo": "users",
+          "schemaTo": "core_access",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "devices_registration_code_id_registration_codes_id_fk": {
+          "name": "devices_registration_code_id_registration_codes_id_fk",
+          "tableFrom": "devices",
+          "tableTo": "registration_codes",
+          "schemaTo": "core_access",
+          "columnsFrom": [
+            "registration_code_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "devices_credentialHash_unique": {
+          "name": "devices_credentialHash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "credential_hash"
+          ]
+        },
+        "devices_registrationCodeId_unique": {
+          "name": "devices_registrationCodeId_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "registration_code_id"
+          ]
+        },
+        "devices_prefix_per_tenant": {
+          "name": "devices_prefix_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "prefix"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "devices_type": {
+          "name": "devices_type",
+          "value": "\"core_access\".\"devices\".\"type\" in ('mainPos', 'companion')"
+        },
+        "devices_prefix_format": {
+          "name": "devices_prefix_format",
+          "value": "\"core_access\".\"devices\".\"prefix\" ~ '^[A-HJ-NP-Z2-9]{2}$'"
+        },
+        "devices_credential_hash_format": {
+          "name": "devices_credential_hash_format",
+          "value": "\"core_access\".\"devices\".\"credential_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "devices_revoke_complete": {
+          "name": "devices_revoke_complete",
+          "value": "(\"core_access\".\"devices\".\"revoked_at\" is null) = (\"core_access\".\"devices\".\"revoked_by\" is null) and (\"core_access\".\"devices\".\"revoked_at\" is null) = (\"core_access\".\"devices\".\"revoke_reason\" is null)"
+        },
+        "devices_wiped_after_revoke": {
+          "name": "devices_wiped_after_revoke",
+          "value": "\"core_access\".\"devices\".\"wiped_at\" is null or \"core_access\".\"devices\".\"revoked_at\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.login_attempts": {
+      "name": "login_attempts",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "login_hash": {
+          "name": "login_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "login_attempts_by_login": {
+          "name": "login_attempts_by_login",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "login_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "login_attempts_by_pin": {
+          "name": "login_attempts_by_pin",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "login_attempts_method": {
+          "name": "login_attempts_method",
+          "value": "\"core_access\".\"login_attempts\".\"method\" in ('password', 'pin')"
+        },
+        "login_attempts_key": {
+          "name": "login_attempts_key",
+          "value": "(\"core_access\".\"login_attempts\".\"method\" = 'password' and \"core_access\".\"login_attempts\".\"login_hash\" is not null and \"core_access\".\"login_attempts\".\"user_id\" is null and \"core_access\".\"login_attempts\".\"device_id\" is null)\n        or (\"core_access\".\"login_attempts\".\"method\" = 'pin' and \"core_access\".\"login_attempts\".\"login_hash\" is null and \"core_access\".\"login_attempts\".\"user_id\" is not null and \"core_access\".\"login_attempts\".\"device_id\" is not null)"
+        },
+        "login_attempts_login_hash_format": {
+          "name": "login_attempts_login_hash_format",
+          "value": "\"core_access\".\"login_attempts\".\"login_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.registration_codes": {
+      "name": "registration_codes",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "registration_codes_created_by_users_id_fk": {
+          "name": "registration_codes_created_by_users_id_fk",
+          "tableFrom": "registration_codes",
+          "tableTo": "users",
+          "schemaTo": "core_access",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "registration_codes_hash_per_tenant": {
+          "name": "registration_codes_hash_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "registration_codes_hash_format": {
+          "name": "registration_codes_hash_format",
+          "value": "\"core_access\".\"registration_codes\".\"code_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.reset_codes": {
+      "name": "reset_codes",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issued_by_support": {
+          "name": "issued_by_support",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issued_by": {
+          "name": "issued_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code_hash": {
+          "name": "code_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used_at": {
+          "name": "used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "reset_codes_hash_per_tenant": {
+          "name": "reset_codes_hash_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "reset_codes_hash_format": {
+          "name": "reset_codes_hash_format",
+          "value": "\"core_access\".\"reset_codes\".\"code_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.role_limits": {
+      "name": "role_limits",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "limit_id": {
+          "name": "limit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "role_limits_once": {
+          "name": "role_limits_once",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "role_id",
+            "limit_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "role_limits_value": {
+          "name": "role_limits_value",
+          "value": "\"core_access\".\"role_limits\".\"value\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.role_permissions": {
+      "name": "role_permissions",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "role_permissions_once": {
+          "name": "role_permissions_once",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "role_id",
+            "permission"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core_access.role_template_grants": {
+      "name": "role_template_grants",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "role_template_grants_once": {
+          "name": "role_template_grants_once",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "role_id",
+            "kind",
+            "grant_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "role_template_grants_kind": {
+          "name": "role_template_grants_kind",
+          "value": "\"core_access\".\"role_template_grants\".\"kind\" in ('permission', 'limit')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.roles": {
+      "name": "roles",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "template": {
+          "name": "template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_owner": {
+          "name": "is_owner",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_by": {
+          "name": "archived_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "roles_one_owner_per_tenant": {
+          "name": "roles_one_owner_per_tenant",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core_access\".\"roles\".\"is_owner\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "roles_active_name_per_tenant": {
+          "name": "roles_active_name_per_tenant",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"core_access\".\"roles\".\"archived_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "roles_id_per_tenant": {
+          "name": "roles_id_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "roles_template": {
+          "name": "roles_template",
+          "value": "\"core_access\".\"roles\".\"template\" in ('owner', 'accountant', 'sectionCashier', 'repairTechnician', 'topUpOperator')"
+        },
+        "roles_owner_template": {
+          "name": "roles_owner_template",
+          "value": "\"core_access\".\"roles\".\"is_owner\" = (\"core_access\".\"roles\".\"template\" is not distinct from 'owner')"
+        },
+        "roles_owner_not_archived": {
+          "name": "roles_owner_not_archived",
+          "value": "not (\"core_access\".\"roles\".\"is_owner\" and \"core_access\".\"roles\".\"archived_at\" is not null)"
+        },
+        "roles_archived_by": {
+          "name": "roles_archived_by",
+          "value": "(\"core_access\".\"roles\".\"archived_at\" is null) = (\"core_access\".\"roles\".\"archived_by\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.sessions": {
+      "name": "sessions",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'password'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "schemaTo": "core_access",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "sessions_device_id_devices_id_fk": {
+          "name": "sessions_device_id_devices_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "devices",
+          "schemaTo": "core_access",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "sessions_tokenHash_unique": {
+          "name": "sessions_tokenHash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "sessions_token_hash_format": {
+          "name": "sessions_token_hash_format",
+          "value": "\"core_access\".\"sessions\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "sessions_method": {
+          "name": "sessions_method",
+          "value": "\"core_access\".\"sessions\".\"method\" in ('password', 'pin')"
+        },
+        "sessions_pin_on_device": {
+          "name": "sessions_pin_on_device",
+          "value": "\"core_access\".\"sessions\".\"method\" <> 'pin' or \"core_access\".\"sessions\".\"device_id\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_access.user_departments": {
+      "name": "user_departments",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department_id": {
+          "name": "department_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_departments_once": {
+          "name": "user_departments_once",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "user_id",
+            "department_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "core_access.users": {
+      "name": "users",
+      "schema": "core_access",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "login": {
+          "name": "login",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department_scope": {
+          "name": "department_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "pin_verifier": {
+          "name": "pin_verifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pin_changed_at": {
+          "name": "pin_changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_login_per_tenant": {
+          "name": "users_login_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "login"
+          ]
+        },
+        "users_id_per_tenant": {
+          "name": "users_id_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "users_department_scope": {
+          "name": "users_department_scope",
+          "value": "\"core_access\".\"users\".\"department_scope\" in ('all', 'listed')"
+        },
+        "users_status": {
+          "name": "users_status",
+          "value": "\"core_access\".\"users\".\"status\" in ('active', 'deactivated')"
+        },
+        "users_password_needs_login": {
+          "name": "users_password_needs_login",
+          "value": "\"core_access\".\"users\".\"password_hash\" is null or \"core_access\".\"users\".\"login\" is not null"
+        },
+        "users_pin_changed_at": {
+          "name": "users_pin_changed_at",
+          "value": "(\"core_access\".\"users\".\"pin_verifier\" is null) = (\"core_access\".\"users\".\"pin_changed_at\" is null)"
+        },
+        "users_password_argon2id": {
+          "name": "users_password_argon2id",
+          "value": "\"core_access\".\"users\".\"password_hash\" like '$argon2id$%'"
+        },
+        "users_pin_argon2id": {
+          "name": "users_pin_argon2id",
+          "value": "\"core_access\".\"users\".\"pin_verifier\" like '$argon2id$%'"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core_access": "core_access"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

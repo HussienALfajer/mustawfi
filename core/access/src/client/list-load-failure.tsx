@@ -13,7 +13,7 @@ export function ListLoadFailure({
   error,
   onRetry,
 }: {
-  readonly screen: "users" | "roles";
+  readonly screen: "users" | "roles" | "devices";
   readonly error: unknown;
   readonly onRetry: () => void;
 }) {

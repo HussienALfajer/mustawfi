@@ -32,20 +32,34 @@ class FakeServer implements SyncTransport {
   changes: SyncChange[] = [];
   pageSize = 2;
   credentials: string[] = [];
+  /** The device is revoked: pushes still land, answered `revoked`; pulls are refused. */
+  revoked = false;
+  /** How many operations a push answers at most, as a push cut short by a dropped answer. */
+  answerAtMost = Number.POSITIVE_INFINITY;
+  /** Runs after a push is answered, before the device records the answer. */
+  afterPush: (() => Promise<void>) | undefined;
+  wipeReports: string[] = [];
+  reachableForReport = true;
 
   push(credential: string, operations: readonly SyncOperation[]): Promise<PushResponse> {
     this.credentials.push(credential);
     if (!this.reachable) return Promise.reject(new ApiUnreachable("down"));
     this.pushes.push([...operations]);
     const results: OperationResult[] = [];
-    for (const operation of operations) {
+    const revoked = this.revoked;
+    for (const operation of operations.slice(0, this.answerAtMost)) {
       const known = this.received.get(operation.opId);
       if (known !== undefined) {
         results.push(known.status === "accepted" ? { ...known, status: "duplicate" } : known);
         continue;
       }
       if (operation.deviceSeq !== this.nextDeviceSeq) {
-        return Promise.resolve({ results, nextDeviceSeq: this.nextDeviceSeq, gap: true });
+        return Promise.resolve({
+          results,
+          nextDeviceSeq: this.nextDeviceSeq,
+          gap: true,
+          revoked,
+        });
       }
       const result: OperationResult =
         operation.payload["reject"] === true
@@ -65,12 +79,16 @@ class FakeServer implements SyncTransport {
       this.nextDeviceSeq += 1;
       results.push(result);
     }
-    return Promise.resolve({ results, nextDeviceSeq: this.nextDeviceSeq, gap: false });
+    const answer = { results, nextDeviceSeq: this.nextDeviceSeq, gap: false, revoked };
+    return this.afterPush === undefined
+      ? Promise.resolve(answer)
+      : this.afterPush().then(() => answer);
   }
 
   pull(credential: string, cursor: string): Promise<PullResponse> {
     this.credentials.push(credential);
     if (!this.reachable) return Promise.reject(new ApiUnreachable("down"));
+    if (this.revoked) return Promise.reject(new ApiProblem("access.device.revoked", 401));
     const from = Number.parseInt(cursor, 10);
     const page = this.changes.slice(from, from + this.pageSize);
     const next = from + page.length;
@@ -79,6 +97,12 @@ class FakeServer implements SyncTransport {
       cursor: String(next),
       more: next < this.changes.length,
     });
+  }
+
+  reportWiped(credential: string): Promise<void> {
+    if (!this.reachableForReport) return Promise.reject(new ApiUnreachable("down"));
+    this.wipeReports.push(credential);
+    return Promise.resolve();
   }
 }
 
@@ -132,13 +156,15 @@ function change(id: string, row: Record<string, unknown> = {}): SyncChange {
   return { entity: "test.item", id, row: { id, ...row } };
 }
 
+const MIGRATIONS = [
+  ...accessLocalMigrations,
+  ...syncLocalMigrations,
+  { id: "test.0001_items", statements: ["CREATE TABLE test_items (id TEXT PRIMARY KEY)"] },
+];
+
 beforeEach(async () => {
   db = openNodeLocalDb(":memory:");
-  await migrateLocalDb(db, [
-    ...accessLocalMigrations,
-    ...syncLocalMigrations,
-    { id: "test.0001_items", statements: ["CREATE TABLE test_items (id TEXT PRIMARY KEY)"] },
-  ]);
+  await migrateLocalDb(db, MIGRATIONS);
   server = new FakeServer();
   applied.length = 0;
 });
@@ -148,7 +174,13 @@ afterEach(async () => {
 });
 
 function engine() {
-  return createSyncEngine({ db, appliers: [itemApplier], clock, transport: server });
+  return createSyncEngine({
+    db,
+    migrations: MIGRATIONS,
+    appliers: [itemApplier],
+    clock,
+    transport: server,
+  });
 }
 
 describe("the sync engine", () => {
@@ -250,9 +282,16 @@ describe("the sync engine", () => {
     const refusing: SyncTransport = {
       push: () => Promise.reject(new ApiProblem("access.device.required", 401)),
       pull: () => Promise.reject(new ApiProblem("access.device.required", 401)),
+      reportWiped: () => Promise.resolve(),
     };
     await enqueue();
-    const sync = createSyncEngine({ db, appliers: [], clock, transport: refusing });
+    const sync = createSyncEngine({
+      db,
+      migrations: MIGRATIONS,
+      appliers: [],
+      clock,
+      transport: refusing,
+    });
     await sync.syncNow();
     expect(sync.status()).toMatchObject({
       phase: "failed",
@@ -276,5 +315,140 @@ describe("the sync engine", () => {
     } finally {
       sync.stop();
     }
+  });
+});
+
+/** Rows left in every table the wipe empties: the device, the outbox, a module's own data. */
+async function leftOnDevice() {
+  const count = async (table: string) =>
+    (await db.query(`SELECT count(*) AS n FROM ${table}`))[0]?.["n"];
+  return {
+    device: await count("access_device"),
+    outbox: await count("sync_outbox"),
+    items: await count("test_items"),
+  };
+}
+
+describe("a revoked device (core-foundation rule 23)", () => {
+  it("pushes what it holds, then wipes its data, reports the wipe, and says it was removed", async () => {
+    await registerDevice();
+    server.changes = [change("a")];
+    await engine().syncNow();
+    expect(await leftOnDevice()).toEqual({ device: 1n, outbox: 0n, items: 1n });
+
+    server.revoked = true;
+    const sales = [await enqueue(), await enqueue({ reject: true })];
+    let wipes = 0;
+    const sync = createSyncEngine({
+      db,
+      migrations: MIGRATIONS,
+      appliers: [itemApplier],
+      clock,
+      transport: server,
+      onWiped: () => {
+        wipes += 1;
+        return Promise.resolve();
+      },
+    });
+    await sync.syncNow();
+
+    // Every sale reached the server first; the rejected one had its answer too.
+    expect(server.pushes.at(-1)).toEqual(sales);
+    expect(server.received.size).toBe(2);
+    expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
+    expect(server.wipeReports).toEqual([CREDENTIAL]);
+    expect(wipes).toBe(1);
+    expect(sync.status()).toMatchObject({ phase: "removed", pending: 0, needsReview: 0 });
+
+    // It stays removed, across a restart of the app, until the user has read it.
+    const restarted = engine();
+    await restarted.syncNow();
+    expect(restarted.status().phase).toBe("removed");
+    await restarted.acknowledgeRemoval();
+    expect(restarted.status().phase).toBe("unregistered");
+  });
+
+  it("keeps everything while an operation has no answer yet, and wipes once it has", async () => {
+    await registerDevice();
+    server.revoked = true;
+    await enqueue();
+    await enqueue();
+    server.answerAtMost = 1;
+    server.reachable = true;
+    const sync = engine();
+    // The push answers one operation, then the network drops: one has no answer, nothing wiped.
+    server.afterPush = () => {
+      server.reachable = false;
+      return Promise.resolve();
+    };
+    await sync.syncNow();
+    expect(await states()).toEqual(["1:accepted", "2:pending"]);
+    expect(sync.status()).toMatchObject({ phase: "offline", pending: 1 });
+    expect(await leftOnDevice()).toMatchObject({ device: 1n, outbox: 2n });
+
+    server.afterPush = undefined;
+    server.reachable = true;
+    server.answerAtMost = Number.POSITIVE_INFINITY;
+    await sync.syncNow();
+    expect(server.received.size).toBe(2);
+    expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
+    expect(sync.status().phase).toBe("removed");
+  });
+
+  it("sends a sale committed just before the wipe first, and wipes after it", async () => {
+    await registerDevice();
+    server.revoked = true;
+    await enqueue();
+    // A sale commits between the last push and the wipe: the wipe's transaction sees it.
+    let transactions = 0;
+    let late: SyncOperation | undefined;
+    const racing: LocalDb = {
+      query: (sql, params) => db.query(sql, params),
+      run: (sql, params) => db.run(sql, params),
+      subscribe: (listener) => db.subscribe(listener),
+      close: () => db.close(),
+      async transaction(work) {
+        transactions += 1;
+        // The first records the push's answers; the second is the wipe.
+        if (transactions === 2) late = await enqueue();
+        return db.transaction(work);
+      },
+    };
+    const sync = createSyncEngine({
+      db: racing,
+      migrations: MIGRATIONS,
+      appliers: [],
+      clock,
+      transport: server,
+    });
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "revoked", pending: 1 });
+    expect(await leftOnDevice()).toMatchObject({ device: 1n, outbox: 2n });
+
+    await sync.syncNow();
+    expect(late === undefined ? false : server.received.has(late.opId)).toBe(true);
+    expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
+    expect(sync.status().phase).toBe("removed");
+  });
+
+  it("wipes on a refused pull when nothing is left to push", async () => {
+    await registerDevice();
+    server.revoked = true;
+    const sync = engine();
+    await sync.syncNow();
+    expect(server.pushes).toEqual([]);
+    expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
+    expect(sync.status().phase).toBe("removed");
+  });
+
+  it("stays wiped when the wipe cannot be reported", async () => {
+    await registerDevice();
+    server.revoked = true;
+    server.reachableForReport = false;
+    const sync = engine();
+    await sync.syncNow();
+    expect(server.wipeReports).toEqual([]);
+    expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
+    expect(sync.status().phase).toBe("removed");
   });
 });

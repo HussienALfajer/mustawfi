@@ -30,7 +30,7 @@ const syncCounters = sqliteTable("sync_counters", {
   value: safeInteger().notNull(),
 });
 
-/** Small facts of the sync loop: the pull cursor. */
+/** Small facts of the sync loop: the pull cursor; after a wipe, when the device was removed. */
 export const syncState = sqliteTable("sync_state", {
   key: text().primaryKey(),
   value: text().notNull(),
@@ -265,4 +265,32 @@ export async function savePullCursor(tx: LocalExecutor, cursor: string): Promise
     .insert(syncState)
     .values({ key: CURSOR_KEY, value: cursor })
     .onConflictDoUpdate({ target: syncState.key, set: { value: cursor } });
+}
+
+const REMOVED_KEY = "removedAt";
+
+/**
+ * Marks that this device was removed from its store (`core-foundation` rule 23), right after
+ * its wipe — the one fact kept, so the app can say why it starts over, until the user
+ * acknowledges it.
+ */
+export async function markRemoved(tx: LocalExecutor, at: Date): Promise<void> {
+  await localOrm(tx)
+    .insert(syncState)
+    .values({ key: REMOVED_KEY, value: at.toISOString() })
+    .onConflictDoUpdate({ target: syncState.key, set: { value: at.toISOString() } });
+}
+
+/** When this device was removed from its store, if it was and nobody acknowledged it yet. */
+export async function removedAt(executor: LocalExecutor): Promise<string | undefined> {
+  const row = await localOrm(executor)
+    .select({ value: syncState.value })
+    .from(syncState)
+    .where(eq(syncState.key, REMOVED_KEY))
+    .get();
+  return row?.value;
+}
+
+export async function clearRemoved(executor: LocalExecutor): Promise<void> {
+  await localOrm(executor).delete(syncState).where(eq(syncState.key, REMOVED_KEY));
 }

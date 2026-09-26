@@ -10,7 +10,7 @@ import { storeCodeSchema } from "@mustawfi/core-tenancy/shared";
 import { and, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { accessProblemCodes, loginSchema } from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
-import { authenticateDevice, type Device, deviceRequired } from "./devices.ts";
+import { authenticateDevice, type Device, deviceRequired, deviceRevoked } from "./devices.ts";
 import { verifyNothing, verifyPassword } from "./passwords.ts";
 import { loginAttempts, users } from "./schema.ts";
 import { sha256Hex } from "./secrets.ts";
@@ -256,7 +256,10 @@ export async function refuseThrottledAddress(
   throw signInThrottled(until);
 }
 
-/** The device a sign-in is made on: none without a credential, a 401 for a bad one. */
+/**
+ * The device a sign-in is made on: none without a credential, a 401 for a bad one, and a 401
+ * `access.device.revoked` for a revoked one (rule 23).
+ */
 async function presentedDevice(
   tenants: TenantDatabase,
   source: SignInSource,
@@ -264,6 +267,7 @@ async function presentedDevice(
   if (source.deviceCredential === undefined) return undefined;
   const device = await authenticateDevice(tenants, source.deviceCredential);
   if (device === undefined) throw deviceRequired();
+  if (device.revokedAt !== null) throw deviceRevoked();
   return device;
 }
 

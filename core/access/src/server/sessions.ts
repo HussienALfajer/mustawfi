@@ -130,10 +130,14 @@ export async function authenticateSession(
       .where(
         and(
           eq(sessions.tokenHash, bearer.hash),
-          // A session opened on a device goes only with that device's credential.
+          // A session opened on a device goes only with that device's credential, and ends
+          // with its revoke (which also revokes the session; this holds even if one was missed).
           device === undefined
             ? isNull(sessions.deviceId)
-            : or(isNull(sessions.deviceId), eq(devices.credentialHash, device.hash)),
+            : or(
+                isNull(sessions.deviceId),
+                and(eq(devices.credentialHash, device.hash), isNull(devices.revokedAt)),
+              ),
           isNull(sessions.revokedAt),
           gt(sessions.expiresAt, now),
           // Deactivating a user revokes their sessions; this holds even if one was missed.

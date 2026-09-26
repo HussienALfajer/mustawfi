@@ -180,10 +180,11 @@ export const userChangeRequestSchema = z
 
 export type UserChangeRequest = z.input<typeof userChangeRequestSchema>;
 
+/** Why a user is deactivated or a device revoked: kept in the audit log. */
+export const reasonSchema = z.string().trim().min(1).max(500);
+
 /** `POST /api/v1/access/users/:id/deactivate`: the reason is kept in the audit log. */
-export const deactivateUserRequestSchema = z.object({
-  reason: z.string().trim().min(1).max(500),
-});
+export const deactivateUserRequestSchema = z.object({ reason: reasonSchema });
 
 /** `PUT /api/v1/access/users/:id/pin`: a manager sets or resets someone's PIN. */
 export const setPinRequestSchema = z.object({ pin: pinSchema });
@@ -305,6 +306,28 @@ export const currentDeviceSchema = z.object({
   name: z.string(),
 });
 
+/** `POST /api/v1/access/devices/:id/revoke`: the reason is kept in the audit log. */
+export const revokeDeviceRequestSchema = z.object({ reason: reasonSchema });
+
+/** A device as the devices screen shows it; its credential is never sent. */
+export const deviceViewSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  type: deviceTypeSchema,
+  prefix: z.string(),
+  registeredAt: z.iso.datetime(),
+  /** The server's time of its last push or pull; null before its first. */
+  lastSyncAt: z.iso.datetime().nullable(),
+  status: z.enum(["active", "revoked"]),
+  revokedAt: z.iso.datetime().nullable(),
+  revokedBy: z.object({ id: z.uuid(), name: z.string() }).nullable(),
+  revokeReason: z.string().nullable(),
+  /** When the revoked device reported its wipe; null until then, or if it never could. */
+  wipedAt: z.iso.datetime().nullable(),
+});
+
+export type DeviceView = z.infer<typeof deviceViewSchema>;
+
 /** The refusals `core.access` answers with; clients map each code to an Arabic message. */
 export const accessProblemCodes = {
   /** Unknown store, unknown login, or wrong password — never which one. */
@@ -331,6 +354,17 @@ export const accessProblemCodes = {
    * sign-in that sends one.
    */
   deviceRequired: "access.device.required",
+  /**
+   * The device credential is a revoked device's (401, rule 23): refused everywhere but push and
+   * the wipe report. The device learns it was removed from the store.
+   */
+  deviceRevoked: "access.device.revoked",
+  /** No device with this id in the tenant. */
+  deviceNotFound: "access.device.notFound",
+  /** The device is already revoked. */
+  deviceAlreadyRevoked: "access.device.alreadyRevoked",
+  /** A wipe reported by a device that is not revoked. */
+  deviceNotRevoked: "access.device.notRevoked",
   /** A cookie-authenticated change sent from another origin (CSRF, ADR-0022). */
   crossOrigin: "access.request.crossOrigin",
   /** No user with this id in the tenant. */

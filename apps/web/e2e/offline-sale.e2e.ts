@@ -18,14 +18,21 @@ async function addProduct(page: Page, name: string, barcode: string, price: stri
   await expect(page.getByRole("main").getByRole("status")).toHaveText(`أُضيف المنتج «${name}»`);
 }
 
-/** Flow 4: the owner issues a registration code and registers this browser, as a companion. */
+/**
+ * Flow 4: the owner issues a registration code on the devices screen and registers this
+ * browser, as a companion.
+ */
 async function registerDevice(page: Page): Promise<string> {
-  await page.getByRole("link", { name: "تسجيل الجهاز" }).click();
+  await page.getByRole("link", { name: "الأجهزة" }).click();
+  await page.getByRole("button", { name: /جهاز جديد/ }).click();
   await page.getByRole("button", { name: "إصدار رمز تسجيل" }).click();
   const code = page.getByTestId("registration-code");
   await expect(code).toHaveText(/^\S+$/);
-  await expect(page.getByLabel("رمز المتجر")).toHaveValue(e2eStore().storeCode);
-  await page.getByLabel("رمز التسجيل").fill((await code.textContent()) ?? "");
+  await expect(page.getByTestId("store-code")).toHaveText(e2eStore().storeCode);
+  const registrationCode = (await code.textContent()) ?? "";
+  await page.getByRole("link", { name: "تسجيل الجهاز" }).click();
+  await page.getByLabel("رمز المتجر").fill(e2eStore().storeCode);
+  await page.getByLabel("رمز التسجيل").fill(registrationCode);
   await page.getByLabel("اسم الجهاز").fill("الصندوق الرئيسي");
   await page.getByRole("button", { name: "تسجيل الجهاز" }).click();
   const prefix = page.getByTestId("device-prefix");

@@ -1,7 +1,26 @@
-import { ACCESS_DEVICE_TABLE, localDevice } from "@mustawfi/core-access/client";
-import { ApiProblem, apiRequest, ApiUnreachable } from "@mustawfi/core-config/client";
+import {
+  ACCESS_DEVICE_TABLE,
+  type LocalDevice,
+  localDevice,
+  reportDeviceWiped,
+} from "@mustawfi/core-access/client";
+import { accessProblemCodes } from "@mustawfi/core-access/shared";
+import {
+  ApiProblem,
+  apiRequest,
+  ApiUnreachable,
+  holdDeviceCredential,
+  holdSessionToken,
+} from "@mustawfi/core-config/client";
 import type { Clock } from "@mustawfi/kernel";
-import type { ChangedTables, LocalDb, LocalExecutor } from "@mustawfi/local-db";
+import {
+  type ChangedTables,
+  compactLocalDb,
+  type LocalDb,
+  type LocalExecutor,
+  type LocalMigration,
+  wipeLocalDb,
+} from "@mustawfi/local-db";
 import {
   PULL_PAGE_LIMIT,
   PUSH_BATCH_LIMIT,
@@ -13,11 +32,14 @@ import {
   type SyncOperation,
 } from "../shared/index.ts";
 import {
+  clearRemoved,
+  markRemoved,
   OUTBOX_TABLE,
   outboxCounts,
   pendingOperations,
   pullCursor,
   recordResults,
+  removedAt,
   resendFrom,
   savePullCursor,
 } from "./outbox.ts";
@@ -35,6 +57,8 @@ export interface PullApplier {
 export interface SyncTransport {
   push(credential: string, operations: readonly SyncOperation[]): Promise<PushResponse>;
   pull(credential: string, cursor: string): Promise<PullResponse>;
+  /** A revoked device reports its wipe with the credential it held (rule 23). */
+  reportWiped(credential: string): Promise<void>;
 }
 
 export interface ApiSyncTransportOptions {
@@ -59,6 +83,7 @@ export function createApiSyncTransport(options: ApiSyncTransportOptions = {}): S
         `/api/v1/sync/pull?${new URLSearchParams({ cursor, limit: String(PULL_PAGE_LIMIT) }).toString()}`,
         { schema: pullResponseSchema, bearer: credential, ...via },
       ),
+    reportWiped: (credential) => reportDeviceWiped(credential, via),
   };
 }
 
@@ -68,9 +93,14 @@ export const apiSyncTransport: SyncTransport = createApiSyncTransport();
  * - `unregistered`: this client is not a device yet; nothing syncs.
  * - `idle`: the last round reached the server. `syncing`: a round is running.
  * - `offline`: the server did not answer; sales keep going and wait in the outbox.
- * - `failed`: the server refused the round (`failure` says why), e.g. a revoked device.
+ * - `failed`: the server refused the round (`failure` says why).
+ * - `revoked`: the device was removed from its store; it still sends what it holds, and wipes
+ *   once every operation has an answer (`core-foundation` rule 23).
+ * - `removed`: the device wiped its local data after its revoke; the app says so until the
+ *   user acknowledges it (`acknowledgeRemoval`), then it is `unregistered`.
  */
-export type SyncPhase = "unregistered" | "idle" | "syncing" | "offline" | "failed";
+export type SyncPhase =
+  "unregistered" | "idle" | "syncing" | "offline" | "failed" | "revoked" | "removed";
 
 export interface SyncStatus {
   readonly phase: SyncPhase;
@@ -95,14 +125,23 @@ export interface SyncEngine {
   stop(): void;
   status(): SyncStatus;
   subscribe(listener: () => void): () => void;
+  /** Once the user has read that the device was removed: it starts over as unregistered. */
+  acknowledgeRemoval(): Promise<void>;
 }
 
 export interface SyncEngineOptions {
   readonly db: LocalDb;
+  /** The app's local schema: a revoked device's wipe drops every table and applies it again. */
+  readonly migrations: readonly LocalMigration[];
   readonly appliers: readonly PullApplier[];
   readonly clock: Clock;
   readonly transport?: SyncTransport;
   readonly intervalMs?: number;
+  /**
+   * Runs after a wipe, before it is reported: the Windows app deletes its database copies here
+   * (ADR-0019). A failure does not undo the wipe, which has already happened.
+   */
+  readonly onWiped?: () => Promise<unknown>;
 }
 
 /** Pages a round pulls at most, so a long catch-up yields to pushes in between. */
@@ -114,6 +153,12 @@ const PUSH_BATCHES_PER_ROUND = 20;
  * The device's sync loop (ADR-0020): push the outbox in `deviceSeq` order, record each answer,
  * then pull the change log from the saved cursor, applying each page and its cursor in one local
  * transaction. The network never blocks a sale: the loop runs beside it.
+ *
+ * A revoked device (`core-foundation` rule 23) learns it from the push answer, or from a
+ * refused pull. It keeps pushing until every operation has an answer, then wipes its local
+ * data — dropping every table in one transaction that first checks that nothing is pending, so
+ * a sale committed meanwhile is sent first, then rebuilding the empty schema — forgets its
+ * credential, and reports the wipe if it can.
  */
 export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const { db, clock } = options;
@@ -145,18 +190,46 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     update(await outboxCounts(db));
   }
 
-  async function push(credential: string, deviceId: string): Promise<void> {
+  /** Pushes the outbox; resolves to whether the server said the device is revoked. */
+  async function push(credential: string, deviceId: string): Promise<boolean> {
+    let revoked = false;
     for (let batch = 0; batch < PUSH_BATCHES_PER_ROUND; batch += 1) {
       const operations = await pendingOperations(db, deviceId, PUSH_BATCH_LIMIT);
-      if (operations.length === 0) return;
+      if (operations.length === 0) return revoked;
       const response = await transport.push(credential, operations);
+      revoked ||= response.revoked;
       await db.transaction(async (tx) => {
         await recordResults(tx, response.results);
         if (response.gap) await resendFrom(tx, response.nextDeviceSeq);
       });
       // Nothing answered (a gap before the first one sent): the resend starts next round.
-      if (response.results.length === 0 && !response.gap) return;
+      if (response.results.length === 0 && !response.gap) return revoked;
     }
+    return revoked;
+  }
+
+  /**
+   * The device is revoked: once every operation has an answer, wipe the local data and say so;
+   * until then, the next round pushes what is left.
+   */
+  async function wipeWhenAnswered(device: LocalDevice): Promise<void> {
+    const wiped = await wipeLocalDb(db, {
+      migrations: options.migrations,
+      when: async (tx) => (await outboxCounts(tx)).pending === 0,
+    });
+    if (!wiped) {
+      update({ phase: "revoked", failure: null });
+      return;
+    }
+    // The one fact the wipe keeps, so the app can say why it starts over.
+    await markRemoved(db, clock.now());
+    holdDeviceCredential(undefined);
+    holdSessionToken(undefined);
+    // The rows are gone; these make the files forget them too. Best effort: the wipe stands.
+    await compactLocalDb(db).catch(() => undefined);
+    await options.onWiped?.().catch(() => undefined);
+    await transport.reportWiped(device.credential).catch(() => undefined);
+    update({ phase: "removed", failure: null });
   }
 
   async function pull(credential: string): Promise<void> {
@@ -178,15 +251,25 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   async function round(): Promise<void> {
     const device = await localDevice(db);
     if (device === undefined) {
-      update({ phase: "unregistered" });
+      update({ phase: (await removedAt(db)) === undefined ? "unregistered" : "removed" });
       await refreshCounts();
       return;
     }
     update({ phase: "syncing" });
     try {
-      await push(device.credential, device.deviceId);
-      await pull(device.credential);
-      update({ phase: "idle", failure: null, lastSyncedAt: clock.now().toISOString() });
+      let revoked = false;
+      try {
+        revoked = await push(device.credential, device.deviceId);
+        if (!revoked) await pull(device.credential);
+      } catch (error) {
+        // Pull refused the credential: the device was revoked while its outbox was empty.
+        if (!(error instanceof ApiProblem && error.code === accessProblemCodes.deviceRevoked)) {
+          throw error;
+        }
+        revoked = true;
+      }
+      if (revoked) await wipeWhenAnswered(device);
+      else update({ phase: "idle", failure: null, lastSyncedAt: clock.now().toISOString() });
     } catch (error) {
       if (error instanceof ApiUnreachable) {
         update({ phase: "offline" });
@@ -250,6 +333,10 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       unsubscribe = undefined;
     },
     status: () => status,
+    async acknowledgeRemoval() {
+      await clearRemoved(db);
+      await syncNow();
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => {

@@ -2,14 +2,19 @@ export type { Manager } from "./actor.ts";
 export type { AccessContext, AccessDependencies } from "./dependencies.ts";
 export {
   authenticateDevice,
+  deviceRevokedAt,
   DEVICE_PREFIXES,
   type Device,
   issueRegistrationCode,
   type IssuedRegistrationCode,
+  listDevices,
   type NewDevice,
+  recordDeviceSync,
   REGISTRATION_CODE_LIFETIME_MS,
   registerDevice,
   type RegisteredDevice,
+  reportDeviceWiped,
+  revokeDevice,
 } from "./devices.ts";
 export {
   type LoggedIn,
