@@ -49,11 +49,37 @@ export interface SignInInput {
   readonly secondFactor?: string | undefined;
 }
 
+/** The previous user's server session being ended, which the next sign-in waits for. */
+let endingServerSession: Promise<void> = Promise.resolve();
+
+/**
+ * Ends the held server session in the background (a lock, or an idle session at start-up),
+ * waiting at most `timeoutMs`. Built with the session before the caller forgets it. Its answer
+ * clears the cookie, so the next sign-in — by PIN or by password — waits for it rather than have
+ * its new cookie cleared.
+ */
+export function endServerSessionInBackground(timeoutMs: number): void {
+  endingServerSession = apiRequest("/api/v1/access/logout", {
+    method: "POST",
+    schema: z.null(),
+    signal: AbortSignal.timeout(timeoutMs),
+  }).then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
+/** Resolves once a server session being ended in the background has its answer. */
+export function serverSessionEnded(): Promise<void> {
+  return endingServerSession;
+}
+
 /**
  * Signs in with this client's session transport (ADR-0022): in the browser the server sets an
  * `HttpOnly` cookie; the Windows app receives the token and holds it.
  */
 export async function signIn(input: SignInInput): Promise<CurrentSession> {
+  await endingServerSession;
   const transport = sessionTransport();
   const answer = await apiRequest("/api/v1/access/login", {
     method: "POST",

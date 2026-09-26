@@ -1,7 +1,13 @@
-# Rust crates of the clients (ADR-0019): the native LocalDb core and the Windows shell.
+# Rust crates of the clients (ADR-0019): the native LocalDb core, the printer transport, the
+# secure store (ADR-0022), and the Windows shell.
 [workspace]
 resolver = "3"
-members = ["packages/local-db/native", "packages/printing/native", "apps/desktop/src-tauri"]
+members = [
+  "packages/keystore/native",
+  "packages/local-db/native",
+  "packages/printing/native",
+  "apps/desktop/src-tauri",
+]
 
 [workspace.package]
 edition = "2024"

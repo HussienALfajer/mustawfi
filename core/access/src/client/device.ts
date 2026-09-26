@@ -1,12 +1,20 @@
-import { apiRequest, holdDeviceCredential } from "@mustawfi/core-config/client";
+import {
+  apiRequest,
+  holdDeviceCredential,
+  type SecureStore,
+  secureStore,
+} from "@mustawfi/core-config/client";
 import type { Clock } from "@mustawfi/kernel";
 import {
+  compactLocalDb,
   type LocalDb,
   type LocalExecutor,
   type LocalMigration,
   localOrm,
 } from "@mustawfi/local-db";
+import type { NativeLocalDb } from "@mustawfi/local-db/native";
 import { queryOptions } from "@tanstack/react-query";
+import { and, eq } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 import {
@@ -16,8 +24,9 @@ import {
 } from "../shared/index.ts";
 
 /**
- * This client as a registered device (ADR-0022): at most one row. The credential stays here —
- * on Windows and Android in the app's own database; in the browser, which is a limited client
+ * This client as a registered device (ADR-0022): at most one row. Its credential is in the OS
+ * secure store where the platform has one (the Windows app: Credential Manager), and then
+ * `credential` is null; elsewhere it stays here — in the browser, which is a limited client
  * (ADR-0010), in the origin's private storage.
  */
 const accessDevice = sqliteTable("access_device", {
@@ -26,7 +35,7 @@ const accessDevice = sqliteTable("access_device", {
   prefix: text().notNull(),
   name: text().notNull(),
   type: text().notNull(),
-  credential: text().notNull(),
+  credential: text(),
   baseCurrency: text("base_currency").notNull(),
   registeredAt: text("registered_at").notNull(),
 });
@@ -53,6 +62,35 @@ export const accessLocalMigrations: readonly LocalMigration[] = [
   },
 ];
 
+/**
+ * `core-foundation` slice 18: the credential may leave the table for the OS secure store. SQLite
+ * cannot drop a `NOT NULL`, so the table is built again with the same rows.
+ */
+export const deviceCredentialLocalMigrations: readonly LocalMigration[] = [
+  {
+    id: "core.access.0003_device_credential_store",
+    statements: [
+      `CREATE TABLE access_device_next (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        prefix TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        credential TEXT,
+        base_currency TEXT NOT NULL,
+        registered_at TEXT NOT NULL,
+        one_device INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (one_device = 1)
+      ) STRICT`,
+      `INSERT INTO access_device_next
+        (id, tenant_id, prefix, name, type, credential, base_currency, registered_at)
+        SELECT id, tenant_id, prefix, name, type, credential, base_currency, registered_at
+        FROM access_device`,
+      "DROP TABLE access_device",
+      "ALTER TABLE access_device_next RENAME TO access_device",
+    ],
+  },
+];
+
 export interface LocalDevice {
   readonly deviceId: string;
   readonly tenantId: string;
@@ -60,8 +98,6 @@ export interface LocalDevice {
   readonly prefix: string;
   readonly name: string;
   readonly type: DeviceType;
-  /** Sent as the bearer of every sync request. */
-  readonly credential: string;
   /** What this device sells in until multi-currency sales (`core-money`). */
   readonly baseCurrency: string;
   readonly registeredAt: string;
@@ -77,7 +113,6 @@ export async function localDevice(executor: LocalExecutor): Promise<LocalDevice 
     prefix: row.prefix,
     name: row.name,
     type: row.type as DeviceType,
-    credential: row.credential,
     baseCurrency: row.baseCurrency,
     registeredAt: row.registeredAt,
   };
@@ -92,6 +127,125 @@ export function localDeviceQueryOptions(db: LocalDb) {
     networkMode: "always",
     meta: { localTables: [ACCESS_DEVICE_TABLE] },
   });
+}
+
+/** The registered device's credential is in neither the local database nor the secure store. */
+export class DeviceCredentialMissing extends Error {
+  override name = "DeviceCredentialMissing";
+}
+
+/** What the secure store holds: the credential with the device it belongs to. */
+const keptCredentialSchema = z.object({ deviceId: z.string(), credential: z.string().min(1) });
+
+/**
+ * The credential the store keeps for `deviceId`. One kept for another device — left by an earlier
+ * registration under this Windows user — is not this device's.
+ */
+async function keptCredential(store: SecureStore, deviceId: string): Promise<string | undefined> {
+  const kept = await store.get("deviceCredential");
+  if (kept === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(kept);
+  } catch {
+    return undefined;
+  }
+  const result = keptCredentialSchema.safeParse(parsed);
+  return result.success && result.data.deviceId === deviceId ? result.data.credential : undefined;
+}
+
+/** The registered device's id and the credential column (null once in the store). */
+function credentialRow(executor: LocalExecutor) {
+  return localOrm(executor)
+    .select({ id: accessDevice.id, credential: accessDevice.credential })
+    .from(accessDevice)
+    .get();
+}
+
+/** Writes the credential to the store and reads it back: whether the store now holds it. */
+async function keepCredential(
+  store: SecureStore,
+  deviceId: string,
+  credential: string,
+): Promise<boolean> {
+  await store.set("deviceCredential", JSON.stringify({ deviceId, credential }));
+  return (await keptCredential(store, deviceId)) === credential;
+}
+
+/**
+ * This device's credential, sent as the bearer of every sync request: from the local database,
+ * or from the OS secure store once it is kept there. `undefined` while the client is not
+ * registered; `DeviceCredentialMissing` when it is and neither holds it.
+ */
+export async function localDeviceCredential(
+  executor: LocalExecutor,
+  store: SecureStore | undefined = secureStore(),
+): Promise<string | undefined> {
+  const row = await credentialRow(executor);
+  if (row === undefined) return undefined;
+  if (row.credential !== null) return row.credential;
+  const kept = store === undefined ? undefined : await keptCredential(store, row.id);
+  if (kept === undefined) throw new DeviceCredentialMissing(`no credential for device ${row.id}`);
+  return kept;
+}
+
+/** The copies of the database file a native shell takes (ADR-0019). */
+export type LocalDbCopies = Pick<NativeLocalDb, "backup" | "removeBackups">;
+
+/**
+ * Replaces the copies of the file that held the credential: a new copy first (`VACUUM INTO`
+ * writes only live rows), and only if it was taken, every copy removed and one taken again, so
+ * the device is never left without one.
+ */
+async function replaceCopies(copies: LocalDbCopies): Promise<void> {
+  if ((await copies.backup()) === undefined) {
+    throw new Error("no copy of the local database could be taken");
+  }
+  await copies.removeBackups();
+  await copies.backup();
+}
+
+/**
+ * Moves a credential that an earlier version kept in the local database into the OS secure store
+ * (ADR-0022), then deletes it from the database and compacts the file, so neither the file nor
+ * its write-ahead log gives it back, and replaces `copies` of the file, which held it too.
+ * Resolves to whether it moved one. The store is written and read back first: if that fails, the
+ * credential stays in the database, and the next start tries again.
+ */
+export async function moveDeviceCredentialToSecureStore(
+  db: LocalDb,
+  store: SecureStore | undefined = secureStore(),
+  copies?: LocalDbCopies,
+): Promise<boolean> {
+  if (store === undefined) return false;
+  const row = await credentialRow(db);
+  if (row === undefined || row.credential === null) return false;
+  const { id, credential } = row;
+  if (!(await keepCredential(store, id, credential))) {
+    throw new Error("the secure store did not keep the device credential");
+  }
+  await db.transaction(async (tx) => {
+    await localOrm(tx)
+      .update(accessDevice)
+      .set({ credential: null })
+      .where(and(eq(accessDevice.id, id), eq(accessDevice.credential, credential)));
+  });
+  // The deleted value, and the pages the migration's rebuild freed, leave the file and the log.
+  // The copies are replaced even if that fails: a new copy holds only live rows.
+  const compaction = await compactLocalDb(db).then(
+    () => undefined,
+    (error: unknown) => ({ error }),
+  );
+  if (copies !== undefined) await replaceCopies(copies);
+  if (compaction !== undefined) throw compaction.error;
+  return true;
+}
+
+/** Forgets the credential kept in the secure store: a revoked device's wipe (rule 23). */
+export async function forgetDeviceCredential(
+  store: SecureStore | undefined = secureStore(),
+): Promise<void> {
+  await store?.delete("deviceCredential");
 }
 
 /** Issues a single-use registration code for a new device (owner, online). */
@@ -119,13 +273,14 @@ export interface RegisterThisDeviceInput {
 }
 
 /**
- * Registers this client with a registration code (flow 4), then keeps the device, its prefix,
- * and its credential in the local database.
+ * Registers this client with a registration code (flow 4), then keeps the device and its prefix
+ * in the local database, and its credential in the OS secure store where the platform has one.
  */
 export async function registerThisDevice(
   db: LocalDb,
   input: RegisterThisDeviceInput,
   clock: Clock,
+  store: SecureStore | undefined = secureStore(),
 ): Promise<LocalDevice> {
   if ((await localDevice(db)) !== undefined) throw new DeviceAlreadyRegistered();
   const registered = await apiRequest("/api/v1/access/devices", {
@@ -140,23 +295,32 @@ export async function registerThisDevice(
     prefix: registered.prefix,
     name: registered.name,
     type: input.type,
-    credential: registered.credential,
     baseCurrency: registered.baseCurrency,
     registeredAt: clock.now().toISOString(),
   };
+  // Never in the database file where the store takes it. If the store fails, the database keeps
+  // it rather than lose the registration, and the next start moves it.
+  const inStore =
+    store !== undefined &&
+    (await keepCredential(store, device.deviceId, registered.credential).catch((error: unknown) => {
+      console.error("the secure store did not keep the device credential", error);
+      return false;
+    }));
   await db.transaction(async (tx) => {
-    await localOrm(tx).insert(accessDevice).values({
-      id: device.deviceId,
-      tenantId: device.tenantId,
-      prefix: device.prefix,
-      name: device.name,
-      type: device.type,
-      credential: device.credential,
-      baseCurrency: device.baseCurrency,
-      registeredAt: device.registeredAt,
-    });
+    await localOrm(tx)
+      .insert(accessDevice)
+      .values({
+        id: device.deviceId,
+        tenantId: device.tenantId,
+        prefix: device.prefix,
+        name: device.name,
+        type: device.type,
+        credential: inStore ? null : registered.credential,
+        baseCurrency: device.baseCurrency,
+        registeredAt: device.registeredAt,
+      });
   });
-  holdDeviceCredential(device.credential);
+  holdDeviceCredential(registered.credential);
   return device;
 }
 
@@ -179,8 +343,14 @@ export async function reportDeviceWiped(
 /**
  * Holds this client's device credential, if it is registered, for the requests made with the
  * session (`core-foundation` rule 22). The composition root calls it once the local database
- * is open, before anything calls the API.
+ * is open, before anything calls the API. A credential that cannot be found leaves the device
+ * without one: it keeps selling offline, and sync fails with `DeviceCredentialMissing`.
  */
 export async function holdLocalDeviceCredential(executor: LocalExecutor): Promise<void> {
-  holdDeviceCredential((await localDevice(executor))?.credential);
+  try {
+    holdDeviceCredential(await localDeviceCredential(executor));
+  } catch (error) {
+    console.error("this device's credential could not be read", error);
+    holdDeviceCredential(undefined);
+  }
 }

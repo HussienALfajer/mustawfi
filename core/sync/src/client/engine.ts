@@ -1,7 +1,9 @@
 import {
   ACCESS_DEVICE_TABLE,
+  forgetDeviceCredential,
   type LocalDevice,
   localDevice,
+  localDeviceCredential,
   reportDeviceWiped,
 } from "@mustawfi/core-access/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
@@ -178,7 +180,7 @@ const PUSH_BATCHES_PER_ROUND = 20;
  * refused pull. It keeps pushing until every operation has an answer, then wipes its local
  * data — dropping every table in one transaction that first checks that nothing is pending, so
  * a sale committed meanwhile is sent first, then rebuilding the empty schema — forgets its
- * credential, and reports the wipe if it can.
+ * credential (in the OS secure store too), and reports the wipe if it can.
  *
  * After push and pull, the device asks for its configuration bundle with the version it holds;
  * a refused bundle is recorded and the previous one kept, without failing the round. The answer's
@@ -236,7 +238,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
    * The device is revoked: once every operation has an answer, wipe the local data and say so;
    * until then, the next round pushes what is left.
    */
-  async function wipeWhenAnswered(device: LocalDevice): Promise<void> {
+  async function wipeWhenAnswered(credential: string): Promise<void> {
     const wiped = await wipeLocalDb(db, {
       migrations: options.migrations,
       when: async (tx) => (await outboxCounts(tx)).pending === 0,
@@ -248,13 +250,15 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     // The one fact the wipe keeps, so the app can say why it starts over.
     await markRemoved(db, clock.now());
     holdDeviceCredential(undefined);
+    // Only the report below still needs it, and it has it.
+    await forgetDeviceCredential().catch(() => undefined);
     // The Windows app's token goes; a browser's cookie is the server's to end: a session bound to
     // this device was revoked with it, and the owner's own one stays for registering again.
     if (sessionTransport() === "bearer") forgetSession();
     // The rows are gone; these make the files forget them too. Best effort: the wipe stands.
     await compactLocalDb(db).catch(() => undefined);
     await options.onWiped?.().catch(() => undefined);
-    await transport.reportWiped(device.credential).catch(() => undefined);
+    await transport.reportWiped(credential).catch(() => undefined);
     update({ phase: "removed", failure: null });
   }
 
@@ -274,8 +278,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     }
   }
 
-  async function refreshBundle(device: LocalDevice, verifier: BundleVerifier): Promise<void> {
-    const response = await transport.bundle(device.credential, await storedBundleVersion(db));
+  async function refreshBundle(
+    device: LocalDevice,
+    credential: string,
+    verifier: BundleVerifier,
+  ): Promise<void> {
+    const response = await transport.bundle(credential, await storedBundleVersion(db));
     await acceptBundle(
       db,
       response,
@@ -297,11 +305,16 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     }
     update({ phase: "syncing" });
     try {
+      const credential = await localDeviceCredential(db);
+      // Wiped since the read above: the next round says so.
+      if (credential === undefined) return;
       let revoked = false;
       try {
-        revoked = await push(device.credential, device.deviceId);
-        if (!revoked) await pull(device.credential);
-        if (!revoked && options.bundle !== undefined) await refreshBundle(device, options.bundle);
+        revoked = await push(credential, device.deviceId);
+        if (!revoked) await pull(credential);
+        if (!revoked && options.bundle !== undefined) {
+          await refreshBundle(device, credential, options.bundle);
+        }
       } catch (error) {
         // Pull refused the credential: the device was revoked while its outbox was empty.
         if (!(error instanceof ApiProblem && error.code === accessProblemCodes.deviceRevoked)) {
@@ -309,7 +322,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         }
         revoked = true;
       }
-      if (revoked) await wipeWhenAnswered(device);
+      if (revoked) await wipeWhenAnswered(credential);
       else update({ phase: "idle", failure: null, lastSyncedAt: clock.now().toISOString() });
     } catch (error) {
       if (error instanceof ApiUnreachable) {

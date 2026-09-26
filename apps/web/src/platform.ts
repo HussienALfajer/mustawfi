@@ -2,6 +2,7 @@ import type { DeviceType } from "@mustawfi/core-access/shared";
 import type { ApiEndpoint } from "@mustawfi/core-config/client";
 import type { LocalDb } from "@mustawfi/local-db";
 import type { NativeLocalDb } from "@mustawfi/local-db/native";
+import { tauriSecureStore } from "@mustawfi/keystore/tauri";
 import { isTauri } from "@mustawfi/local-db/tauri";
 import type { RawPrinterTransport } from "@mustawfi/printing";
 
@@ -46,11 +47,16 @@ const browser: ClientPlatform = {
 /**
  * The Windows app (Tauri): the store's main POS, with its database in a native SQLite file.
  * Its page is served from the app itself, so it calls the server's origin (set at build time;
- * the development server proxies instead) with a bearer session.
+ * the development server proxies instead) with a bearer session. Its device credential and
+ * session token are kept in Windows Credential Manager (ADR-0022).
  */
 const windows: ClientPlatform = {
   deviceType: "mainPos",
-  api: { origin: import.meta.env.VITE_MUSTAWFI_API_ORIGIN ?? "", session: "bearer" },
+  api: {
+    origin: import.meta.env.VITE_MUSTAWFI_API_ORIGIN ?? "",
+    session: "bearer",
+    secureStore: tauriSecureStore,
+  },
   openLocalDb: async () => {
     const { openTauriLocalDb } = await import("@mustawfi/local-db/tauri");
     return openTauriLocalDb(LOCAL_DB_NAME);

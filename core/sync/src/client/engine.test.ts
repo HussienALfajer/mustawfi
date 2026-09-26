@@ -1,12 +1,19 @@
 import { generateKeyPairSync, sign } from "node:crypto";
-import { accessLocalMigrations } from "@mustawfi/core-access/client";
+import {
+  accessLocalMigrations,
+  deviceCredentialLocalMigrations,
+} from "@mustawfi/core-access/client";
 import {
   ApiProblem,
   ApiUnreachable,
   bundleStatus,
   type BundleVerifier,
   configLocalMigrations,
+  configureApi,
+  holdSession,
+  sessionKept,
 } from "@mustawfi/core-config/client";
+import { memorySecureStore } from "@mustawfi/keystore";
 import type { BundleResponse } from "@mustawfi/core-config/shared";
 import { tenancyLocalMigrations } from "@mustawfi/core-tenancy/client";
 import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
@@ -148,6 +155,19 @@ async function registerDevice() {
   );
 }
 
+/** A Windows app's device: its credential in the OS secure store, not in the database. */
+async function registerDeviceWithSecureStore() {
+  const store = memorySecureStore();
+  configureApi({ origin: "https://store.example", session: "bearer", secureStore: store });
+  await db.run(
+    `INSERT INTO access_device (id, tenant_id, prefix, name, type, credential, base_currency, registered_at)
+     VALUES (?, ?, 'K7', 'الصندوق', 'mainPos', NULL, 'SYP', ?)`,
+    [deviceId, newId(), clock.now().toISOString()],
+  );
+  await store.set("deviceCredential", JSON.stringify({ deviceId, credential: CREDENTIAL }));
+  return store;
+}
+
 function enqueue(payload: Record<string, boolean> = {}) {
   return db.transaction((tx) =>
     enqueueOperation(tx, {
@@ -181,6 +201,7 @@ const MIGRATIONS = [
   ...syncLocalMigrations,
   ...configLocalMigrations,
   ...tenancyLocalMigrations,
+  ...deviceCredentialLocalMigrations,
   { id: "test.0001_items", statements: ["CREATE TABLE test_items (id TEXT PRIMARY KEY)"] },
 ];
 
@@ -192,6 +213,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  configureApi({ origin: "", session: "cookie" });
   await db.close();
 });
 
@@ -238,6 +260,31 @@ describe("the sync engine", () => {
     await sync.syncNow();
     expect(server.pushes).toHaveLength(1);
     expect(applied).toEqual(["a", "b", "c"]);
+  });
+
+  it("syncs with the credential kept in the OS secure store (ADR-0022)", async () => {
+    await registerDeviceWithSecureStore();
+    await enqueue();
+    server.changes = [change("a")];
+    const sync = engine();
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "idle", pending: 0 });
+    expect(server.credentials.length).toBeGreaterThan(0);
+    expect(new Set(server.credentials)).toEqual(new Set([CREDENTIAL]));
+  });
+
+  it("fails the round, keeping every sale, when neither the database nor the store holds the credential", async () => {
+    const store = await registerDeviceWithSecureStore();
+    await store.delete("deviceCredential");
+    await enqueue();
+    const sync = engine();
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({
+      phase: "failed",
+      failure: "DeviceCredentialMissing",
+      pending: 1,
+    });
+    expect(server.credentials).toEqual([]);
   });
 
   it("keeps sales in the outbox while the server is unreachable, and sends them later", async () => {
@@ -462,6 +509,22 @@ describe("a revoked device (core-foundation rule 23)", () => {
     expect(server.pushes).toEqual([]);
     expect(await leftOnDevice()).toEqual({ device: 0n, outbox: 0n, items: 0n });
     expect(sync.status().phase).toBe("removed");
+  });
+
+  it("forgets the credential and the session token kept in the OS secure store", async () => {
+    const store = await registerDeviceWithSecureStore();
+    holdSession("s1.token");
+    await sessionKept();
+    expect(store.secrets.has("sessionToken")).toBe(true);
+    server.revoked = true;
+    await enqueue();
+    const sync = engine();
+    await sync.syncNow();
+    await sessionKept();
+    expect(sync.status().phase).toBe("removed");
+    // The report still went with the credential the device held.
+    expect(server.wipeReports).toEqual([CREDENTIAL]);
+    expect(store.secrets.size).toBe(0);
   });
 
   it("stays wiped when the wipe cannot be reported", async () => {

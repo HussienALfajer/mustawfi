@@ -46,6 +46,7 @@
     "@mustawfi/i18n": "workspace:*",
     "@mustawfi/inventory": "workspace:*",
     "@mustawfi/kernel": "workspace:*",
+    "@mustawfi/keystore": "workspace:*",
     "@mustawfi/local-db": "workspace:*",
     "@mustawfi/printing": "workspace:*",
     "@mustawfi/sales": "workspace:*",

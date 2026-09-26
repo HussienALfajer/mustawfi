@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { memorySecureStore, type SecureStore } from "@mustawfi/keystore";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   apiBlob,
@@ -9,6 +10,8 @@ import {
   holdDeviceCredential,
   holdSession,
   forgetSession,
+  restoreSession,
+  sessionKept,
 } from "./index.ts";
 
 interface Sent {
@@ -130,6 +133,84 @@ describe("apiRequest endpoints (ADR-0022)", () => {
     configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
     holdSession("s1.session");
     configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
+    expect(hasSessionCredential()).toBe(false);
+  });
+});
+
+describe("the session token in the secure store (ADR-0022, core-foundation slice 18)", () => {
+  const origin = "http://127.0.0.1:3000";
+
+  it("survives a restart of the Windows app, and a forgotten one does not", async () => {
+    const store = memorySecureStore();
+    configureApi({ origin, session: "bearer", secureStore: store });
+    holdSession("s1.session");
+    await sessionKept();
+    expect(store.secrets.get("sessionToken")).toBe("s1.session");
+
+    // The next run starts with nothing in memory, and takes the token back from the store.
+    configureApi({ origin, session: "bearer", secureStore: store });
+    expect(hasSessionCredential()).toBe(false);
+    await restoreSession();
+    expect(hasSessionCredential()).toBe(true);
+    const { fetch, sent } = recordingFetch();
+    await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
+    expect(authorization(sent[0])).toBe("Bearer s1.session");
+
+    forgetSession();
+    await sessionKept();
+    expect(store.secrets.has("sessionToken")).toBe(false);
+    configureApi({ origin, session: "bearer", secureStore: store });
+    await restoreSession();
+    expect(hasSessionCredential()).toBe(false);
+  });
+
+  it("keeps the last of several changes, in the order they were made", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const slow = memorySecureStore();
+    const store: SecureStore = {
+      ...slow,
+      // The first write is still on its way when the next ones are asked for.
+      set: async (name, value) => {
+        if (value === "s1.first") await gate;
+        await slow.set(name, value);
+      },
+    };
+    configureApi({ origin, session: "bearer", secureStore: store });
+    holdSession("s1.first");
+    forgetSession();
+    holdSession("s1.second");
+    release();
+    await sessionKept();
+    expect(slow.secrets.get("sessionToken")).toBe("s1.second");
+  });
+
+  it("holds the session in memory when the store fails, and restores none it cannot read", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const broken: SecureStore = {
+      get: () => Promise.reject(new Error("locked")),
+      set: () => Promise.reject(new Error("locked")),
+      delete: () => Promise.reject(new Error("locked")),
+    };
+    configureApi({ origin, session: "bearer", secureStore: broken });
+    holdSession("s1.session");
+    await sessionKept();
+    expect(hasSessionCredential()).toBe(true);
+    configureApi({ origin, session: "bearer", secureStore: broken });
+    await restoreSession();
+    expect(hasSessionCredential()).toBe(false);
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("is never written for the browser's cookie session", async () => {
+    const store = memorySecureStore();
+    configureApi({ origin: "", session: "cookie", secureStore: store });
+    holdSession(undefined);
+    forgetSession();
+    await restoreSession();
+    await sessionKept();
+    expect(store.secrets.size).toBe(0);
     expect(hasSessionCredential()).toBe(false);
   });
 });

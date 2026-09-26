@@ -10,6 +10,7 @@ publish = false
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+mustawfi-keystore = { path = "../../../packages/keystore/native" }
 mustawfi-local-db = { path = "../../../packages/local-db/native" }
 mustawfi-printing = { path = "../../../packages/printing/native" }
 base64 = "0.23.1"

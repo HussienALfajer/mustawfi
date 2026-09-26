@@ -9,6 +9,7 @@ import {
   hasSessionCredential,
   holdSession,
   loadBundle,
+  restoreSession,
   sessionTransport,
 } from "@mustawfi/core-config/client";
 import type { Clock } from "@mustawfi/kernel";
@@ -27,7 +28,13 @@ import {
   type sessionUserSchema,
 } from "../../shared/index.ts";
 import { ACCESS_DEVICE_TABLE, localDevice } from "../device.ts";
-import { type CurrentSession, fetchSession, sessionQueryKey } from "../session.ts";
+import {
+  type CurrentSession,
+  endServerSessionInBackground,
+  fetchSession,
+  serverSessionEnded,
+  sessionQueryKey,
+} from "../session.ts";
 import {
   accessPartOf,
   attachServerSession,
@@ -214,20 +221,23 @@ export function signedInQueryOptions(db: LocalDb, verifier: BundleVerifier) {
 }
 
 /**
- * At start-up, before anything calls the API: a device's session left idle for `idleMs` is over
- * (rule 24), and a session cookie this device's user did not open here is not sent (rule 25).
+ * At start-up, before anything calls the API: the session kept from the last run comes back
+ * (the Windows app's token, from the OS secure store) — unless it is the device's session and
+ * was left idle for `idleMs`, which ends it as auto-lock does, the server's side included
+ * (rule 24); and a session this device's user did not open here is not sent (rule 25).
  */
 export async function restoreDeviceSession(
   db: LocalDb,
   clock: Clock,
   idleMs: number,
 ): Promise<void> {
+  await restoreSession();
   const device = await localDevice(db);
   if (device === undefined) return;
-  let session = await localSession(db);
+  const session = await localSession(db);
   if (session !== undefined && isIdle(await lastActivityAt(db), clock.now(), idleMs)) {
-    await endLocalSession(db);
-    session = undefined;
+    await lockDevice(db);
+    return;
   }
   if (session === undefined || !session.serverSession) forgetSession();
 }
@@ -257,9 +267,6 @@ export async function beginDeviceSession(
   });
 }
 
-/** The previous user's server session being ended, which the next PIN sign-in waits for. */
-let endingServerSession: Promise<void> = Promise.resolve();
-
 /**
  * Ends the session on this device — auto-lock, switching user, or signing out (rules 24–25):
  * the local session goes, and the server session with it, told to the server when it can be;
@@ -269,16 +276,8 @@ export async function lockDevice(db: LocalDb): Promise<void> {
   const session = await localSession(db);
   await endLocalSession(db);
   if (session?.serverSession === true && hasSessionCredential()) {
-    // Built with the session before it is forgotten below. Its answer clears the cookie, so the
-    // next PIN sign-in waits for it rather than have its new cookie cleared.
-    endingServerSession = apiRequest("/api/v1/access/logout", {
-      method: "POST",
-      schema: z.null(),
-      signal: AbortSignal.timeout(PIN_SERVER_TIMEOUT_MS),
-    }).then(
-      () => undefined,
-      () => undefined,
-    );
+    // Built with the session before it is forgotten below.
+    endServerSessionInBackground(PIN_SERVER_TIMEOUT_MS);
   }
   forgetSession();
 }
@@ -312,7 +311,7 @@ async function serverPinSignIn(
   input: { readonly userId: string; readonly pin: string },
   dependencies: PinSignInDependencies,
 ): Promise<CurrentSession> {
-  await endingServerSession;
+  await serverSessionEnded();
   const transport = sessionTransport();
   const answer = await apiRequest("/api/v1/access/pin-login", {
     method: "POST",

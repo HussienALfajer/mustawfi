@@ -10,7 +10,8 @@
     "./browser": "./src/browser.ts",
     "./contract": "./src/contract.ts",
     "./native": "./src/native.ts",
-    "./tauri": "./src/tauri.ts"
+    "./tauri": "./src/tauri.ts",
+    "./native-host": "./src/native-host.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
