@@ -22,6 +22,8 @@ import {
   registerThisDevice,
 } from "./device.ts";
 import { ACCESS_NAMESPACE } from "./messages.ts";
+import { beginDeviceSession } from "./pin/device-session.ts";
+import { sessionQueryKey, sessionQueryOptions } from "./session.ts";
 
 const registerFormSchema = z.object({
   storeCode: z.string().trim().min(1, "required"),
@@ -74,7 +76,11 @@ function RegisterSection(props: { readonly deviceType: DeviceType }) {
       ),
     networkMode: "always",
     onSuccess: async () => {
+      // The user who registered it is the one signed in on it now (flow 12 starts next time).
+      const session = await queryClient.fetchQuery(sessionQueryOptions()).catch(() => null);
+      if (session !== null) await beginDeviceSession(db, session, clock);
       await queryClient.invalidateQueries({ queryKey: localDeviceQueryKey });
+      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
     },
   });
   const fieldError = (message: string | undefined) =>

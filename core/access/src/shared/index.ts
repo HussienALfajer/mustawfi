@@ -20,6 +20,13 @@ export {
   templateGrants,
 } from "./grant.ts";
 export { isPinAllowed, pinSchema } from "./pin.ts";
+export {
+  ACCESS_DEVICE_AUDIT_ACTIONS,
+  IDLE_LOCK_MS,
+  PIN_ATTEMPTS,
+  PIN_DEVICE_EVENTS,
+  UNLOCK_PERMISSION,
+} from "./pin-events.ts";
 
 /** A user's login name: lower case after trimming, letters, digits, `.`, `_`, `-`. */
 export const loginSchema = z

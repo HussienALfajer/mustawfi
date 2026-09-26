@@ -67,11 +67,19 @@ export interface ApiEndpoint {
 
 let endpoint: ApiEndpoint = { origin: "", session: "cookie" };
 let sessionBearer: string | undefined;
+/**
+ * Whether this client holds a session: for the cookie transport, whether requests carry the
+ * cookie. The page never sees the cookie, so a registered device that ends its user's session
+ * offline (a lock, `core-foundation` rule 24) stops sending it until the next sign-in sets a new
+ * one — a cookie left from one user must never act for the next (rule 25).
+ */
+let sessionHeld = true;
 let deviceCredential: string | undefined;
 
 export function configureApi(next: ApiEndpoint): void {
   endpoint = next;
   sessionBearer = undefined;
+  sessionHeld = next.session === "cookie";
 }
 
 /** How this client's session travels: the login asks the server for that transport. */
@@ -79,9 +87,19 @@ export function sessionTransport(): ApiEndpoint["session"] {
   return endpoint.session;
 }
 
-/** Keeps (or, with `undefined`, forgets) the session token of the bearer transport. */
-export function holdSessionToken(token: string | undefined): void {
+/**
+ * Keeps the session a sign-in just opened: the bearer transport's token, or — for the cookie
+ * transport, whose answer carries no token — the cookie the answer set.
+ */
+export function holdSession(token: string | undefined): void {
   sessionBearer = token;
+  sessionHeld = endpoint.session === "cookie" || token !== undefined;
+}
+
+/** Forgets the session: the held token, or the cookie until a sign-in sets a new one. */
+export function forgetSession(): void {
+  sessionBearer = undefined;
+  sessionHeld = false;
 }
 
 /**
@@ -93,9 +111,9 @@ export function holdDeviceCredential(credential: string | undefined): void {
   deviceCredential = credential;
 }
 
-/** Whether a bearer-transport client holds a session token; always true for the cookie. */
+/** Whether this client holds a session: a bearer token, or a cookie it has not forgotten. */
 export function hasSessionCredential(): boolean {
-  return endpoint.session === "cookie" || sessionBearer !== undefined;
+  return endpoint.session === "cookie" ? sessionHeld : sessionBearer !== undefined;
 }
 
 export interface ApiRequest<T> {
@@ -115,6 +133,11 @@ export interface ApiRequest<T> {
    * harness (ADR-0026) passes its own.
    */
   readonly fetch?: typeof fetch;
+  /**
+   * A sign-in: its answer sets the session cookie, which the browser keeps only from a request
+   * that may carry cookies — even while this client holds no session.
+   */
+  readonly opensSession?: boolean;
 }
 
 /** Sends a request with the session (or `bearer`); no answer throws `ApiUnreachable`. */
@@ -125,8 +148,12 @@ async function send(path: string, request: Omit<ApiRequest<unknown>, "schema">):
   try {
     return await (request.fetch ?? fetch)(`${endpoint.origin}${path}`, {
       method: request.method ?? "GET",
-      // Another origin never receives the browser's cookies.
-      credentials: endpoint.origin === "" ? "same-origin" : "omit",
+      // Another origin never receives the browser's cookies, and a forgotten session's cookie
+      // goes nowhere until a sign-in replaces it.
+      credentials:
+        endpoint.origin === "" && (sessionHeld || request.opensSession === true)
+          ? "same-origin"
+          : "omit",
       headers: {
         ...(request.body === undefined ? {} : { "content-type": "application/json" }),
         ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),

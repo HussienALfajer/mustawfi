@@ -1,4 +1,5 @@
 import { accessBundlePart, accessModule, type TotpKeyRing } from "@mustawfi/core-access/server";
+import { ACCESS_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-access/shared";
 import { auditModule } from "@mustawfi/core-audit/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
@@ -78,6 +79,7 @@ export function createServerRegistry(
  */
 export const moduleDeviceAuditActions: Readonly<Record<string, readonly string[]>> = {
   "core.tenancy": TENANCY_DEVICE_AUDIT_ACTIONS,
+  "core.access": ACCESS_DEVICE_AUDIT_ACTIONS,
 };
 
 /**

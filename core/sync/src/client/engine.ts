@@ -12,7 +12,8 @@ import {
   ApiUnreachable,
   type BundleVerifier,
   holdDeviceCredential,
-  holdSessionToken,
+  forgetSession,
+  sessionTransport,
   storedBundleVersion,
   verifyServerTime,
 } from "@mustawfi/core-config/client";
@@ -247,7 +248,9 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     // The one fact the wipe keeps, so the app can say why it starts over.
     await markRemoved(db, clock.now());
     holdDeviceCredential(undefined);
-    holdSessionToken(undefined);
+    // The Windows app's token goes; a browser's cookie is the server's to end: a session bound to
+    // this device was revoked with it, and the owner's own one stays for registering again.
+    if (sessionTransport() === "bearer") forgetSession();
     // The rows are gone; these make the files forget them too. Best effort: the wipe stands.
     await compactLocalDb(db).catch(() => undefined);
     await options.onWiped?.().catch(() => undefined);

@@ -1,22 +1,34 @@
-import type { DeviceType } from "@mustawfi/core-access/shared";
+import { type DeviceType, IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
 import {
   AccountScreen,
+  beginDeviceSession,
   DeviceRemovedScreen,
   deviceFiltersSchema,
   DeviceScreen,
   DevicesScreen,
   localDeviceQueryOptions,
+  lockDevice,
   LoginScreen,
   PasswordResetScreen,
+  PinScreen,
   roleFiltersSchema,
   RolesScreen,
+  type SignedIn,
+  signedInQueryKey,
+  signedInQueryOptions,
   sessionQueryOptions,
   signOut,
+  useAutoLock,
   UserMenu,
   userFiltersSchema,
   UsersScreen,
 } from "@mustawfi/core-access/client";
-import { ApiProblem, holdSessionToken, useClientRuntime } from "@mustawfi/core-config/client";
+import {
+  ApiProblem,
+  ApiUnreachable,
+  forgetSession,
+  useClientRuntime,
+} from "@mustawfi/core-config/client";
 import {
   departmentFiltersSchema,
   DepartmentsScreen,
@@ -36,7 +48,7 @@ import type { DeviceLicenseAudit } from "@mustawfi/core-tenancy/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
 import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/core-sync/client";
-import { useLocalDb } from "@mustawfi/local-db";
+import { type LocalDb, useLocalDb } from "@mustawfi/local-db";
 import { ProductsScreen } from "@mustawfi/inventory/client";
 import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
 import {
@@ -82,6 +94,8 @@ export interface RouterContext {
   readonly queryClient: QueryClient;
   /** What this client registers as: the Windows app is the main POS (ADR-0022). */
   readonly deviceType: DeviceType;
+  /** The local database, which says who is signed in on a registered device. */
+  readonly db: LocalDb;
 }
 
 /** A page's place in the frame: its title (a `shell` key), and whether it fills the content area. */
@@ -160,8 +174,19 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   notFoundComponent: NotFound,
 });
 
+/** Who is signed in, cached for the guards; a sign-in or a lock removes it, so it is read again. */
+function signedInOf(context: RouterContext): Promise<SignedIn | null> {
+  return context.queryClient.ensureQueryData({
+    ...signedInQueryOptions(context.db, bundleVerifier()),
+    revalidateIfStale: true,
+  });
+}
+
 function LoginPage() {
   const navigate = useNavigate();
+  const db = useLocalDb();
+  const { clock } = useClientRuntime();
+  const queryClient = useQueryClient();
   const { reset } = loginRoute.useSearch();
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-page p-4">
@@ -173,8 +198,12 @@ function LoginPage() {
             {label}
           </Link>
         )}
-        onSignedIn={() => {
-          void navigate({ to: "/products" });
+        onSignedIn={(session) => {
+          // On a registered device of the user's store, they are now the one signed in on it.
+          void beginDeviceSession(db, session, clock).then(() => {
+            queryClient.removeQueries({ queryKey: signedInQueryKey });
+            return navigate({ to: "/products" });
+          });
         }}
       />
     </main>
@@ -183,9 +212,76 @@ function LoginPage() {
 
 /** Only for signed-out visitors: a session goes straight to the app. */
 async function signedOutOnly({ context }: { readonly context: RouterContext }) {
-  const session = await context.queryClient.ensureQueryData(sessionQueryOptions());
-  if (session !== null) redirect({ to: "/products", throw: true });
+  let signedIn: SignedIn | null = null;
+  try {
+    signedIn = await signedInOf(context);
+  } catch (error) {
+    // Out of reach: signing in says so itself.
+    if (!(error instanceof ApiUnreachable)) throw error;
+  }
+  if (signedIn !== null) redirect({ to: "/products", throw: true });
 }
+
+/** A path inside the app to return to, never another origin. */
+const returnPathSchema = z.string().regex(/^\/(?![/\\])/);
+
+function PinPage() {
+  const navigate = useNavigate();
+  const db = useLocalDb();
+  const queryClient = useQueryClient();
+  const { reconnect, redirect: returnTo } = pinRoute.useSearch();
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-page p-4">
+      <ProductMark />
+      <PinScreen
+        bundleVerifier={bundleVerifier()}
+        reconnect={reconnect === true}
+        passwordLink={(label) => (
+          <Link to="/login" className="text-text-accent underline">
+            {label}
+          </Link>
+        )}
+        onSignedIn={() => {
+          void navigate({ href: returnTo ?? "/pos" });
+        }}
+        onCancel={() => {
+          void navigate({ to: "/pos" });
+        }}
+        onPasswordInstead={() => {
+          void lockDevice(db).then(() => {
+            queryClient.clear();
+            return navigate({ to: "/login" });
+          });
+        }}
+      />
+    </main>
+  );
+}
+
+/**
+ * The PIN screen (flow 12) of a registered device: where it opens, and where auto-lock and a user
+ * switch return. `reconnect` asks the user signed in without the server for their PIN to open a
+ * server session (rule 25); `redirect` is where to go once signed in.
+ */
+const pinRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pin",
+  validateSearch: z.object({
+    reconnect: z.boolean().optional().catch(undefined),
+    redirect: returnPathSchema.optional().catch(undefined),
+  }),
+  beforeLoad: async ({ context, search }) => {
+    const device = await context.queryClient.ensureQueryData(localDeviceQueryOptions(context.db));
+    if (device === null) redirect({ to: "/login", throw: true });
+    const signedIn = await signedInOf(context);
+    if (search.reconnect === true) {
+      if (signedIn?.device == null) redirect({ to: "/pin", throw: true });
+      return;
+    }
+    if (signedIn !== null) redirect({ href: search.redirect ?? "/pos", throw: true });
+  },
+  component: PinPage,
+});
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -329,20 +425,20 @@ function usePage() {
   return { title: page?.staticData.title, fill: page?.staticData.fill === true };
 }
 
+/** Who is signed in on this client (`SignedIn`); `undefined` while it loads. */
+function useSignedIn(): SignedIn | null | undefined {
+  return useQuery(signedInQueryOptions(useLocalDb(), bundleVerifier())).data;
+}
+
 /**
  * Who audits what the device's license readings notice (`core-foundation` rule 33): the user
- * signed in, through the app's outbox sink — only on a device registered to that user's store,
- * so no event is queued under another store's user.
+ * signed in on this device, through the app's outbox sink — only on a device registered to that
+ * user's store, so no event is queued under another store's user.
  */
 function useDeviceLicenseAudit(): DeviceLicenseAudit | undefined {
-  const db = useLocalDb();
   const { audit } = useClientRuntime();
-  const session = useQuery(sessionQueryOptions()).data;
-  const device = useQuery(localDeviceQueryOptions(db)).data;
-  const userId =
-    session !== undefined && session !== null && device?.tenantId === session.tenantId
-      ? session.user.id
-      : undefined;
+  const signedIn = useSignedIn();
+  const userId = signedIn?.device == null ? undefined : signedIn.user.id;
   return useMemo(
     () => (userId === undefined ? undefined : { sink: audit, userId }),
     [audit, userId],
@@ -357,28 +453,62 @@ function useDeviceLicenseAudit(): DeviceLicenseAudit | undefined {
 function useLicenseNotice(): LicenseNotice | undefined {
   const db = useLocalDb();
   const { clock } = useClientRuntime();
-  const session = useQuery(sessionQueryOptions()).data;
-  const device = useQuery(localDeviceQueryOptions(db)).data;
+  const signedIn = useSignedIn();
   const audit = useDeviceLicenseAudit();
-  const onDevice = device !== undefined && device !== null && device.tenantId === session?.tenantId;
+  const onDevice = signedIn?.device != null;
   const license = useQuery({
     ...deviceLicenseQueryOptions(db, bundleVerifier(), clock, audit),
     enabled: onDevice,
   }).data;
-  if (session === undefined || session === null || device === undefined) return undefined;
-  if (!onDevice) return serverLicenseNotice(session.license);
+  if (signedIn === undefined || signedIn === null) return undefined;
+  if (!onDevice) {
+    return signedIn.server === null ? undefined : serverLicenseNotice(signedIn.server.license);
+  }
   return license ?? undefined;
 }
 
-/** «Store suspended» in place of the app, with sign-out as the one action (rule 9). */
-function StoreSuspendedPage(props: { readonly standing?: LicenseNotice["standing"] }) {
+/**
+ * Ends the session on this device and shows the PIN screen (rules 24–25): auto-lock returns to
+ * where the user was, a user switch to the start. Nothing the previous user read stays cached,
+ * and an unsaved administration form is left without asking: those screens work online and keep
+ * nothing on the device.
+ */
+function useLockDevice(): (returnTo?: string) => Promise<void> {
+  const db = useLocalDb();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  return async (returnTo) => {
+    await lockDevice(db);
+    // Before the PIN screen mounts: a query cleared under a mounted screen never answers it.
+    queryClient.clear();
+    await navigate({
+      to: "/pin",
+      search: returnTo === undefined ? {} : { redirect: returnTo },
+      ignoreBlocker: true,
+    });
+  };
+}
+
+/**
+ * «Store suspended» in place of the app (rule 9), with one action: signing out — or, on a
+ * device of the store, switching user.
+ */
+function StoreSuspendedPage(props: {
+  readonly standing?: LicenseNotice["standing"];
+  readonly onDevice?: boolean;
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const lock = useLockDevice();
   const leave = useMutation({
-    mutationFn: signOut,
+    mutationFn: async () => {
+      if (props.onDevice === true) await lock();
+      else await signOut();
+    },
     onSettled: () => {
+      if (props.onDevice === true) return;
       // Signed out even when the server could not be told (offline): the token is forgotten.
-      holdSessionToken(undefined);
+      forgetSession();
       queryClient.clear();
       void navigate({ to: "/login" });
     },
@@ -397,33 +527,47 @@ function StoreSuspendedPage(props: { readonly standing?: LicenseNotice["standing
 /**
  * The frame (`screen-patterns.md`, approved on the preview 2026-09-25): the grouped side
  * navigation on the start side, collapsible with `Ctrl+B`; a top bar with the page title, the
- * license warning, the sync status, and the user; the page fills the rest.
+ * license warning, the sync status, and the user; the page fills the rest. On a device of the
+ * store, 5 minutes without input return to the PIN screen (rule 24).
  */
 function AppShell() {
   const { t } = useTranslation(SHELL_NAMESPACE);
   const navigate = useNavigate();
   const db = useLocalDb();
   const { clock } = useClientRuntime();
-  const session = useQuery(sessionQueryOptions()).data;
+  const signedIn = useSignedIn();
   const [collapsed, setCollapsed] = useNavigationCollapsed(NAVIGATION_STORAGE_KEY);
-  const permissions = useMemo(() => new Set(session?.user.permissions ?? []), [session]);
+  const permissions = useMemo(() => new Set(signedIn?.user.permissions ?? []), [signedIn]);
   const groups = useNavigationGroups(permissions);
   const page = usePage();
   const notice = useLicenseNotice();
-  const userId = session?.user.id;
   const audit = useDeviceLicenseAudit();
-  // A session begins here — a sign-in, or the app opened with one: the device evaluates the
-  // license for the business day when the day changed since (rule 6).
+  const lock = useLockDevice();
+  const onDevice = signedIn?.device != null;
+  // A session begins here — a sign-in (by PIN or password, each opening the device's session
+  // anew), or the app opened with one: the device evaluates the license for the business day
+  // when the day changed since (rule 6).
+  const sessionStart = signedIn?.device?.openedAt ?? signedIn?.user.id;
   useEffect(() => {
-    if (userId === undefined) return;
+    if (sessionStart === undefined) return;
     openDeviceLicenseDay(db, bundleVerifier(), clock, audit).catch((error: unknown) => {
       console.error("the license could not be evaluated on this device", error);
     });
-  }, [db, clock, userId, audit]);
-  const isOwner = session?.user.role.isOwner === true;
+  }, [db, clock, sessionStart, audit]);
+  useAutoLock({
+    db,
+    clock,
+    idleMs: IDLE_LOCK_MS,
+    enabled: onDevice,
+    onLock: () => {
+      void lock(`${window.location.pathname}${window.location.search}`);
+    },
+  });
+  if (signedIn === undefined || signedIn === null) return null;
+  const isOwner = signedIn.user.role.isOwner;
   // Only owners come in while the store is suspended (rule 9).
   if (suspendedFor(notice, isOwner)) {
-    return <StoreSuspendedPage standing={notice?.standing ?? null} />;
+    return <StoreSuspendedPage standing={notice?.standing ?? null} onDevice={onDevice} />;
   }
   return (
     <div
@@ -473,11 +617,15 @@ function AppShell() {
             )}
             <SyncStatusIndicator />
             <UserMenu
+              signedIn={signedIn}
               onAccount={() => {
                 void navigate({ to: "/account" });
               }}
               onSignedOut={() => {
                 void navigate({ to: "/login" });
+              }}
+              onSwitchUser={() => {
+                void lock();
               }}
             />
           </div>
@@ -505,15 +653,18 @@ const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
   beforeLoad: async ({ context }) => {
-    let session;
+    let signedIn;
     try {
-      session = await context.queryClient.ensureQueryData(sessionQueryOptions());
+      signedIn = await signedInOf(context);
     } catch (error) {
       // A non-owner's session while the store is suspended: the notice, not an error.
       if (isSuspension(error)) redirect({ to: "/suspended", throw: true });
       throw error;
     }
-    if (session === null) redirect({ to: "/login", throw: true });
+    if (signedIn !== null) return;
+    // A registered device opens on its PIN screen (flow 12); any other client on sign-in.
+    const device = await context.queryClient.ensureQueryData(localDeviceQueryOptions(context.db));
+    redirect({ to: device === null ? "/login" : "/pin", throw: true });
   },
   component: AppShell,
 });
@@ -536,7 +687,9 @@ const suspendedRoute = createRoute({
     redirect({ to: session === null ? "/login" : "/products", throw: true });
   },
   component: function SuspendedPage() {
-    return <StoreSuspendedPage />;
+    // On a registered device the one action ends its session too, back to the PIN screen.
+    const device = useQuery(localDeviceQueryOptions(useLocalDb())).data;
+    return <StoreSuspendedPage onDevice={device !== undefined && device !== null} />;
   },
 });
 
@@ -559,13 +712,13 @@ function PosPage() {
   const { t } = useTranslation(SHELL_NAMESPACE);
   const db = useLocalDb();
   const { clock } = useClientRuntime();
-  const session = useQuery(sessionQueryOptions()).data;
+  const signedIn = useSignedIn();
   const audit = useDeviceLicenseAudit();
   const license = useQuery(deviceLicenseQueryOptions(db, bundleVerifier(), clock, audit));
-  if (session === undefined || session === null) return null;
+  if (signedIn === undefined || signedIn === null) return null;
   return (
     <PosScreen
-      seller={{ userId: session.user.id, tenantId: session.tenantId }}
+      seller={{ userId: signedIn.user.id, tenantId: signedIn.tenantId }}
       license={{
         notice: license.data ?? undefined,
         failed: license.isError,
@@ -740,8 +893,7 @@ const LIMIT_SCREENS: Record<
 
 function LicensePage() {
   const { t } = useTranslation(SHELL_NAMESPACE);
-  const session = useQuery(sessionQueryOptions()).data;
-  const permissions = new Set(session?.user.permissions ?? []);
+  const permissions = new Set(useSignedIn()?.user.permissions ?? []);
   return (
     <LicenseScreen
       limitLink={(limit) => {
@@ -794,6 +946,7 @@ const printerRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   recoverRoute,
+  pinRoute,
   galleryRoute,
   suspendedRoute,
   appRoute.addChildren([
@@ -813,10 +966,10 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export function createAppRouter(queryClient: QueryClient, deviceType: DeviceType) {
+export function createAppRouter(queryClient: QueryClient, deviceType: DeviceType, db: LocalDb) {
   return createRouter({
     routeTree,
-    context: { queryClient, deviceType },
+    context: { queryClient, deviceType, db },
     defaultPreload: "intent",
   });
 }

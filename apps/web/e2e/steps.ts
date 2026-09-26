@@ -125,3 +125,28 @@ export async function registerDevice(
   await expectAccessible(page);
   return (await prefix.textContent()) ?? "";
 }
+
+/**
+ * On a registered device whose session ended (auto-lock, or the app opened after the idle time,
+ * `core-foundation` rule 24): from its PIN screen to password sign-in, keyboard only — for an
+ * owner who has no PIN.
+ */
+export async function signInAgainOnDevice(
+  page: Page,
+  password: string,
+  login: string,
+  storeCode: string,
+): Promise<void> {
+  await expect(page).toHaveURL(/\/pin/);
+  await tabTo(page, page.getByRole("link", { name: "الدخول بكلمة المرور" }));
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByLabel("رمز المتجر")).toBeFocused();
+  await page.keyboard.type(storeCode);
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(login);
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(password);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/products$/);
+}

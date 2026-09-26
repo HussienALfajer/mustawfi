@@ -6,6 +6,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
+import { localSession } from "@mustawfi/core-access/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { ApiProblem, ClientRuntimeProvider, configureApi } from "@mustawfi/core-config/client";
@@ -13,7 +14,7 @@ import { outboxAuditSink, SyncEngineProvider } from "@mustawfi/core-sync/client"
 import { createI18n, DIRECTION, LANGUAGE } from "@mustawfi/i18n";
 import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import { loadReceiptFonts } from "@mustawfi/printing";
-import { LocalDbProvider } from "@mustawfi/local-db";
+import { type LocalDb, LocalDbProvider } from "@mustawfi/local-db";
 import { SKELETON_DOCUMENT_DEFAULTS } from "@mustawfi/sales/shared";
 import { LocaleProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import { GALLERY_NAMESPACE, galleryMessages } from "@mustawfi/ui/gallery";
@@ -29,6 +30,8 @@ import { detectPlatform } from "./platform.ts";
 import { PrintingProvider } from "./printing.tsx";
 import { RECEIPT_FONT_SOURCES } from "./receipt-fonts.ts";
 import { createAppRouter } from "./router.tsx";
+
+type AppRouter = ReturnType<typeof createAppRouter>;
 
 /**
  * The composition root of the client — the browser app and the Windows app's page: the
@@ -47,15 +50,37 @@ document.documentElement.lang = LANGUAGE;
 document.documentElement.dir = DIRECTION;
 document.title = i18n.t("mark", { ns: SHELL_NAMESPACE });
 
+/** Made once the local database is open: its guards read who is signed in on the device. */
+let router: AppRouter | undefined;
+let localDb: LocalDb | undefined;
+
 /**
- * A session that expired or was revoked elsewhere shows up as a 401 on any call: drop every
- * cached query (the cached session included) and go back to sign-in.
+ * A 401 on any call means the server holds no session for this client. On a device of the store
+ * whose user is signed in without one — an offline PIN sign-in, or a session that expired — the
+ * user enters their PIN again to open one (`core-foundation` rule 25), then returns. Anywhere
+ * else the session expired or was revoked elsewhere: drop every cached query (the cached session
+ * included) and go back to sign-in.
  */
 function onApiError(error: Error): void {
-  if (error instanceof ApiProblem && error.code === accessProblemCodes.sessionRequired) {
+  if (!(error instanceof ApiProblem) || error.code !== accessProblemCodes.sessionRequired) return;
+  const app = router;
+  if (app === undefined || localDb === undefined) return;
+  // Read from the device itself, not the query cache, which a sign-in or a lock may just have
+  // emptied. The PIN screen's guard shows the plain screen when nobody is signed in on it.
+  void localSession(localDb).then((session) => {
+    const location = app.state.location;
+    if (session !== undefined) {
+      if (location.pathname !== "/pin") {
+        void app.navigate({
+          to: "/pin",
+          search: { reconnect: true, redirect: `${location.pathname}${location.searchStr}` },
+        });
+      }
+      return;
+    }
     queryClient.clear();
-    void router.navigate({ to: "/login" });
-  }
+    void app.navigate({ to: "/login" });
+  });
 }
 
 /**
@@ -66,6 +91,7 @@ function onApiError(error: Error): void {
 function onQueryError(error: Error): void {
   onApiError(error);
   if (
+    router !== undefined &&
     error instanceof ApiProblem &&
     error.code === tenancyProblemCodes.licenseSuspended &&
     router.state.location.pathname !== "/suspended"
@@ -83,7 +109,6 @@ const queryClient: QueryClient = new QueryClient({
     },
   },
 });
-const router = createAppRouter(queryClient, platform.deviceType);
 
 const newId = uuidV7Generator({ clock: systemClock, random: cryptoRandom });
 const runtime = {
@@ -123,6 +148,8 @@ const printerTransport = platform.openPrinter?.().catch((error: unknown) => {
 
 Promise.all([startLocalRuntime(queryClient, platform), printerTransport]).then(
   ([{ db, sync }, printer]) => {
+    router = createAppRouter(queryClient, platform.deviceType, db);
+    localDb = db;
     root.render(
       <StrictMode>
         <I18nextProvider i18n={i18n}>

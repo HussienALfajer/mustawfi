@@ -29,6 +29,10 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | فجوة في الترقيم | Number gap (numbers a device skipped, flagged and audited) | `numberGap` (`organization.numbering.gap`) |
 | قفل تلقائي | Auto-lock | `autoLock` |
 | قفل المستخدم على الجهاز | PIN lockout | `pinLockout` |
+| فتح القفل (بواسطة مشرف) | Unlock (a supervisor's, on the device) | `unlock` (`access.pin.unlocked`) |
+| شاشة الرمز السري | PIN screen (name tiles, then the pad) | `PinScreen` |
+| جلسة الجهاز | Device session (who is signed in on a registered device; its server session is optional) | `localSession`, `SignedIn` |
+| تبديل المستخدم | Switch user | `switchUser` |
 | إبطال الجهاز | Device revoke | `revoke` (`revokedAt`) |
 | مسح بيانات الجهاز | Device wipe | `wipe` |
 | التحقق بخطوتين | Two-factor authentication (TOTP) | `twoFactor` |
