@@ -34,7 +34,10 @@ export {
   tenancyProblemCodes,
 } from "./departments.ts";
 export {
+  BUSINESS_TIME_ZONE,
+  businessDate,
   EXPIRING_DAYS,
+  isReadOnlyState,
   LICENSE_ALGORITHM,
   LICENSE_BUNDLE_PART,
   LICENSE_STATES,
@@ -52,6 +55,7 @@ export {
   licenseState,
   licenseStateStarts,
   type LicenseTerms,
+  readOnlyBusinessDate,
   type VerifiedLicense,
   verifyLicense,
 } from "./license.ts";

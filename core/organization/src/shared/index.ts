@@ -1,6 +1,7 @@
 import {
   departmentNameSchema,
   departmentSchema,
+  LICENSE_STATES,
   tenantNameSchema,
 } from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
@@ -127,3 +128,37 @@ export const organizationPartSchema = z.strictObject({
 });
 
 export type OrganizationPart = z.infer<typeof organizationPartSchema>;
+
+/** The license's limits, in the order the «License and plan» screen lists them (rule 4). */
+export const LICENSE_LIMITS = [
+  "users",
+  "departments",
+  "mainPosDevices",
+  "companionDevices",
+] as const;
+
+export type LicenseLimitName = (typeof LICENSE_LIMITS)[number];
+
+/**
+ * `GET /api/v1/organization/license`: the owners' «License and plan» summary — the plan, the
+ * lifecycle state by the server's clock, when each later state begins, and each limit as used
+ * of allowed. Used can exceed allowed after a downgrade, which deactivates nothing (rule 4).
+ */
+export const licenseSummarySchema = z.object({
+  plan: z.string(),
+  state: z.enum(LICENSE_STATES),
+  expiresAt: z.iso.datetime(),
+  /** When writes stop: the grace days are over. */
+  readOnlyAt: z.iso.datetime(),
+  /** When only owners are admitted: the read-only days are over too. */
+  suspendedAt: z.iso.datetime(),
+  limits: z.array(
+    z.object({
+      limit: z.enum(LICENSE_LIMITS),
+      used: z.int().min(0),
+      allowed: z.int().min(0),
+    }),
+  ),
+});
+
+export type LicenseSummary = z.infer<typeof licenseSummarySchema>;

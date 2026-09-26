@@ -1,6 +1,7 @@
 import type { LocalDevice } from "@mustawfi/core-access/client";
 import { localDefaultDepartment } from "@mustawfi/core-organization/client";
 import { formatDocumentNumber } from "@mustawfi/core-organization/shared";
+import { BUSINESS_TIME_ZONE, businessDate } from "@mustawfi/core-tenancy/shared";
 import {
   enqueueOperation,
   nextDocumentSeq,
@@ -9,7 +10,6 @@ import {
   operationStates,
 } from "@mustawfi/core-sync/client";
 import { LOCAL_PRODUCTS_TABLE, localProductsById, priceCurrency } from "@mustawfi/inventory/client";
-import { DEFAULT_TIME_ZONE } from "@mustawfi/i18n";
 import { type Clock, type Currency, Decimal, type IdGenerator, Money } from "@mustawfi/kernel";
 import {
   int64,
@@ -40,7 +40,8 @@ const RATE_SCALE = 6;
  * The store's time zone, which sets an invoice's business date (ADR-0020: the device's day):
  * the default of ADR-0023 until the tenant's time zone is a setting.
  */
-export const BUSINESS_TIME_ZONE = DEFAULT_TIME_ZONE;
+// The business day is `core.tenancy`'s, so the server flags documents by the same day.
+export { BUSINESS_TIME_ZONE, businessDate };
 
 /** The POS cart (ADR-0023): written on every change, so it survives a closed tab or a power cut. */
 const cartLines = sqliteTable("sales_cart_lines", {
@@ -247,16 +248,6 @@ export interface RecordedSale {
   readonly invoiceId: string;
   readonly number: string;
   readonly total: Money;
-}
-
-/** `YYYY-MM-DD` of `instant` in `timeZone`. */
-export function businessDate(instant: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(instant);
 }
 
 /**

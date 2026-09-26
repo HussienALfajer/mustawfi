@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   departmentRenameSchema,
   departmentSchema,
+  licenseSummarySchema,
   logoUploadSchema,
   newDepartmentSchema,
   organizationProblemCodes,
@@ -15,6 +16,7 @@ import {
   storeProfileSchema,
 } from "../shared/index.ts";
 import type { OrganizationContext } from "./dependencies.ts";
+import { licenseSummary } from "./license.ts";
 import {
   type Actor,
   addDepartment,
@@ -52,10 +54,14 @@ const manageDepartments: { readonly access: RouteAccess } = {
 const editProfile: { readonly access: RouteAccess } = {
   access: { permission: "organization.profile.edit" },
 };
+const viewLicense: { readonly access: RouteAccess } = {
+  access: { permission: "organization.license.view" },
+};
 
 /**
  * `core.organization` routes, under `/api/v1/organization`: departments (stored by
- * `core.tenancy`, ADR-0030) and the store profile. Every query runs under the session's tenant.
+ * `core.tenancy`, ADR-0030), the store profile, and the «License and plan» summary.
+ * Every query runs under the session's tenant.
  */
 export function organizationRoutes(scope: FastifyInstance, context: OrganizationContext): void {
   const app = scope.withTypeProvider<ZodTypeProvider>();
@@ -224,6 +230,18 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
         });
       }
       return reply.type(logo.type).send(Buffer.from(logo.bytes));
+    },
+  );
+
+  app.get(
+    "/license",
+    {
+      config: viewLicense,
+      schema: { tags, response: { 200: licenseSummarySchema, ...refusals } },
+    },
+    async (request) => {
+      const session = sessionOf(request);
+      return asActor(session, (tx) => licenseSummary(tx, context.clock.now()));
     },
   );
 }

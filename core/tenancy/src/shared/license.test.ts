@@ -9,7 +9,9 @@ import {
 } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  businessDate,
   EXPIRING_DAYS,
+  isReadOnlyState,
   LICENSE_STATES,
   type LicenseClaims,
   licensePublicKeysSchema,
@@ -18,6 +20,7 @@ import {
   licenseState,
   licenseStateStarts,
   type LicenseTerms,
+  readOnlyBusinessDate,
   verifyLicense,
 } from "./license.ts";
 
@@ -209,5 +212,51 @@ describe("licenseState", () => {
     if (t.graceDays > 0) expect(state).toBe("grace");
     else if (t.readOnlyDays > 0) expect(state).toBe("readOnly");
     else expect(state).toBe("suspended");
+  });
+});
+
+describe("the business day (core-foundation rule 6)", () => {
+  it("turns at midnight in Damascus, three hours ahead of UTC", () => {
+    expect(businessDate(new Date("2026-10-27T20:59:59.999Z"))).toBe("2026-10-27");
+    expect(businessDate(new Date("2026-10-27T21:00:00.000Z"))).toBe("2026-10-28");
+  });
+
+  it("refuses an invalid instant", () => {
+    expect(() => businessDate(new Date(Number.NaN))).toThrow(RangeError);
+  });
+});
+
+describe("readOnlyBusinessDate (core-foundation rule 5)", () => {
+  it("is the Damascus date of the instant the grace days end", () => {
+    const terms: LicenseTerms = {
+      expiresAt: "2026-10-20T20:30:00.000Z",
+      graceDays: 7,
+      readOnlyDays: 30,
+    };
+    // Read-only from 2026-10-27T20:30Z, which is 23:30 on the 27th in Damascus.
+    expect(readOnlyBusinessDate(terms)).toBe("2026-10-27");
+    expect(readOnlyBusinessDate({ ...terms, expiresAt: "2026-10-20T21:00:00.000Z" })).toBe(
+      "2026-10-28",
+    );
+  });
+
+  test.prop([
+    fc.date({
+      min: new Date("2026-01-01T00:00:00.000Z"),
+      max: new Date("2030-01-01T00:00:00.000Z"),
+      noInvalidDate: true,
+    }),
+    fc.integer({ min: 0, max: 60 }),
+    fc.integer({ min: 0, max: 60 }),
+  ])("is the business date of the first instant the state is read-only", (expires, grace, days) => {
+    const terms: LicenseTerms = {
+      expiresAt: expires.toISOString(),
+      graceDays: grace,
+      readOnlyDays: days,
+    };
+    const start = licenseStateStarts(terms).readOnly;
+    expect(isReadOnlyState(licenseState(terms, new Date(start)))).toBe(true);
+    expect(isReadOnlyState(licenseState(terms, new Date(start - 1)))).toBe(false);
+    expect(readOnlyBusinessDate(terms)).toBe(businessDate(new Date(start)));
   });
 });

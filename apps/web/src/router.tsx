@@ -19,8 +19,10 @@ import {
   departmentFiltersSchema,
   DepartmentsScreen,
   departmentsQueryOptions,
+  LicenseScreen,
   StoreProfileScreen,
 } from "@mustawfi/core-organization/client";
+import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
 import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/core-sync/client";
 import { useLocalDb } from "@mustawfi/local-db";
 import { ProductsScreen } from "@mustawfi/inventory/client";
@@ -45,6 +47,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import {
+  BadgeCheck,
   Laptop,
   Layers,
   MonitorSmartphone,
@@ -224,6 +227,7 @@ type NavPath =
   | "/admin/users"
   | "/admin/roles"
   | "/admin/devices"
+  | "/admin/license"
   | "/device"
   | "/printer";
 
@@ -286,6 +290,12 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
         ...item("users", "/admin/users", <Users {...ICON_PROPS} />, "access.users.view"),
         ...item("roles", "/admin/roles", <ShieldCheck {...ICON_PROPS} />, "access.users.view"),
         ...item("devices", "/admin/devices", <Laptop {...ICON_PROPS} />, "access.devices.manage"),
+        ...item(
+          "license",
+          "/admin/license",
+          <BadgeCheck {...ICON_PROPS} />,
+          "organization.license.view",
+        ),
       ],
     },
     {
@@ -551,6 +561,55 @@ const storeProfileRoute = createRoute({
   component: StoreProfilePage,
 });
 
+/** Where each license limit is managed, and the permission that screen needs. */
+const LIMIT_SCREENS: Record<
+  LicenseLimitName,
+  { readonly to: NavPath; readonly permission: string; readonly label: `licenseLinks.${string}` }
+> = {
+  users: { to: "/admin/users", permission: "access.users.view", label: "licenseLinks.users" },
+  departments: {
+    to: "/admin/departments",
+    permission: "organization.departments.manage",
+    label: "licenseLinks.departments",
+  },
+  mainPosDevices: {
+    to: "/admin/devices",
+    permission: "access.devices.manage",
+    label: "licenseLinks.devices",
+  },
+  companionDevices: {
+    to: "/admin/devices",
+    permission: "access.devices.manage",
+    label: "licenseLinks.devices",
+  },
+};
+
+function LicensePage() {
+  const { t } = useTranslation(SHELL_NAMESPACE);
+  const session = useQuery(sessionQueryOptions()).data;
+  const permissions = new Set(session?.user.permissions ?? []);
+  return (
+    <LicenseScreen
+      limitLink={(limit) => {
+        const screen = LIMIT_SCREENS[limit];
+        return permissions.has(screen.permission) ? (
+          <Link to={screen.to} className="text-text-accent underline">
+            {t(screen.label)}
+          </Link>
+        ) : null;
+      }}
+    />
+  );
+}
+
+/** «License and plan» (summary), for owners and holders of `organization.license.view`. */
+const licenseRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/license",
+  staticData: { title: "pages.license", fill: true },
+  component: LicensePage,
+});
+
 function DevicePage() {
   const { deviceType } = deviceRoute.useRouteContext();
   return <DeviceScreen deviceType={deviceType} bundleVerifier={bundleVerifier()} />;
@@ -592,6 +651,7 @@ const routeTree = rootRoute.addChildren([
     rolesRoute,
     devicesRoute,
     storeProfileRoute,
+    licenseRoute,
     deviceRoute,
     printerRoute,
     accountRoute,

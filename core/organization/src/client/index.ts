@@ -29,3 +29,5 @@ export {
 } from "./store-profile/store-profile-screen.tsx";
 export { storeProfileQueryKey, storeProfileQueryOptions } from "./store-profile/queries.ts";
 export { organizationBundlePart } from "./bundle-part.ts";
+export { LicenseScreen, type LicenseScreenProps } from "./license/license-screen.tsx";
+export { licenseQueryKey, licenseQueryOptions } from "./license/queries.ts";

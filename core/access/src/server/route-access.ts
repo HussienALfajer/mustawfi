@@ -1,11 +1,17 @@
 import { ProblemError } from "@mustawfi/core-config/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
-import type { TenantDatabase } from "@mustawfi/core-tenancy/server";
+import {
+  currentLicenseStatus,
+  licenseReadOnly,
+  licenseSuspended,
+  type TenantDatabase,
+} from "@mustawfi/core-tenancy/server";
+import { isReadOnlyState, type LicenseState } from "@mustawfi/core-tenancy/shared";
 import type { Clock } from "@mustawfi/kernel";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { accessProblemCodes } from "../shared/index.ts";
 import { type Device, requireDevice } from "./devices.ts";
-import { requireSession, type Session } from "./sessions.ts";
+import { requireSession, SAFE_METHODS, type Session } from "./sessions.ts";
 
 /**
  * What a route needs (`core-foundation` rule 17), declared in its options as
@@ -27,7 +33,19 @@ declare module "fastify" {
   interface FastifyContextConfig {
     /** Required on every route; `installRouteAccess` refuses to register one without it. */
     access?: RouteAccess;
+    /**
+     * The route stays open while the license is read-only or suspended (`core-foundation` rule
+     * 5): sign-in, sign-out, the user's own account, push, the wipe report, and export. Any other
+     * write is refused then, and a suspended license admits only owners' sessions.
+     */
+    allowedWhenReadOnly?: true;
   }
+}
+
+/** A route's guard declaration, as a module writes it in `config`. */
+export interface RouteConfig {
+  readonly access: RouteAccess;
+  readonly allowedWhenReadOnly?: true;
 }
 
 /** A registered route and what it needs. */
@@ -35,6 +53,8 @@ export interface RouteAccessEntry {
   readonly method: string;
   readonly url: string;
   readonly access: RouteAccess;
+  /** Open while the license is read-only or suspended (rule 5). */
+  readonly allowedWhenReadOnly: boolean;
 }
 
 /** What the guard needs from the host. */
@@ -63,6 +83,12 @@ export function permissionDenied(): ProblemError {
  * checks the permission: 401 without a valid credential, 403 `access.permission.denied`
  * without the permission. A route registered before the guard (the CORS preflight) declares
  * nothing and is refused unless it answers by itself.
+ *
+ * It also applies the license's lifecycle, computed with the server clock (rule 5): while the
+ * license is suspended, a non-owner's session gets 403 `tenancy.license.suspended` everywhere;
+ * while it is read-only or suspended, every write gets 403 `tenancy.license.readOnly` —
+ * except on routes marked `allowedWhenReadOnly`. Public routes carry no tenant here: one that
+ * writes checks the license in its handler (`requireWritableLicense`).
  */
 export function installRouteAccess(app: FastifyInstance, context: RouteAccessContext): void {
   const table: RouteAccessEntry[] = [];
@@ -86,7 +112,13 @@ export function installRouteAccess(app: FastifyInstance, context: RouteAccessCon
     } else if (!["public", "session", "device", "deviceEvenRevoked"].includes(access)) {
       throw new Error(`route ${name} declares unknown access ${JSON.stringify(access)}`);
     }
-    for (const method of methods) table.push({ method, url: route.url, access });
+    if (![undefined, true].includes(route.config?.allowedWhenReadOnly)) {
+      throw new Error(`route ${name} declares allowedWhenReadOnly other than true`);
+    }
+    const allowedWhenReadOnly = route.config?.allowedWhenReadOnly === true;
+    for (const method of methods) {
+      table.push({ method, url: route.url, access, allowedWhenReadOnly });
+    }
   });
 
   app.addHook("onRequest", async (request) => {
@@ -94,17 +126,39 @@ export function installRouteAccess(app: FastifyInstance, context: RouteAccessCon
     const access = request.routeOptions.config.access;
     if (access === undefined) throw permissionDenied();
     if (access === "public") return;
+    const gated = request.routeOptions.config.allowedWhenReadOnly !== true;
+    const write = !SAFE_METHODS.has(request.method);
     if (access === "device" || access === "deviceEvenRevoked") {
       const allowRevoked = access === "deviceEvenRevoked";
-      devices.set(request, await requireDevice(request, context, { allowRevoked }));
+      const device = await requireDevice(request, context, { allowRevoked });
+      if (gated && write && isReadOnlyState(await licenseStateOf(device.tenantId))) {
+        throw licenseReadOnly();
+      }
+      devices.set(request, device);
       return;
     }
     const session = await requireSession(request, context);
+    // Read once, and only when it can refuse: owners read in every state.
+    let state: LicenseState | undefined;
+    if (gated && (write || !session.user.role.isOwner)) {
+      state = await licenseStateOf(session.tenantId);
+    }
+    // A non-owner learns the store is suspended before anything about their role.
+    if (state === "suspended" && !session.user.role.isOwner) throw licenseSuspended();
     if (typeof access === "object" && !session.grant.can(access.permission)) {
       throw permissionDenied();
     }
+    if (write && state !== undefined && isReadOnlyState(state)) throw licenseReadOnly();
     sessions.set(request, session);
   });
+
+  /** The tenant's license state now, by the server clock (rule 5). */
+  function licenseStateOf(tenantId: string): Promise<LicenseState> {
+    return context.tenants.withTenant({ tenantId }, async (tx) => {
+      const { state } = await currentLicenseStatus(tx, context.clock.now());
+      return state;
+    });
+  }
 }
 
 /** The routes registered on `app` since `installRouteAccess`, with what each needs. */

@@ -27,6 +27,7 @@ export const shellMessages = {
     users: "المستخدمون",
     roles: "الأدوار والصلاحيات",
     devices: "الأجهزة",
+    license: "الترخيص والباقة",
     device: "تسجيل الجهاز",
     printer: "الطابعة",
   },
@@ -40,9 +41,16 @@ export const shellMessages = {
     users: "المستخدمون",
     roles: "الأدوار والصلاحيات",
     devices: "الأجهزة",
+    license: "الترخيص والباقة",
     device: "هذا الجهاز",
     printer: "الطابعة",
     account: "حسابي",
+  },
+  /** The «License and plan» screen's links to where each limit is managed. */
+  licenseLinks: {
+    users: "إدارة المستخدمين",
+    departments: "إدارة الأقسام",
+    devices: "إدارة الأجهزة",
   },
   registerDevice: "تسجيل هذا الجهاز",
   localDbUnavailable:

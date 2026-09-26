@@ -75,6 +75,38 @@ test("keyboard only: edit the store profile and add a department", async ({ page
   await expect(table.getByRole("row").filter({ hasText: "لا أقسام تطابق البحث" })).toBeVisible();
 });
 
+test("keyboard only: read the license and plan, and go to where a limit is managed", async ({
+  page,
+}, testInfo) => {
+  await signIn(page);
+  await expect(page).toHaveURL(/\/products$/);
+  const navigation = page.getByRole("navigation", { name: "التنقل الرئيسي" });
+  await tabTo(page, navigation.getByRole("link", { name: "الترخيص والباقة" }));
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/admin\/license$/);
+  await expect(page.getByRole("heading", { name: "الترخيص والباقة", level: 1 })).toBeVisible();
+
+  // The run's license: a year of the phones plan, so active; each limit as used of allowed.
+  await expect(page.getByText("الاحترافية لمحلات الموبايل")).toBeVisible();
+  await expect(page.getByText("ساري", { exact: true })).toBeVisible();
+  const limits = page.getByRole("table");
+  for (const limit of [
+    "المستخدمون النشطون",
+    "الأقسام النشطة",
+    "الأجهزة الرئيسية (كاشير)",
+    "الأجهزة المساعدة (موبايل)",
+  ]) {
+    await expect(limits.getByRole("row").filter({ hasText: limit })).toContainText(/\d+ من \d+/);
+  }
+  await expectAccessible(page);
+  await attachScreens(page, testInfo, "license");
+
+  // Each limit links to the screen where it is managed.
+  await tabTo(page, limits.getByRole("link", { name: "إدارة المستخدمين" }));
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/admin\/users/);
+});
+
 test("the side navigation collapses to icons and keeps its labels", async ({ page }) => {
   await signIn(page);
   await expect(page).toHaveURL(/\/products$/);

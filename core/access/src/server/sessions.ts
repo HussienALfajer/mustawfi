@@ -221,7 +221,8 @@ export function deviceCredentialOf(request: Pick<SessionRequest, "headers">): st
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+/** Methods that change nothing: no cross-origin check (here) and no license gate (rule 5). */
+export const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
  * Whether the request's `Origin` is the host it was sent to. A browser attaches the session
