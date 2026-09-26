@@ -144,6 +144,60 @@ describe("server host", () => {
   });
 });
 
+describe("client address behind a reverse proxy (TRUST_PROXY)", () => {
+  async function hostWith(trustProxy: readonly string[]) {
+    const lines: string[] = [];
+    const registry = createModuleRegistry<FixtureContext>([]);
+    const server = await buildServer({
+      registry,
+      context: { taken: new Set<string>() },
+      guard: (instance) => {
+        installRouteAccess(instance, {
+          tenants: noDatabase,
+          clock: systemClock,
+          permissionCatalogue: registry.permissions,
+        });
+      },
+      trustProxy,
+      logger: { level: "warn", stream: { write: (line: string) => lines.push(line) } },
+    });
+    const addresses: string[] = [];
+    server.addHook("onRequest", (request, _reply, done) => {
+      addresses.push(request.ip);
+      done();
+    });
+    const health = (headers: Record<string, string>) =>
+      server.inject({ method: "GET", url: "/api/v1/health", remoteAddress: "10.0.0.2", headers });
+    return { server, lines, addresses, health };
+  }
+
+  it("ignores X-Forwarded-For without a trusted proxy, and warns once that one is probably missing", async () => {
+    const { server, lines, addresses, health } = await hostWith([]);
+    try {
+      await health({});
+      expect(lines).toEqual([]);
+      await health({ "x-forwarded-for": "198.51.100.9" });
+      await health({ "x-forwarded-for": "198.51.100.10" });
+      expect(addresses).toEqual(["10.0.0.2", "10.0.0.2", "10.0.0.2"]);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("TRUST_PROXY");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("takes the client's address from a trusted proxy, without a warning", async () => {
+    const { server, lines, addresses, health } = await hostWith(["10.0.0.0/8"]);
+    try {
+      await health({ "x-forwarded-for": "198.51.100.9" });
+      expect(addresses).toEqual(["198.51.100.9"]);
+      expect(lines).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 describe("cross-origin calls (CORS)", () => {
   it("lets the Windows app's origin call with a bearer token, never with cookies", async () => {
     const preflight = await app.inject({

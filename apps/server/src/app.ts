@@ -39,6 +39,26 @@ export interface ServerOptions<Context> {
 }
 
 /**
+ * Logs a warning, once per process, when a request reaches a server that trusts no proxy but
+ * carries `X-Forwarded-For`: the server is most likely behind a reverse proxy that `TRUST_PROXY`
+ * does not name, so every client has the proxy's address and the per-address sign-in limit
+ * (`core-foundation` rule 21) would throttle them all together. The header itself is ignored.
+ */
+function warnOfUntrustedProxy(app: FastifyInstance): void {
+  let warned = false;
+  app.addHook("onRequest", (request, _reply, done) => {
+    if (!warned && request.headers["x-forwarded-for"] !== undefined) {
+      warned = true;
+      request.log.warn(
+        { peer: request.ip },
+        "a request carries X-Forwarded-For but TRUST_PROXY names no proxy: every client is seen at the proxy's address and shares its sign-in limit; set TRUST_PROXY to the reverse proxy's address",
+      );
+    }
+    done();
+  });
+}
+
+/**
  * The Fastify host (ADR-0014): Zod validates requests and serializes responses, every error is
  * problem details, OpenAPI is generated from the routes' Zod schemas, and each enabled module
  * of the registry is mounted in its own scope under `/api/v1/<module>`, behind the route guard.
@@ -51,6 +71,7 @@ export async function buildServer<Context>(
     logger: options.logger ?? false,
     trustProxy: trustProxy.length === 0 ? false : [...trustProxy],
   });
+  if (trustProxy.length === 0) warnOfUntrustedProxy(app);
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(problemErrorHandler);

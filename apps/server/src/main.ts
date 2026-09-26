@@ -21,6 +21,12 @@ const app = await buildHostServer({
   trustProxy: config.TRUST_PROXY,
 });
 app.addHook("onClose", () => tenants.close());
+app.log.info(
+  { trustProxy: config.TRUST_PROXY },
+  config.TRUST_PROXY.length === 0
+    ? "no reverse proxy is trusted: client addresses are the peers' own"
+    : "client addresses come from X-Forwarded-For through the trusted proxies",
+);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
