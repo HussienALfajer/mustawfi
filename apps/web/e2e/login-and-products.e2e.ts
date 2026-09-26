@@ -69,6 +69,10 @@ test("keyboard only: sign in, add a product, see it listed, sign out", async ({ 
 test("returns to sign-in when the session ends elsewhere", async ({ page }) => {
   await signIn(page);
   await expect(page).toHaveURL(/\/products$/);
+  // The screen has loaded what it reads first: a request still on its way would meet the logout
+  // below, and return to sign-in before the form is used.
+  await expect(page.getByLabel("اسم المنتج")).toBeVisible();
+  await page.waitForLoadState("networkidle");
   // Revoked behind the app's back (another tab signing out); the cached session is now stale.
   await page.evaluate(() => fetch("/api/v1/access/logout", { method: "POST" }));
   await tabTo(page, page.getByLabel("اسم المنتج"));
