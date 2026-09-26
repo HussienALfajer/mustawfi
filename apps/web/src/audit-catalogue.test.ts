@@ -191,6 +191,11 @@ const PASS_THROUGH: Readonly<Record<string, string>> = {
   "core/tenancy/src/client/device-license.ts": "reads DEVICE_LICENSE_EVENTS, written out whole",
   "core/access/src/client/pin/local-sign-in.ts": "reads PIN_DEVICE_EVENTS, written out whole",
   "core/access/src/client/pin/override.ts": "reads OVERRIDE_DEVICE_EVENTS, written out whole",
+  // The audit log's reader (slice 17): filters and views name an action; none writes one.
+  "core/audit/src/shared/index.ts": "declares the log's filter and view schemas; writes nothing",
+  "core/audit/src/server/entries.ts": "reads the log for the viewer; writes nothing",
+  "core/audit/src/client/log/queries.ts": "passes the action filter to the API; writes nothing",
+  "core/audit/src/client/log/audit-log-screen.tsx": "filters and shows actions; writes nothing",
 };
 
 function sourceFiles(dir: string): string[] {

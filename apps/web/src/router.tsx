@@ -44,6 +44,7 @@ import {
   StoreSuspendedScreen,
   suspendedFor,
 } from "@mustawfi/core-organization/client";
+import { AuditLogScreen, auditLogFiltersSchema } from "@mustawfi/core-audit/client";
 import type { DeviceLicenseAudit } from "@mustawfi/core-tenancy/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
@@ -79,6 +80,7 @@ import {
   Package,
   Printer,
   ReceiptText,
+  ScrollText,
   ShieldCheck,
   ShoppingCart,
   Store,
@@ -337,6 +339,7 @@ type NavPath =
   | "/admin/roles"
   | "/admin/devices"
   | "/admin/license"
+  | "/admin/audit"
   | "/device"
   | "/printer";
 
@@ -406,6 +409,7 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
           <BadgeCheck {...ICON_PROPS} />,
           "organization.license.view",
         ),
+        ...item("audit", "/admin/audit", <ScrollText {...ICON_PROPS} />, "audit.view"),
       ],
     },
     {
@@ -854,6 +858,27 @@ const devicesRoute = createRoute({
   component: DevicesPage,
 });
 
+function AuditLogPage() {
+  const filters = auditLogRoute.useSearch();
+  const navigate = auditLogRoute.useNavigate();
+  return (
+    <AuditLogScreen
+      filters={filters}
+      onFiltersChange={(next) => {
+        void navigate({ search: next, replace: true });
+      }}
+    />
+  );
+}
+
+const auditLogRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/audit",
+  staticData: { title: "pages.audit", fill: true },
+  validateSearch: auditLogFiltersSchema,
+  component: AuditLogPage,
+});
+
 function StoreProfilePage() {
   const [dirty, setDirty] = useState(false);
   const blocker = useBlocker({
@@ -968,6 +993,7 @@ const routeTree = rootRoute.addChildren([
     usersRoute,
     rolesRoute,
     devicesRoute,
+    auditLogRoute,
     storeProfileRoute,
     licenseRoute,
     deviceRoute,

@@ -1,6 +1,13 @@
-import { accessBundlePart, accessModule, type TotpKeyRing } from "@mustawfi/core-access/server";
+import {
+  accessBundlePart,
+  accessModule,
+  listDevices,
+  listUsers,
+  sessionOf,
+  type TotpKeyRing,
+} from "@mustawfi/core-access/server";
 import { ACCESS_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-access/shared";
-import { auditModule } from "@mustawfi/core-audit/server";
+import { type AuditDirectory, auditModule } from "@mustawfi/core-audit/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
   type BundlePart,
@@ -9,6 +16,7 @@ import {
   createModuleRegistry,
   type ModuleManifest,
   type ModuleRegistry,
+  type RequestActor,
 } from "@mustawfi/core-config/server";
 import { ledgerModule } from "@mustawfi/core-ledger/server";
 import { organizationBundlePart, organizationModule } from "@mustawfi/core-organization/server";
@@ -29,6 +37,7 @@ import { TENANCY_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-tenancy/shared";
 import { inventoryModule } from "@mustawfi/inventory/server";
 import type { Clock, IdGenerator, RandomSource } from "@mustawfi/kernel";
 import { salesModule, salesSyncOperations } from "@mustawfi/sales/server";
+import type { FastifyRequest } from "fastify";
 
 /** What the host hands every module's routes. */
 export interface HostContext {
@@ -47,6 +56,10 @@ export interface HostContext {
   readonly bundleKey: BundleSigningKey;
   /** The configuration bundle's parts of the enabled modules (`hostBundleParts`). */
   readonly bundleParts: readonly BundlePart<TenantTransaction>[];
+  /** Who a guarded request acts for, for modules below `core.access` (`core.audit`). */
+  readonly requestActor: (request: FastifyRequest) => RequestActor;
+  /** The names the audit log shows, from `core.access` (`hostAuditDirectory`). */
+  readonly auditDirectory: AuditDirectory;
 }
 
 /** Every module this server runs. A module missing here fails `modules.test.ts`. */
@@ -128,6 +141,35 @@ export function hostBundleParts(
   return parts;
 }
 
+/** What the host supplies; `hostContext` composes the rest from the registry and the modules. */
+export type HostServices = Omit<
+  HostContext,
+  "syncOperations" | "permissionCatalogue" | "bundleParts" | "requestActor" | "auditDirectory"
+>;
+
+/** The session's tenant, branch, and user, for a route whose guard authenticated a session. */
+function requestActor(request: FastifyRequest): RequestActor {
+  const session = sessionOf(request);
+  return { tenantId: session.tenantId, branchId: session.branchId, userId: session.user.id };
+}
+
+/**
+ * The users and devices the audit log names (`core-foundation` flow 10), from `core.access`,
+ * which depends on `core.audit` and so cannot be imported by it.
+ */
+export const hostAuditDirectory: AuditDirectory = {
+  async users(tx) {
+    return (await listUsers(tx)).map((user) => ({ id: user.id, name: user.name }));
+  },
+  async devices(tx) {
+    return (await listDevices(tx)).map((device) => ({
+      id: device.id,
+      name: device.name,
+      prefix: device.prefix,
+    }));
+  },
+};
+
 /**
  * The context every module's routes receive, from the registry and the host's services: the
  * sync operations and bundle parts of its enabled modules and the permissions of all its
@@ -135,10 +177,12 @@ export function hostBundleParts(
  */
 export function hostContext(
   registry: ModuleRegistry<HostContext>,
-  services: Omit<HostContext, "syncOperations" | "permissionCatalogue" | "bundleParts">,
+  services: HostServices,
 ): HostContext {
   return {
     ...services,
+    requestActor,
+    auditDirectory: hostAuditDirectory,
     syncOperations: hostSyncOperations(registry),
     permissionCatalogue: registry.permissions,
     bundleParts: hostBundleParts(registry),

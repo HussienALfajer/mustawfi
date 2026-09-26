@@ -1,4 +1,4 @@
-import { ProblemError } from "@mustawfi/core-config/server";
+import { ProblemError, type RouteAccess } from "@mustawfi/core-config/server";
 import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
   currentLicenseStatus,
@@ -13,40 +13,9 @@ import { accessProblemCodes } from "../shared/index.ts";
 import { type Device, requireDevice } from "./devices.ts";
 import { requireSession, SAFE_METHODS, type Session } from "./sessions.ts";
 
-/**
- * What a route needs (`core-foundation` rule 17), declared in its options as
- * `config: { access }`:
- * - `public` — no credential: sign-in, device registration (by its code), health, OpenAPI;
- * - `session` — any signed-in user: their own session and account, and reads every user needs;
- * - `device` — a registered device's credential, not revoked (pull, the device's own view);
- * - `deviceEvenRevoked` — a registered device's credential, a revoked one included: push and
- *   the wipe report, the only calls a revoked device may still make (rule 23);
- * - `{ permission }` — a signed-in user whose role holds this unscoped permission.
- *
- * A scoped permission needs a department, which only the handler knows: such a route declares
- * `session` and checks `session.grant.can(permission, department)` itself.
- */
-export type RouteAccess =
-  "public" | "session" | "device" | "deviceEvenRevoked" | { readonly permission: string };
-
-declare module "fastify" {
-  interface FastifyContextConfig {
-    /** Required on every route; `installRouteAccess` refuses to register one without it. */
-    access?: RouteAccess;
-    /**
-     * The route stays open while the license is read-only or suspended (`core-foundation` rule
-     * 5): sign-in, sign-out, the user's own account, push, the wipe report, and export. Any other
-     * write is refused then, and a suspended license admits only owners' sessions.
-     */
-    allowedWhenReadOnly?: true;
-  }
-}
-
-/** A route's guard declaration, as a module writes it in `config`. */
-export interface RouteConfig {
-  readonly access: RouteAccess;
-  readonly allowedWhenReadOnly?: true;
-}
+// The declaration vocabulary (`RouteAccess`, `RouteConfig`, and `config.access` on Fastify's
+// route options) lives in `core.config`, so modules below this one declare routes too.
+export type { RouteAccess, RouteConfig } from "@mustawfi/core-config/server";
 
 /** A registered route and what it needs. */
 export interface RouteAccessEntry {

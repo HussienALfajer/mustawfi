@@ -2,7 +2,7 @@ import { installRouteAccess } from "@mustawfi/core-access/server";
 import type { ModuleRegistry } from "@mustawfi/core-config/server";
 import type { FastifyInstance } from "fastify";
 import { buildServer, type ServerOptions } from "./app.ts";
-import { type HostContext, hostContext } from "./modules.ts";
+import { type HostContext, hostContext, type HostServices } from "./modules.ts";
 
 export interface HostServerOptions extends Omit<
   ServerOptions<HostContext>,
@@ -10,7 +10,7 @@ export interface HostServerOptions extends Omit<
 > {
   readonly registry: ModuleRegistry<HostContext>;
   /** The host's services; sync operations, permissions, and bundle parts come from the registry. */
-  readonly services: Omit<HostContext, "syncOperations" | "permissionCatalogue" | "bundleParts">;
+  readonly services: HostServices;
 }
 
 /**
