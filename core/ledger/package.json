@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     "./shared": "./src/shared/index.ts",
-    "./server": "./src/server/index.ts"
+    "./server": "./src/server/index.ts",
+    "./client": "./src/client/index.ts"
   },
   "mustawfi": {
     "dependsOn": [
@@ -18,6 +19,7 @@
   "dependencies": {
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/core-tenancy": "workspace:*",
+    "@mustawfi/i18n": "workspace:*",
     "@mustawfi/kernel": "workspace:*",
     "drizzle-orm": "0.45.3",
     "zod": "4.6.5"

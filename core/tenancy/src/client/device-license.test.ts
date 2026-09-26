@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fc, test as property } from "@fast-check/vitest";
-import type { LoadedBundle } from "@mustawfi/core-config/client";
+import type { AuditSink, DeviceAuditEvent, LoadedBundle } from "@mustawfi/core-config/client";
 import { manualClock } from "@mustawfi/kernel";
-import { type LocalDb, migrateLocalDb } from "@mustawfi/local-db";
+import { type LocalDb, type LocalExecutor, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -17,6 +17,7 @@ import {
   CLOCK_SKEW_LIMIT_MS,
   CLOCK_TOLERANCE_MS,
   deviceLicense,
+  type DeviceLicenseAudit,
   openLicenseDay,
   recordServerTime,
   tenancyLocalMigrations,
@@ -323,5 +324,200 @@ describe("maximum offline days (rule 7)", () => {
     const license = valid(claims({ maxOfflineDays: 10 }), START);
     clock.advance(12 * DAY);
     expect((await openLicenseDay(db, license, clock)).restriction).toBe("offlineTooLong");
+  });
+});
+
+const USER = "0199a000-0000-7000-8000-0000000000aa";
+
+/** A sink that keeps what it was handed, as the outbox would queue it. */
+function recording(sink?: AuditSink["record"]): {
+  audit: DeviceLicenseAudit;
+  events: DeviceAuditEvent[];
+} {
+  const events: DeviceAuditEvent[] = [];
+  return {
+    events,
+    audit: {
+      userId: USER,
+      sink: {
+        async record(tx, event) {
+          await sink?.(tx, event);
+          events.push(event);
+        },
+      },
+    },
+  };
+}
+
+const actions = (events: readonly DeviceAuditEvent[]) => events.map((event) => event.action);
+
+describe("license and clock events on the device audit path (rule 33)", () => {
+  it("audits the clock moved back once while it lasts, and again once it happens again", async () => {
+    const license = valid(claims());
+    const { audit, events } = recording();
+    await openLicenseDay(db, license, clock, audit);
+    expect(events).toEqual([]);
+    clock.set(new Date(START.getTime() - HOUR));
+    await deviceLicense(db, license, clock, audit);
+    await deviceLicense(db, license, clock, audit);
+    expect(events).toEqual([
+      {
+        action: "tenancy.clock.movedBack",
+        userId: USER,
+        after: { localTime: "2026-09-26T06:00:00.000Z", highWaterMark: START.toISOString() },
+      },
+    ]);
+    // The server lifts it; the next time the clock goes back is a new event.
+    clock.set(START);
+    await recordServerTime(db, START, clock);
+    await deviceLicense(db, license, clock, audit);
+    clock.set(new Date(START.getTime() - 2 * HOUR));
+    await deviceLicense(db, license, clock, audit);
+    expect(actions(events)).toEqual(["tenancy.clock.movedBack", "tenancy.clock.movedBack"]);
+  });
+
+  it("audits a clock found half an hour off the server's", async () => {
+    const license = valid(claims());
+    const { audit, events } = recording();
+    await openLicenseDay(db, license, clock, audit);
+    const server = new Date(START.getTime() + CLOCK_SKEW_LIMIT_MS + MINUTE);
+    await recordServerTime(db, server, clock);
+    await deviceLicense(db, license, clock, audit);
+    expect(events).toEqual([
+      {
+        action: "tenancy.clock.wrong",
+        userId: USER,
+        after: { localTime: START.toISOString(), serverTime: server.toISOString() },
+      },
+    ]);
+  });
+
+  it("audits the day's read-only and suspended states when the device reaches them", async () => {
+    // Read-only from two days after expiry, suspended a day later.
+    const license = valid(
+      claims({
+        expiresAt: new Date(START.getTime() - 2 * DAY - HOUR).toISOString(),
+        graceDays: 2,
+        readOnlyDays: 1,
+      }),
+    );
+    const { audit, events } = recording();
+    await openLicenseDay(db, license, clock, audit);
+    await deviceLicense(db, license, clock, audit);
+    expect(events).toEqual([
+      {
+        action: "tenancy.license.readOnlyReached",
+        userId: USER,
+        after: {
+          state: "readOnly",
+          businessDate: "2026-09-26",
+          expiresAt: new Date(START.getTime() - 2 * DAY - HOUR).toISOString(),
+          licenseIssuedAt: "2026-09-01T00:00:00.000Z",
+        },
+      },
+    ]);
+    clock.advance(DAY);
+    await recordServerTime(db, clock.now(), clock);
+    await openLicenseDay(db, license, clock, audit);
+    expect(actions(events)).toEqual([
+      "tenancy.license.readOnlyReached",
+      "tenancy.license.suspendedReached",
+    ]);
+  });
+
+  it("audits the maximum offline days reached, with the last server contact", async () => {
+    const license = valid(claims({ maxOfflineDays: 10 }));
+    const { audit, events } = recording();
+    await recordServerTime(db, START, clock);
+    await openLicenseDay(db, license, clock, audit);
+    clock.advance(11 * DAY);
+    await openLicenseDay(db, license, clock, audit);
+    await openLicenseDay(db, license, clock, audit);
+    expect(events).toEqual([
+      {
+        action: "tenancy.license.offlineTooLong",
+        userId: USER,
+        after: {
+          lastServerContact: START.toISOString(),
+          maxOfflineDays: 10,
+          businessDate: businessDate(clock.now()),
+        },
+      },
+    ]);
+  });
+
+  it("audits nothing for an active day", async () => {
+    const license = valid(claims());
+    const { audit, events } = recording();
+    await openLicenseDay(db, license, clock, audit);
+    clock.advance(HOUR);
+    await deviceLicense(db, license, clock, audit);
+    expect(events).toEqual([]);
+  });
+
+  it("records nothing without a signed-in user, and what still holds at the next reading with one", async () => {
+    const license = valid(claims());
+    const { audit, events } = recording();
+    await openLicenseDay(db, license, clock);
+    clock.set(new Date(START.getTime() - HOUR));
+    expect((await deviceLicense(db, license, clock)).restriction).toBe("clockBehind");
+    expect(events).toEqual([]);
+    await deviceLicense(db, license, clock, audit);
+    expect(actions(events)).toEqual(["tenancy.clock.movedBack"]);
+  });
+
+  it("records the event in the reading's transaction: a failed write leaves it to the next reading", async () => {
+    const license = valid(claims());
+    await openLicenseDay(db, license, clock);
+    clock.set(new Date(START.getTime() - HOUR));
+    const failing = recording(() => Promise.reject(new Error("the outbox is full")));
+    await expect(deviceLicense(db, license, clock, failing.audit)).rejects.toThrow(
+      "the outbox is full",
+    );
+    const { audit, events } = recording();
+    await deviceLicense(db, license, clock, audit);
+    expect(actions(events)).toEqual(["tenancy.clock.movedBack"]);
+  });
+});
+
+describe("occurrences on the device audit path", () => {
+  it("audits a clock found wrong again at a later server time, though no reading saw it right", async () => {
+    const license = valid(claims());
+    const { audit, events } = recording();
+    await openLicenseDay(db, license, clock, audit);
+    await recordServerTime(db, new Date(START.getTime() + CLOCK_SKEW_LIMIT_MS + MINUTE), clock);
+    await deviceLicense(db, license, clock, audit);
+    // Set right at one server time, wrong again by the next, with no reading in between.
+    clock.set(new Date(START.getTime() + CLOCK_SKEW_LIMIT_MS + 2 * MINUTE));
+    await recordServerTime(db, clock.now(), clock);
+    clock.set(START);
+    await recordServerTime(db, new Date(START.getTime() + CLOCK_SKEW_LIMIT_MS + 3 * MINUTE), clock);
+    await deviceLicense(db, license, clock, audit);
+    await deviceLicense(db, license, clock, audit);
+    expect(actions(events)).toEqual(["tenancy.clock.wrong", "tenancy.clock.wrong"]);
+  });
+
+  it("writes nothing to the audit markers when a reading finds nothing to audit", async () => {
+    const license = valid(claims());
+    const { audit } = recording();
+    await openLicenseDay(db, license, clock, audit);
+    // Every statement the readings run inside their transactions.
+    const statements: string[] = [];
+    const logged: LocalDb = Object.assign(Object.create(db) as LocalDb, {
+      transaction: <T>(work: (tx: LocalExecutor) => Promise<T>) =>
+        db.transaction((tx) =>
+          work({
+            query: (sql, params) => (statements.push(sql), tx.query(sql, params)),
+            run: (sql, params) => (statements.push(sql), tx.run(sql, params)),
+          }),
+        ),
+    });
+    await deviceLicense(logged, license, clock, audit);
+    await deviceLicense(logged, license, clock, audit);
+    const writes = statements.filter(
+      (sql) => /tenancy_license_audit/.test(sql) && !/^s*select/i.test(sql),
+    );
+    expect(statements.length).toBeGreaterThan(0);
+    expect(writes).toEqual([]);
   });
 });

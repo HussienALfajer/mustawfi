@@ -41,7 +41,15 @@ export const accessMessages = {
       passwordReset: "تعيين كلمة مرور المالك برمز استعادة من الدعم الفني",
     },
     login: {
+      succeeded: "تسجيل دخول",
+      failed: "محاولة دخول فاشلة",
       throttled: "إيقاف محاولات الدخول مؤقتًا بعد محاولات فاشلة كثيرة",
+    },
+    session: {
+      revoked: "إنهاء جلسة: تسجيل خروج، أو إنهاؤها مع إيقاف المستخدم أو تغيير كلمة مروره",
+    },
+    registrationCode: {
+      issued: "إصدار رمز تسجيل جهاز",
     },
     twoFactor: {
       enabled: "تفعيل المستخدم التحقق بخطوتين",
@@ -53,6 +61,7 @@ export const accessMessages = {
       issued: "إصدار الدعم الفني رمز استعادة لكلمة مرور المالك",
     },
     device: {
+      registered: "تسجيل جهاز",
       revoked: "إبطال جهاز",
       wiped: "مسح الجهاز المُبطَل بياناته",
     },

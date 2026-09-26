@@ -10,6 +10,10 @@ export const inventoryMessages = {
   permission: {
     products: { view: "عرض المنتجات", manage: "إضافة المنتجات وتعديلها" },
   },
+  /** Labels of this module's audit actions: `inventory.product.created` → `audit.product.created`. */
+  audit: {
+    product: { created: "إضافة منتج" },
+  },
   products: {
     title: "المنتجات",
     count:

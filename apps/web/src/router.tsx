@@ -32,6 +32,7 @@ import {
   StoreSuspendedScreen,
   suspendedFor,
 } from "@mustawfi/core-organization/client";
+import type { DeviceLicenseAudit } from "@mustawfi/core-tenancy/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
 import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/core-sync/client";
@@ -329,6 +330,26 @@ function usePage() {
 }
 
 /**
+ * Who audits what the device's license readings notice (`core-foundation` rule 33): the user
+ * signed in, through the app's outbox sink — only on a device registered to that user's store,
+ * so no event is queued under another store's user.
+ */
+function useDeviceLicenseAudit(): DeviceLicenseAudit | undefined {
+  const db = useLocalDb();
+  const { audit } = useClientRuntime();
+  const session = useQuery(sessionQueryOptions()).data;
+  const device = useQuery(localDeviceQueryOptions(db)).data;
+  const userId =
+    session !== undefined && session !== null && device?.tenantId === session.tenantId
+      ? session.user.id
+      : undefined;
+  return useMemo(
+    () => (userId === undefined ? undefined : { sink: audit, userId }),
+    [audit, userId],
+  );
+}
+
+/**
  * The license as this client knows it (`core-foundation` rules 6–11): a device registered to the
  * signed-in store applies its own evaluation from the verified bundle; any other client (an
  * unregistered browser) shows the server's state. `undefined` while it loads.
@@ -338,9 +359,10 @@ function useLicenseNotice(): LicenseNotice | undefined {
   const { clock } = useClientRuntime();
   const session = useQuery(sessionQueryOptions()).data;
   const device = useQuery(localDeviceQueryOptions(db)).data;
+  const audit = useDeviceLicenseAudit();
   const onDevice = device !== undefined && device !== null && device.tenantId === session?.tenantId;
   const license = useQuery({
-    ...deviceLicenseQueryOptions(db, bundleVerifier(), clock),
+    ...deviceLicenseQueryOptions(db, bundleVerifier(), clock, audit),
     enabled: onDevice,
   }).data;
   if (session === undefined || session === null || device === undefined) return undefined;
@@ -389,14 +411,15 @@ function AppShell() {
   const page = usePage();
   const notice = useLicenseNotice();
   const userId = session?.user.id;
+  const audit = useDeviceLicenseAudit();
   // A session begins here — a sign-in, or the app opened with one: the device evaluates the
   // license for the business day when the day changed since (rule 6).
   useEffect(() => {
     if (userId === undefined) return;
-    openDeviceLicenseDay(db, bundleVerifier(), clock).catch((error: unknown) => {
+    openDeviceLicenseDay(db, bundleVerifier(), clock, audit).catch((error: unknown) => {
       console.error("the license could not be evaluated on this device", error);
     });
-  }, [db, clock, userId]);
+  }, [db, clock, userId, audit]);
   const isOwner = session?.user.role.isOwner === true;
   // Only owners come in while the store is suspended (rule 9).
   if (suspendedFor(notice, isOwner)) {
@@ -537,7 +560,8 @@ function PosPage() {
   const db = useLocalDb();
   const { clock } = useClientRuntime();
   const session = useQuery(sessionQueryOptions()).data;
-  const license = useQuery(deviceLicenseQueryOptions(db, bundleVerifier(), clock));
+  const audit = useDeviceLicenseAudit();
+  const license = useQuery(deviceLicenseQueryOptions(db, bundleVerifier(), clock, audit));
   if (session === undefined || session === null) return null;
   return (
     <PosScreen
@@ -546,7 +570,7 @@ function PosPage() {
         notice: license.data ?? undefined,
         failed: license.isError,
         // Read again right before the sale is recorded (ADR-0021).
-        check: () => deviceLicenseRestriction(db, bundleVerifier(), clock),
+        check: () => deviceLicenseRestriction(db, bundleVerifier(), clock, audit),
       }}
       registerDeviceLink={
         <Link to="/device" className="text-text-accent underline">

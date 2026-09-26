@@ -1,4 +1,5 @@
 import { index, jsonb, pgSchema, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import type { AuditSource } from "../shared/index.ts";
 
 /**
  * `core_audit` tables (non-negotiable 10, ADR-0016). Internal to the module: no entry exports
@@ -14,8 +15,12 @@ export const entries = coreAudit.table(
     /** References `core_tenancy.tenants` (FK in `0001_audit_rls.sql`). */
     tenantId: uuid().notNull(),
     branchId: uuid().notNull(),
-    /** When it happened. */
+    /** When it happened: the device's clock for an event that happened on a device. */
     createdAt: timestamp({ withTimezone: true }).notNull(),
+    /** When the server recorded it: `created_at` for a server event, the receipt for a device's. */
+    recordedAt: timestamp({ withTimezone: true }).notNull(),
+    /** Where it happened: `server`, or `device` for an event a device queued in its outbox. */
+    source: text().$type<AuditSource>().notNull(),
     /** Who acted; null only when no known user did (a sign-in naming an unknown login). */
     createdBy: uuid(),
     /** The device it happened on, when one was involved. */

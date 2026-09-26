@@ -23,7 +23,14 @@ export interface OrganizationDependencies {
   readonly newId: IdGenerator;
 }
 
-type DepartmentAction = "created" | "renamed" | "archived";
+/** The audit action of each department change, written out whole for the audit catalogue. */
+const DEPARTMENT_AUDIT = {
+  created: { action: "organization.department.created" },
+  renamed: { action: "organization.department.renamed" },
+  archived: { action: "organization.department.archived" },
+} as const;
+
+type DepartmentAction = keyof typeof DEPARTMENT_AUDIT;
 
 /** Audits a department change and appends it to the change log devices pull from. */
 export async function publishDepartment(
@@ -40,7 +47,7 @@ export async function publishDepartment(
     occurredAt: actor.at,
     userId: actor.userId,
     ...(actor.deviceId === undefined ? {} : { deviceId: actor.deviceId }),
-    action: `organization.department.${action}`,
+    action: DEPARTMENT_AUDIT[action].action,
     entity: { type: DEPARTMENT_ENTITY, id: change.after.id },
     ...(change.before === undefined ? {} : { before: change.before }),
     after: change.after,

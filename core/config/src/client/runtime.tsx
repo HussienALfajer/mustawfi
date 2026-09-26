@@ -1,13 +1,16 @@
 import type { Clock, IdGenerator } from "@mustawfi/kernel";
 import { createContext, type ReactNode, useContext } from "react";
+import type { AuditSink } from "./audit.ts";
 
 /**
  * What the app, as composition root, hands module screens: the clock and the id generator
- * (domain code never reads the ambient clock or randomness, ADR-0015 rule 6).
+ * (domain code never reads the ambient clock or randomness, ADR-0015 rule 6), and where events
+ * audited on the device go (the outbox).
  */
 export interface ClientRuntime {
   readonly clock: Clock;
   readonly newId: IdGenerator;
+  readonly audit: AuditSink;
 }
 
 const ClientRuntimeContext = createContext<ClientRuntime | undefined>(undefined);

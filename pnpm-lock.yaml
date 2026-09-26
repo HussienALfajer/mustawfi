@@ -311,6 +311,9 @@ importers:
       '@mustawfi/core-config':
         specifier: workspace:*
         version: link:../../core/config
+      '@mustawfi/core-ledger':
+        specifier: workspace:*
+        version: link:../../core/ledger
       '@mustawfi/core-organization':
         specifier: workspace:*
         version: link:../../core/organization
@@ -618,6 +621,9 @@ importers:
       '@mustawfi/core-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@mustawfi/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@mustawfi/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -761,6 +767,9 @@ importers:
       '@mustawfi/core-access':
         specifier: workspace:*
         version: link:../access
+      '@mustawfi/core-audit':
+        specifier: workspace:*
+        version: link:../audit
       '@mustawfi/core-config':
         specifier: workspace:*
         version: link:../config

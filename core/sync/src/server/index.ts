@@ -1,3 +1,4 @@
+export { deviceAuditOperation } from "./audit-entries.ts";
 export { type BundleDependencies, deviceBundle } from "./bundle.ts";
 export { type ChangeInput, readChanges, recordChange } from "./changes.ts";
 export type { SyncContext } from "./dependencies.ts";

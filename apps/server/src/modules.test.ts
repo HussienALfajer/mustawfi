@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   createServerRegistry,
   hostSyncOperations,
+  moduleDeviceAuditActions,
   moduleSyncOperations,
   serverModules,
 } from "./modules.ts";
@@ -61,8 +62,22 @@ describe("server modules", () => {
   });
 
   it("dispatch each module's sync operations only while the module is enabled", () => {
-    expect(hostSyncOperations(createServerRegistry()).types).toEqual(["sales.invoice.post"]);
-    expect(hostSyncOperations(createServerRegistry(["sales"])).types).toEqual([]);
+    expect(hostSyncOperations(createServerRegistry()).types).toEqual([
+      "audit.entry.record",
+      "sales.invoice.post",
+    ]);
+    expect(hostSyncOperations(createServerRegistry(["sales"])).types).toEqual([
+      "audit.entry.record",
+    ]);
+  });
+
+  it("accept device audit events only from modules the server runs", () => {
+    for (const [moduleId, actions] of Object.entries(moduleDeviceAuditActions)) {
+      expect(serverModules.map((m) => m.id)).toContain(moduleId);
+      for (const action of actions) {
+        expect(action.startsWith(`${moduleId.replace(/^core./, "")}.`)).toBe(true);
+      }
+    }
   });
 
   it("name each sync operation under its own module", () => {
