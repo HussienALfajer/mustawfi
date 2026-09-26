@@ -1,4 +1,5 @@
 import { ApiProblem, ApiUnreachable, useClientRuntime } from "@mustawfi/core-config/client";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { useLocalDb } from "@mustawfi/local-db";
 import { Button, TextInput } from "@mustawfi/ui";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -31,8 +32,15 @@ type RegisterForm = z.infer<typeof registerFormSchema>;
 function registerFailureKey(error: unknown): string {
   if (error instanceof ApiUnreachable) return "device.unreachable";
   if (error instanceof DeviceAlreadyRegistered) return "device.alreadyRegistered";
-  if (error instanceof ApiProblem && error.code === accessProblemCodes.registrationFailed) {
-    return "device.registrationFailed";
+  if (error instanceof ApiProblem) {
+    switch (error.code) {
+      case accessProblemCodes.registrationFailed:
+        return "device.registrationFailed";
+      case tenancyProblemCodes.mainPosDeviceLimit:
+        return "device.mainPosLimit";
+      case tenancyProblemCodes.companionDeviceLimit:
+        return "device.companionLimit";
+    }
   }
   return "device.refused";
 }

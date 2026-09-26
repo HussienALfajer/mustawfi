@@ -1,6 +1,6 @@
 import { type PermissionCatalogue, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import { currentTenant, type TenantTransaction } from "@mustawfi/core-tenancy/server";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
@@ -19,6 +19,8 @@ import {
   userViewSchema,
   loginRequestSchema,
   loginResponseSchema,
+  passwordResetRequestSchema,
+  pinLoginRequestSchema,
   registerDeviceRequestSchema,
   registeredDeviceSchema,
   registrationCodeResponseSchema,
@@ -26,17 +28,20 @@ import {
 import type { Manager } from "./actor.ts";
 import type { AccessContext } from "./dependencies.ts";
 import { issueRegistrationCode, registerDevice, registrationFailed } from "./devices.ts";
-import { logIn } from "./login.ts";
+import { type LoggedIn, logIn, logInWithPin, type SignInSource } from "./login.ts";
+import { resetPasswordWithCode } from "./reset-codes.ts";
 import { archiveRole, copyRole, editRole, listRoles } from "./roles.ts";
 import { deviceOf, type RouteAccess, sessionOf } from "./route-access.ts";
 import {
   CLEARED_SESSION_COOKIE,
   crossOriginRefused,
+  deviceCredentialOf,
   isSameOrigin,
   revokeSession,
   type Session,
   sessionCookie,
 } from "./sessions.ts";
+import { signInThrottles } from "./throttle.ts";
 import {
   addUser,
   changeOwnPassword,
@@ -93,9 +98,31 @@ function managerOf(session: Session, at: Date, catalogue: PermissionCatalogue): 
   };
 }
 
+/** Where a sign-in request comes from: its address and the device credential it carries. */
+function signInSource(request: FastifyRequest): SignInSource {
+  return { address: request.ip, deviceCredential: deviceCredentialOf(request) };
+}
+
+/** The sign-in answer in the transport the client asked for (ADR-0022). */
+function signedIn(loggedIn: LoggedIn, transport: "bearer" | "cookie", reply: FastifyReply) {
+  const expiresAt = loggedIn.expiresAt.toISOString();
+  if (transport === "bearer") return { ...loggedIn, expiresAt };
+  const { token, ...rest } = loggedIn;
+  reply.header("set-cookie", sessionCookie(token, loggedIn.expiresAt));
+  return { ...rest, expiresAt };
+}
+
+const signInRefusals = {
+  401: problemDetailsSchema,
+  403: problemDetailsSchema,
+  429: problemDetailsSchema,
+};
+
 /** `core.access` routes, under `/api/v1/access`. */
 export function accessRoutes(scope: FastifyInstance, context: AccessContext): void {
   const app = scope.withTypeProvider<ZodTypeProvider>();
+  // Per source address, and per unknown store code and login: this process's memory (rule 21).
+  const signIn = { ...context, throttles: signInThrottles() };
 
   app.post(
     "/login",
@@ -104,23 +131,56 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       schema: {
         tags,
         body: loginRequestSchema,
-        response: {
-          200: loginResponseSchema,
-          401: problemDetailsSchema,
-          403: problemDetailsSchema,
-        },
+        response: { 200: loginResponseSchema, ...signInRefusals },
       },
     },
     async (request, reply) => {
       const { transport, ...credentials } = request.body;
       // A forged sign-in would put the victim's browser in the attacker's session.
       if (transport === "cookie" && !isSameOrigin(request)) throw crossOriginRefused();
-      const loggedIn = await logIn(context.tenants, credentials, context);
-      const expiresAt = loggedIn.expiresAt.toISOString();
-      if (transport === "bearer") return { ...loggedIn, expiresAt };
-      const { token, ...rest } = loggedIn;
-      reply.header("set-cookie", sessionCookie(token, loggedIn.expiresAt));
-      return { ...rest, expiresAt };
+      const loggedIn = await logIn(context.tenants, credentials, signInSource(request), signIn);
+      return signedIn(loggedIn, transport, reply);
+    },
+  );
+
+  app.post(
+    "/pin-login",
+    {
+      // The device credential (`Mustawfi-Device`) and the PIN are the credentials (rule 21).
+      config: { access: "public" },
+      schema: {
+        tags,
+        body: pinLoginRequestSchema,
+        response: { 200: loginResponseSchema, ...signInRefusals },
+      },
+    },
+    async (request, reply) => {
+      const { transport, ...credentials } = request.body;
+      if (transport === "cookie" && !isSameOrigin(request)) throw crossOriginRefused();
+      const loggedIn = await logInWithPin(
+        context.tenants,
+        credentials,
+        signInSource(request),
+        signIn,
+      );
+      return signedIn(loggedIn, transport, reply);
+    },
+  );
+
+  app.post(
+    "/password-reset",
+    {
+      // The support reset code is the credential (rule 27).
+      config: { access: "public" },
+      schema: {
+        tags,
+        body: passwordResetRequestSchema,
+        response: { 204: z.null(), ...signInRefusals },
+      },
+    },
+    async (request, reply) => {
+      await resetPasswordWithCode(context.tenants, request.body, signInSource(request), signIn);
+      return reply.status(204).send(null);
     },
   );
 

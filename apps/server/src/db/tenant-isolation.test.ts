@@ -34,6 +34,7 @@ import {
   type TestDatabase,
 } from "@mustawfi/testing";
 import { issueTestLicense, testLicenseKeys } from "@mustawfi/tools-license/testing";
+import { sql } from "drizzle-orm";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServerRegistry, hostSyncOperations, serverPermissions } from "../modules.ts";
@@ -185,6 +186,23 @@ const seeds: readonly Seed[] = [
         dependencies,
       );
       remember(tenant, { credential: device.credential });
+    },
+  },
+  {
+    // Written by sign-in and the support CLI, which need the HTTP host or a store code; the
+    // rows as they would write them.
+    tables: ["core_access.login_attempts", "core_access.reset_codes"],
+    seed: async (tx, tenant) => {
+      const at = systemClock.now();
+      await tx.execute(sql`
+        insert into core_access.login_attempts (id, tenant_id, branch_id, created_at, method, login_hash)
+        values (${newId()}, ${tenant.tenantId}, ${tenant.branchId}, ${at}, 'password',
+          encode(sha256(convert_to(${tenant.tenantId}, 'UTF8')), 'hex'))`);
+      await tx.execute(sql`
+        insert into core_access.reset_codes
+          (id, tenant_id, branch_id, created_at, issued_by_support, issued_by, user_id, code_hash, expires_at)
+        values (${newId()}, ${tenant.tenantId}, ${tenant.branchId}, ${at}, true, 'support',
+          ${tenant.userId}, encode(sha256(convert_to(${tenant.tenantId}, 'UTF8')), 'hex'), ${at})`);
     },
   },
   {

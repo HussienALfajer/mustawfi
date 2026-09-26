@@ -157,7 +157,10 @@ describe("cross-origin calls (CORS)", () => {
     });
     expect(preflight.statusCode).toBe(204);
     expect(preflight.headers["access-control-allow-origin"]).toBe("http://tauri.localhost");
-    expect(preflight.headers["access-control-allow-headers"]).toBe("authorization, content-type");
+    // `mustawfi-device` carries the device credential beside the session (rule 22).
+    expect(preflight.headers["access-control-allow-headers"]).toBe(
+      "authorization, content-type, mustawfi-device",
+    );
     expect(preflight.headers["access-control-allow-credentials"]).toBeUndefined();
     const call = await app.inject({
       method: "GET",

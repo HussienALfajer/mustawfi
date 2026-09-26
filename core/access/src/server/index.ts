@@ -11,7 +11,29 @@ export {
   registerDevice,
   type RegisteredDevice,
 } from "./devices.ts";
-export { type LoggedIn, logIn, type LoginInput } from "./login.ts";
+export {
+  type LoggedIn,
+  logIn,
+  type LoginInput,
+  logInWithPin,
+  type PinLoginInput,
+  type SignInDependencies,
+  type SignInSource,
+} from "./login.ts";
+export {
+  type IssuedResetCode,
+  issueResetCode,
+  RESET_CODE_LIFETIME_MS,
+  ResetCodeRefused,
+  type ResetCodeRequest,
+} from "./reset-codes.ts";
+export {
+  ADDRESS_FAILURE_LIMIT,
+  LOGIN_FAILURE_LIMIT,
+  SIGN_IN_WINDOW_MS,
+  signInThrottles,
+  type SignInThrottles,
+} from "./throttle.ts";
 export { accessModule } from "./manifest.ts";
 export { hashPassword, hashPin } from "./passwords.ts";
 export {

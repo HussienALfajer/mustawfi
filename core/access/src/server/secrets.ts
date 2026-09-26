@@ -52,16 +52,19 @@ export function readBearer(
   return tenantId === undefined ? undefined : { tenantId, hash: sha256Hex(token) };
 }
 
-/** Ten symbols of the unambiguous alphabet: 50 bits, shown as `ABCDE-FGHJK`. */
-const REGISTRATION_CODE_LENGTH = 10;
+/**
+ * Ten symbols of the unambiguous alphabet: 50 bits, shown as `ABCDE-FGHJK`. Registration codes
+ * and support reset codes; both are short-lived and single use.
+ */
+const ONE_TIME_CODE_LENGTH = 10;
 
-export function issueRegistrationSecret(random: RandomSource): IssuedBearer {
-  const code = randomCode(random, REGISTRATION_CODE_LENGTH);
+export function issueOneTimeCode(random: RandomSource): IssuedBearer {
+  const code = randomCode(random, ONE_TIME_CODE_LENGTH);
   return { token: `${code.slice(0, 5)}-${code.slice(5)}`, hash: sha256Hex(code) };
 }
 
-/** The stored hash of a registration code as typed: case, spaces, and dashes are forgiven. */
-export function registrationCodeHash(typed: string): string | undefined {
+/** The stored hash of a one-time code as typed: case, spaces, and dashes are forgiven. */
+export function oneTimeCodeHash(typed: string): string | undefined {
   const code = typed.replace(/[\s-]/g, "").toUpperCase();
   return /^[A-HJ-NP-Z2-9]{10}$/.test(code) ? sha256Hex(code) : undefined;
 }

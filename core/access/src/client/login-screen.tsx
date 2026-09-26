@@ -21,8 +21,15 @@ type SignInForm = z.infer<typeof signInFormSchema>;
 /** The message key for a failed sign-in. */
 function failureKey(error: unknown): string {
   if (error instanceof ApiUnreachable) return "login.unreachable";
-  if (error instanceof ApiProblem && error.code === accessProblemCodes.loginFailed) {
-    return "login.failed";
+  if (error instanceof ApiProblem) {
+    switch (error.code) {
+      case accessProblemCodes.loginFailed:
+        return "login.failed";
+      case accessProblemCodes.loginThrottled:
+        return "login.throttled";
+      case accessProblemCodes.deviceRequired:
+        return "login.deviceRequired";
+    }
   }
   return "login.refused";
 }

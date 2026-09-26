@@ -11,7 +11,14 @@ describe("server configuration", () => {
       PORT: 3000,
       DISABLED_MODULES: ["reports", "repairs"],
       CLIENT_ORIGINS: ["http://tauri.localhost"],
+      TRUST_PROXY: [],
     });
+  });
+
+  it("reads the trusted reverse proxies, as addresses or CIDR ranges", () => {
+    expect(
+      loadServerConfig({ DATABASE_URL, TRUST_PROXY: "127.0.0.1, 10.0.0.0/8,::1" }).TRUST_PROXY,
+    ).toEqual(["127.0.0.1", "10.0.0.0/8", "::1"]);
   });
 
   it("reads the native shells' origins", () => {
@@ -30,6 +37,8 @@ describe("server configuration", () => {
     ["a port that is not a number", { DATABASE_URL, PORT: "http" }],
     ["a client origin with a path", { DATABASE_URL, CLIENT_ORIGINS: "http://tauri.localhost/app" }],
     ["a client origin that is not http", { DATABASE_URL, CLIENT_ORIGINS: "tauri://localhost" }],
+    ["a trusted proxy that is not an address", { DATABASE_URL, TRUST_PROXY: "proxy.local" }],
+    ["a trusted proxy range that is malformed", { DATABASE_URL, TRUST_PROXY: "10.0.0.0/x" }],
   ])("refuses to start with %s", (_, env) => {
     expect(() => loadServerConfig(env)).toThrow(ConfigError);
   });

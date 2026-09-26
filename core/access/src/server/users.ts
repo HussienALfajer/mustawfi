@@ -594,7 +594,7 @@ export async function reactivateUser(
 }
 
 /** Ends every open session of `userId`, each audited `access.session.revoked`. */
-async function revokeUserSessions(
+export async function revokeUserSessions(
   tx: TenantTransaction,
   actor: RoleActor,
   userId: string,

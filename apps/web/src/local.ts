@@ -1,3 +1,4 @@
+import { holdLocalDeviceCredential } from "@mustawfi/core-access/client";
 import { organizationPullAppliers } from "@mustawfi/core-organization/client";
 import { createSyncEngine, type SyncEngine } from "@mustawfi/core-sync/client";
 import { inventoryPullAppliers } from "@mustawfi/inventory/client";
@@ -38,6 +39,8 @@ export async function startLocalRuntime(
           },
         }),
   });
+  // A session opened on this device is accepted only with its credential (rule 22).
+  await holdLocalDeviceCredential(db);
   if (backup !== undefined) {
     const daily = () => {
       // A missed daily copy must not stop the till; the next check tries again.

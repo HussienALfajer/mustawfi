@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
 import type { RouteAccess } from "@mustawfi/core-access/server";
 import type { ModuleRegistry } from "@mustawfi/core-config/server";
-import { problemDetailsSchema } from "@mustawfi/core-config/shared";
+import { DEVICE_CREDENTIAL_HEADER, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import {
   jsonSchemaTransform,
@@ -31,6 +31,11 @@ export interface ServerOptions<Context> {
    * only (ADR-0022): credentials are not allowed, so the browser's cookie never crosses.
    */
   readonly clientOrigins?: readonly string[];
+  /**
+   * Addresses or CIDR ranges of the reverse proxies whose `X-Forwarded-For` gives the client's
+   * address (`request.ip`); none by default, so `request.ip` is the peer's.
+   */
+  readonly trustProxy?: readonly string[];
 }
 
 /**
@@ -41,7 +46,11 @@ export interface ServerOptions<Context> {
 export async function buildServer<Context>(
   options: ServerOptions<Context>,
 ): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false });
+  const trustProxy = options.trustProxy ?? [];
+  const app = Fastify({
+    logger: options.logger ?? false,
+    trustProxy: trustProxy.length === 0 ? false : [...trustProxy],
+  });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(problemErrorHandler);
@@ -53,7 +62,7 @@ export async function buildServer<Context>(
       callback(null, origin !== undefined && clientOrigins.has(origin));
     },
     methods: ["GET", "POST"],
-    allowedHeaders: ["authorization", "content-type"],
+    allowedHeaders: ["authorization", "content-type", DEVICE_CREDENTIAL_HEADER],
     credentials: false,
     maxAge: 600,
   });
