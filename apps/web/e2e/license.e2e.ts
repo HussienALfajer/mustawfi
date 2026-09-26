@@ -80,6 +80,17 @@ async function addCashier(request: APIRequestContext, store: JourneyStore): Prom
 
 const notice = (page: Page) => page.getByRole("banner").getByTestId("license-notice");
 
+/**
+ * The device's time follows the server's once it takes one (ADR-0021 amendment), so a day later on
+ * the device alone is a day with no server contact: the bundle answer, which carries the server's
+ * signed time, is held back until `resume`.
+ */
+async function withoutServerTime(page: Page): Promise<{ resume: () => Promise<void> }> {
+  const pattern = "**/api/v1/sync/bundle**";
+  await page.route(pattern, (route) => route.abort());
+  return { resume: () => page.unroute(pattern) };
+}
+
 test("owners see the expiring and grace warnings, and a cashier sees neither", async ({
   page,
   request,
@@ -131,7 +142,8 @@ test("the device keeps the day's state, goes read-only at the next day's sign-in
   const complete = page.getByRole("button", { name: "إتمام البيع نقدًا" });
   await expect(complete).toBeEnabled();
 
-  // Two days later, the session still open: the day's state holds (rule 6).
+  // Two days later with no server contact, the session still open: the day's state holds (rule 6).
+  const cutOff = await withoutServerTime(page);
   await page.clock.setFixedTime(new Date(now + 2 * DAY));
   await page.getByRole("link", { name: "المنتجات" }).click();
   await page.getByRole("link", { name: "البيع" }).click();
@@ -157,16 +169,19 @@ test("the device keeps the day's state, goes read-only at the next day's sign-in
   ).toBeVisible();
   await attachScreens(page, testInfo, "pos-read-only");
 
-  // A renewal lifts it at once, with no sign-in: the next bundle carries it (rule 6).
+  // A renewal lifts it once the next bundle carries it (rule 6); the clock is set back to the
+  // real time first, since the server's time would otherwise find it two days off.
   await installLicense(store, { expiresAt: new Date(now + 365 * DAY) });
-  await page.context().setOffline(true);
-  await page.context().setOffline(false);
+  await cutOff.resume();
+  await page.clock.setFixedTime(new Date());
+  await page.reload();
+  await expect(sync.getByTestId("sync-phase")).toHaveText("متزامن");
   await expect(page.getByTestId("license-restriction")).toHaveCount(0);
   await expect(complete).toBeEnabled();
   await expect(notice(page)).toHaveCount(0);
 });
 
-test("a clock moved back stops the POS until the clock is right and the server is reached", async ({
+test("a clock moved back, or one far from the server's, stops the POS until it is right", async ({
   page,
 }) => {
   const now = Date.now();
@@ -178,7 +193,9 @@ test("a clock moved back stops the POS until the clock is right and the server i
   await expect(sync.getByTestId("sync-phase")).toHaveText("متزامن");
   await expect(page.getByTestId("license-restriction")).toHaveCount(0);
 
-  // The app opened again with its clock an hour back (the fake clock applies from the next load).
+  // The app opened again with its clock an hour back and no server contact (the fake clock
+  // applies from the next load): moved back.
+  const cutOff = await withoutServerTime(page);
   await page.clock.setFixedTime(new Date(now - HOUR));
   await page.reload();
   await expect(notice(page)).toHaveText("ساعة الجهاز متأخرة");
@@ -187,8 +204,15 @@ test("a clock moved back stops the POS until the clock is right and the server i
   );
   await expectAccessible(page);
 
-  // The clock set right again, the first round with the server lifts it. (Right but still
-  // unsynced stays read-only: unit-tested, since the app cannot load offline in a browser.)
+  // The server reached, its time finds the clock an hour off: still no sale.
+  await cutOff.resume();
+  await page.reload();
+  await expect(notice(page)).toHaveText("ساعة الجهاز غير مضبوطة");
+  await expect(page.getByTestId("license-restriction")).toContainText(
+    "اضبط التاريخ والوقت والمنطقة الزمنية",
+  );
+
+  // The clock set right again, the next round with the server lifts it.
   await page.clock.setFixedTime(new Date());
   await page.reload();
   await expect(sync.getByTestId("sync-phase")).toHaveText("متزامن");

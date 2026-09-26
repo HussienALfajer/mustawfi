@@ -14,6 +14,7 @@ import {
   type VerifiedLicense,
 } from "../shared/index.ts";
 import {
+  CLOCK_SKEW_LIMIT_MS,
   CLOCK_TOLERANCE_MS,
   deviceLicense,
   openLicenseDay,
@@ -224,11 +225,51 @@ describe("the clock guard (rule 8)", () => {
     }
   });
 
-  it("stays read-only after reaching the server while the clock is still behind it", async () => {
+  it("sells with a clock a few minutes off the server's, and not with one half an hour off", async () => {
     const license = valid(claims());
     await openLicenseDay(db, license, clock);
-    await recordServerTime(db, new Date(START.getTime() + HOUR), clock);
-    expect((await deviceLicense(db, license, clock)).restriction).toBe("clockBehind");
+    // Eight minutes slow, as shop clocks drift: nothing to stop.
+    await recordServerTime(db, new Date(START.getTime() + 8 * MINUTE), clock);
+    expect((await deviceLicense(db, license, clock)).restriction).toBeNull();
+    clock.advance(MINUTE);
+    await recordServerTime(
+      db,
+      new Date(clock.now().getTime() + CLOCK_SKEW_LIMIT_MS + MINUTE),
+      clock,
+    );
+    expect((await deviceLicense(db, license, clock)).restriction).toBe("clockWrong");
+    // Once the clock is right at the next server time, the device sells again.
+    clock.set(new Date(clock.now().getTime() + CLOCK_SKEW_LIMIT_MS + 2 * MINUTE));
+    await recordServerTime(db, clock.now(), clock);
+    expect((await deviceLicense(db, license, clock)).restriction).toBeNull();
+  });
+
+  it("reads the license by the server's time, not by a wrong local clock", async () => {
+    // Expires in two hours by the server's clock; the device's clock is a day ahead.
+    const license = valid(
+      claims({ expiresAt: new Date(START.getTime() + 2 * HOUR).toISOString(), graceDays: 0 }),
+    );
+    clock.set(new Date(START.getTime() + DAY));
+    await recordServerTime(db, START, clock);
+    expect(await openLicenseDay(db, license, clock)).toMatchObject({
+      standing: { state: "expiring" },
+      restriction: "clockWrong",
+    });
+    // And the local time elapsed since counts: three hours later it is read-only.
+    clock.advance(3 * HOUR);
+    expect(await deviceLicense(db, license, clock)).toMatchObject({ restriction: "clockWrong" });
+    clock.advance(DAY);
+    expect((await openLicenseDay(db, license, clock)).standing?.state).toBe("readOnly");
+  });
+
+  it("stops a clock reset to 2009 by a dead battery, before and after the server is reached", async () => {
+    const license = valid(claims());
+    await recordServerTime(db, START, clock);
+    await openLicenseDay(db, license, clock);
+    clock.set(new Date("2009-01-01T00:00:00.000Z"));
+    expect((await openLicenseDay(db, license, clock)).restriction).toBe("clockBehind");
+    await recordServerTime(db, new Date(START.getTime() + MINUTE), clock);
+    expect((await deviceLicense(db, license, clock)).restriction).toBe("clockWrong");
   });
 
   it("comes down to the server's time once a clock set too far ahead is corrected", async () => {

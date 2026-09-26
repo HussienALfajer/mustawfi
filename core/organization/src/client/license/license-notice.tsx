@@ -61,7 +61,7 @@ export function LicenseIndicator({ notice, isOwner, link }: LicenseIndicatorProp
   if (restriction !== null) {
     text = t(`license.notice.${restriction}`);
     icon =
-      restriction === "clockBehind" ? (
+      restriction === "clockBehind" || restriction === "clockWrong" ? (
         <Clock3 {...ICON_PROPS} />
       ) : restriction === "suspended" ? (
         <Ban {...ICON_PROPS} />

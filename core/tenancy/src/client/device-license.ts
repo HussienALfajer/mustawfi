@@ -22,13 +22,25 @@ import {
 
 /**
  * The license on the device (ADR-0021, ADR-0030, `core-foundation` rules 6–11): the clock guard
- * keeps a high-water mark of the times the device has seen, and the day's state is evaluated at
- * the first sign-in of each business day and held until a sign-in on a later one. Both live in
- * the local database, so a restart changes nothing.
+ * keeps a high-water mark of the local times the device has seen and the offset of its clock from
+ * the last signed server time, and the day's state is evaluated at the first sign-in of each
+ * business day and held until a sign-in on a later one. Both live in the local database, so a
+ * restart changes nothing.
+ *
+ * The device's time for the license (its state and the offline days) is the last server time plus
+ * the local time elapsed since, counted on the monotonic mark: neither a clock moved back nor a
+ * clock that is simply wrong changes it (ADR-0021 amendment of 2026-09-26).
  */
 
 /** How far behind the high-water mark the local clock may be before it counts as moved back. */
 export const CLOCK_TOLERANCE_MS = 5 * 60_000;
+
+/**
+ * How far the local clock may be from the server's at the last server time: beyond it, documents
+ * would carry a wrong date or time (a clock reset to 2009 by a dead battery, a wrong time zone),
+ * so the device makes none until the clock is set right. A clock a few minutes off still sells.
+ */
+export const CLOCK_SKEW_LIMIT_MS = 30 * 60_000;
 
 /**
  * How far the mark must move before it is written again: every read observes the clock, and a
@@ -41,10 +53,12 @@ const MS_PER_DAY = 86_400_000;
 /** The clock guard (ADR-0021): at most one row. */
 const clockGuard = sqliteTable("tenancy_clock_guard", {
   id: integer().primaryKey(),
-  /** The latest time seen, local or the server's, in epoch milliseconds. */
+  /** The latest local time seen since the last server time, in epoch milliseconds. */
   highWaterMark: safeInteger("high_water_mark").notNull(),
   /** The last trusted server time taken, in epoch milliseconds: the last server contact. */
   serverTime: safeInteger("server_time"),
+  /** The local clock when that server time was taken: its offset from the server's. */
+  localAtServerTime: safeInteger("local_at_server_time"),
   /** When the local clock was found behind the mark; read-only until the server is reached. */
   behindSince: safeInteger("behind_since"),
 });
@@ -59,7 +73,7 @@ const licenseDay = sqliteTable("tenancy_license_day", {
   licenseIssuedAt: text("license_issued_at").notNull(),
   /** The last server contact was more than the license's maximum offline days ago (rule 7). */
   offlineExceeded: integer("offline_exceeded", { mode: "boolean" }).notNull(),
-  /** The mark it was evaluated at, in epoch milliseconds. */
+  /** The device's time it was evaluated at, in epoch milliseconds. */
   evaluatedAt: safeInteger("evaluated_at").notNull(),
 });
 
@@ -75,7 +89,9 @@ export const tenancyLocalMigrations: readonly LocalMigration[] = [
         id INTEGER PRIMARY KEY CHECK (id = 1),
         high_water_mark INTEGER NOT NULL,
         server_time INTEGER,
-        behind_since INTEGER
+        local_at_server_time INTEGER,
+        behind_since INTEGER,
+        CHECK ((server_time IS NULL) = (local_at_server_time IS NULL))
       ) STRICT`,
       `CREATE TABLE tenancy_license_day (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -92,13 +108,21 @@ export const tenancyLocalMigrations: readonly LocalMigration[] = [
 /**
  * Why this device may not create a document now (rule 9: no new document of any kind):
  * - `suspended`, `readOnly`: the license's state held for the day;
- * - `clockBehind`: the clock was moved back (rule 8), until the server is reached with a right clock;
+ * - `clockBehind`: the clock was moved back (rule 8), until the server is reached;
+ * - `clockWrong`: the clock was more than `CLOCK_SKEW_LIMIT_MS` from the server's at the last
+ *   server time, until a server time finds it right;
  * - `bundleRefused`: the last bundle offered, or the stored one, did not verify (rule 11);
  * - `bundleMissing`: no bundle has arrived yet, so no license is known;
  * - `offlineTooLong`: no server contact for more than the maximum offline days (rule 7).
  */
 export type LicenseRestriction =
-  "suspended" | "readOnly" | "clockBehind" | "bundleRefused" | "bundleMissing" | "offlineTooLong";
+  | "suspended"
+  | "readOnly"
+  | "clockBehind"
+  | "clockWrong"
+  | "bundleRefused"
+  | "bundleMissing"
+  | "offlineTooLong";
 
 export interface DeviceLicense {
   /** The state held for the day with the license's dates; `null` without a verified license. */
@@ -110,6 +134,7 @@ export interface DeviceLicense {
 interface GuardRow {
   readonly highWaterMark: number;
   readonly serverTime: number | null;
+  readonly localAtServerTime: number | null;
   readonly behindSince: number | null;
 }
 
@@ -126,45 +151,64 @@ async function writeGuard(executor: LocalExecutor, row: GuardRow): Promise<void>
 
 /** What the clock guard says now. */
 interface ClockReading {
-  /** The device's time: the high-water mark, never less than the local clock. */
-  readonly mark: number;
+  /**
+   * The device's time: the last server time plus the local time elapsed since (on the mark), or
+   * the mark itself before any server time.
+   */
+  readonly now: number;
   readonly behind: boolean;
+  readonly wrong: boolean;
   readonly serverTime: number | null;
+}
+
+function readingOf(guard: GuardRow, mark: number, behind: boolean): ClockReading {
+  const { serverTime, localAtServerTime } = guard;
+  if (serverTime === null || localAtServerTime === null) {
+    return { now: mark, behind, wrong: false, serverTime: null };
+  }
+  return {
+    now: serverTime + Math.max(0, mark - localAtServerTime),
+    behind,
+    wrong: Math.abs(localAtServerTime - serverTime) > CLOCK_SKEW_LIMIT_MS,
+    serverTime,
+  };
 }
 
 /**
  * Observes the local clock (rule 8): a local time more than `CLOCK_TOLERANCE_MS` behind the mark
- * marks the clock as moved back, which holds until the server is reached; any other local time
- * raises the mark.
+ * — the latest local time seen — marks the clock as moved back, which holds until the server is
+ * reached; any other local time raises the mark.
  */
 async function observeClock(tx: LocalExecutor, clock: Clock): Promise<ClockReading> {
   const now = clock.now().getTime();
   const guard = await readGuard(tx);
   if (guard === undefined) {
-    await writeGuard(tx, { highWaterMark: now, serverTime: null, behindSince: null });
-    return { mark: now, behind: false, serverTime: null };
+    const first = {
+      highWaterMark: now,
+      serverTime: null,
+      localAtServerTime: null,
+      behindSince: null,
+    };
+    await writeGuard(tx, first);
+    return readingOf(first, now, false);
   }
   if (now < guard.highWaterMark - CLOCK_TOLERANCE_MS) {
     if (guard.behindSince === null) await writeGuard(tx, { ...guard, behindSince: now });
-    return { mark: guard.highWaterMark, behind: true, serverTime: guard.serverTime };
+    return readingOf(guard, guard.highWaterMark, true);
   }
   if (now >= guard.highWaterMark + MARK_WRITE_STEP_MS) {
     await writeGuard(tx, { ...guard, highWaterMark: now });
   }
-  return {
-    mark: Math.max(guard.highWaterMark, now),
-    behind: guard.behindSince !== null,
-    serverTime: guard.serverTime,
-  };
+  return readingOf(guard, Math.max(guard.highWaterMark, now), guard.behindSince !== null);
 }
 
 /**
  * Takes a trusted server time (verified with the bundle key for this device): a server contact.
- * The mark restarts from the later of the server's time and the local clock — the server's
- * clock is the one trusted, so a local clock once set too far ahead does not hold the device
- * read-only for ever — and the clock counts as moved back only if it is still behind. A server
- * time not later than the last one taken (a replay) is ignored. The contact also lifts the day's
- * «offline too long» (rule 7: until it syncs).
+ * The device's time is the server's from now on, so the mark restarts from the local clock and a
+ * clock moved back is forgiven — it gains nothing, since the license reads the server's time —
+ * while its offset from the server is kept: more than `CLOCK_SKEW_LIMIT_MS` is `clockWrong`. A
+ * server time not later than the last one taken (a replay) is ignored. The contact also lifts the
+ * day's «offline too long» (rule 7: until it syncs).
  */
 export async function recordServerTime(db: LocalDb, serverTime: Date, clock: Clock): Promise<void> {
   const server = serverTime.getTime();
@@ -173,12 +217,11 @@ export async function recordServerTime(db: LocalDb, serverTime: Date, clock: Clo
     const guard = await readGuard(tx);
     if (guard !== undefined && guard.serverTime !== null && server <= guard.serverTime) return;
     const now = clock.now().getTime();
-    const mark = Math.max(server, now);
-    const behind = now < mark - CLOCK_TOLERANCE_MS;
     await writeGuard(tx, {
-      highWaterMark: mark,
+      highWaterMark: now,
       serverTime: server,
-      behindSince: behind ? (guard?.behindSince ?? now) : null,
+      localAtServerTime: now,
+      behindSince: null,
     });
     await localOrm(tx).update(licenseDay).set({ offlineExceeded: false });
   });
@@ -214,7 +257,7 @@ async function writeDay(executor: LocalExecutor, row: DayRow): Promise<void> {
     .onConflictDoUpdate({ target: licenseDay.id, set: row });
 }
 
-/** The day's evaluation of `license` at the mark (rules 3, 6, 7). */
+/** The day's evaluation of `license` at the device's time (rules 3, 6, 7). */
 function evaluate(license: VerifiedLicense, bundle: VerifiedBundle, reading: ClockReading): DayRow {
   const { claims } = license;
   // The bundle's own signed time is a server contact too: a device that upgraded before it
@@ -224,11 +267,11 @@ function evaluate(license: VerifiedLicense, bundle: VerifiedBundle, reading: Clo
     Date.parse(bundle.issuedAt),
   );
   return {
-    businessDate: businessDate(new Date(reading.mark)),
-    state: licenseState(claims, new Date(reading.mark)),
+    businessDate: businessDate(new Date(reading.now)),
+    state: licenseState(claims, new Date(reading.now)),
     licenseIssuedAt: claims.issuedAt,
-    offlineExceeded: reading.mark - contact > claims.maxOfflineDays * MS_PER_DAY,
-    evaluatedAt: reading.mark,
+    offlineExceeded: reading.now - contact > claims.maxOfflineDays * MS_PER_DAY,
+    evaluatedAt: reading.now,
   };
 }
 
@@ -256,6 +299,7 @@ function restrictionOf(
   if (day.state === "suspended") return "suspended";
   if (day.state === "readOnly") return "readOnly";
   if (reading.behind) return "clockBehind";
+  if (reading.wrong) return "clockWrong";
   if (loaded.state === "refused") return "bundleRefused";
   if (day.offlineExceeded) return "offlineTooLong";
   return null;
