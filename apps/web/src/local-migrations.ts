@@ -5,6 +5,7 @@ import { syncLocalMigrations } from "@mustawfi/core-sync/client";
 import { inventoryLocalMigrations } from "@mustawfi/inventory/client";
 import type { LocalMigration } from "@mustawfi/local-db";
 import { salesLocalMigrations } from "@mustawfi/sales/client";
+import { tenancyLocalMigrations } from "@mustawfi/core-tenancy/client";
 
 /**
  * Every module's local schema (ADR-0019). Devices match applied migrations by position, so a
@@ -18,4 +19,5 @@ export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   ...salesLocalMigrations,
   ...organizationLocalMigrations,
   ...configLocalMigrations,
+  ...tenancyLocalMigrations,
 ];

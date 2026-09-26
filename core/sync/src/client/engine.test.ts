@@ -1,3 +1,4 @@
+import { generateKeyPairSync, sign } from "node:crypto";
 import { accessLocalMigrations } from "@mustawfi/core-access/client";
 import {
   ApiProblem,
@@ -7,6 +8,7 @@ import {
   configLocalMigrations,
 } from "@mustawfi/core-config/client";
 import type { BundleResponse } from "@mustawfi/core-config/shared";
+import { tenancyLocalMigrations } from "@mustawfi/core-tenancy/client";
 import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { type LocalDb, localOrm, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
@@ -113,7 +115,7 @@ class FakeServer implements SyncTransport {
   }
 
   /** What `bundle` answers, and the versions the device said it held. */
-  bundleResponse: BundleResponse = { version: 1, bundle: null };
+  bundleResponse: BundleResponse = { version: 1, bundle: null, time: "not.a.jws" };
   bundleAsks: number[] = [];
 
   bundle(credential: string, version: number): Promise<BundleResponse> {
@@ -178,6 +180,7 @@ const MIGRATIONS = [
   ...accessLocalMigrations,
   ...syncLocalMigrations,
   ...configLocalMigrations,
+  ...tenancyLocalMigrations,
   { id: "test.0001_items", statements: ["CREATE TABLE test_items (id TEXT PRIMARY KEY)"] },
 ];
 
@@ -503,6 +506,7 @@ describe("the configuration bundle (core-foundation rules 11–12)", () => {
     server.bundleResponse = {
       version: 2,
       bundle: { manifest: "not.a.jws", parts: {} },
+      time: "not.a.jws",
     };
     const sync = bundled();
     await sync.syncNow();
@@ -531,6 +535,51 @@ describe("the configuration bundle (core-foundation rules 11–12)", () => {
     });
     await offline.syncNow();
     expect(offline.status().phase).toBe("offline");
+  });
+
+  it("takes the answer's server time only when a trusted key signed it for this device", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const trusted: BundleVerifier = {
+      keys: { current: publicKey.export({ format: "jwk" }).x ?? "" },
+      decoders: [],
+    };
+    // A compact JWS as the server signs it (`typ` time, bundle key); the server's own signing
+    // is tested in the sync simulation's bundle test.
+    const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const signServerTime = (forDevice: string, at: Date) => {
+      const input = `${b64({ alg: "EdDSA", typ: "mustawfi-time", kid: "current" })}.${b64({ deviceId: forDevice, serverTime: at.toISOString() })}`;
+      return `${input}.${sign(null, Buffer.from(input), privateKey).toString("base64url")}`;
+    };
+    const serverTime = new Date("2026-09-25T10:30:00.000Z");
+    const recorded = async () =>
+      (await db.query("SELECT server_time FROM tenancy_clock_guard"))[0]?.["server_time"];
+    await registerDevice();
+    const round = (verifier: BundleVerifier) =>
+      createSyncEngine({
+        db,
+        migrations: MIGRATIONS,
+        appliers: [],
+        clock,
+        transport: server,
+        bundle: verifier,
+      }).syncNow();
+
+    server.bundleResponse = {
+      version: 1,
+      bundle: null,
+      time: signServerTime(newId(), serverTime),
+    };
+    await round(trusted);
+    expect(await recorded()).toBeUndefined(); // signed for another device
+    server.bundleResponse = {
+      version: 1,
+      bundle: null,
+      time: signServerTime(deviceId, serverTime),
+    };
+    await round(verifier);
+    expect(await recorded()).toBeUndefined(); // a key this build does not trust
+    await round(trusted);
+    expect(await recorded()).toBe(BigInt(serverTime.getTime()));
   });
 
   it("does not ask for it once the device is revoked", async () => {

@@ -89,6 +89,12 @@ function session(permissions: string[], isOwner = true): CurrentSession {
   return {
     tenantId: "0190a000-0000-7000-8000-00000000f001",
     expiresAt: "2026-10-03T08:00:00.000Z",
+    license: {
+      state: "active",
+      expiresAt: "2027-09-25T08:00:00.000Z",
+      readOnlyAt: "2027-10-02T08:00:00.000Z",
+      suspendedAt: "2027-11-01T08:00:00.000Z",
+    },
     user: {
       id: SAMER.id,
       name: SAMER.name,

@@ -17,6 +17,12 @@ const session = {
   tenantId: "01a0d90e-759f-7223-90eb-cee31ed7e07c",
   expiresAt: "2026-10-02T00:00:00.000Z",
   user,
+  license: {
+    state: "active",
+    expiresAt: "2027-09-25T08:00:00.000Z",
+    readOnlyAt: "2027-10-02T08:00:00.000Z",
+    suspendedAt: "2027-11-01T08:00:00.000Z",
+  },
 };
 
 interface Call {

@@ -1,6 +1,7 @@
 import type { LocalDevice } from "@mustawfi/core-access/client";
 import { localDefaultDepartment } from "@mustawfi/core-organization/client";
 import { formatDocumentNumber } from "@mustawfi/core-organization/shared";
+import type { LicenseRestriction } from "@mustawfi/core-tenancy/client";
 import { BUSINESS_TIME_ZONE, businessDate } from "@mustawfi/core-tenancy/shared";
 import {
   enqueueOperation,
@@ -221,20 +222,23 @@ export async function readCart(executor: LocalExecutor, baseCurrency: string): P
 }
 
 /**
- * The cart cannot become a sale: it is empty, a line cannot be sold on this device, or the
- * store's departments have not reached the device yet (`noDepartment`).
+ * The cart cannot become a sale: it is empty, a line cannot be sold on this device, the
+ * store's departments have not reached the device yet (`noDepartment`), or the license lets
+ * this device create no document now (`licenseRestricted`, with the restriction).
  */
 export class SaleRefused extends Error {
   override name = "SaleRefused";
   readonly reason: SaleRefusal;
+  readonly restriction: LicenseRestriction | undefined;
 
-  constructor(reason: SaleRefusal) {
-    super(reason);
+  constructor(reason: SaleRefusal, restriction?: LicenseRestriction) {
+    super(restriction === undefined ? reason : `${reason}: ${restriction}`);
     this.reason = reason;
+    this.restriction = restriction;
   }
 }
 
-export type SaleRefusal = "emptyCart" | "notSellable" | "noDepartment";
+export type SaleRefusal = "emptyCart" | "notSellable" | "noDepartment" | "licenseRestricted";
 
 export interface CashSaleInput {
   readonly device: LocalDevice;
@@ -242,6 +246,11 @@ export interface CashSaleInput {
   readonly userId: string;
   readonly clock: Clock;
   readonly newId: IdGenerator;
+  /**
+   * The license as the device applies it now (`core-foundation` rules 6–11), checked before the
+   * sale is recorded (ADR-0021): a restriction refuses it. The app composes it from the bundle.
+   */
+  readonly license: () => Promise<LicenseRestriction | null>;
 }
 
 export interface RecordedSale {
@@ -255,10 +264,14 @@ export interface RecordedSale {
  * `{prefix}-INV-{seq:6}`, its outbox entry, and the emptied cart commit in one local
  * transaction (ADR-0019), or nothing does. The network is never touched. The invoice is sold
  * under the store's default department (`core-foundation` rule 32, until `sales` chooses by the
- * user's scope) and records the current receipt template.
+ * user's scope) and records the current receipt template. A device whose license is read-only,
+ * suspended, or not trusted records nothing (rule 9); the cart stays for later.
  */
 export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promise<RecordedSale> {
   const { device, clock, newId } = input;
+  // Before the transaction: the check verifies the bundle and writes the clock guard itself.
+  const restriction = await input.license();
+  if (restriction !== null) throw new SaleRefused("licenseRestricted", restriction);
   return db.transaction(async (tx) => {
     const cart = await readCart(tx, device.baseCurrency);
     if (cart.lines.length === 0) throw new SaleRefused("emptyCart");

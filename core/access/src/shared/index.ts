@@ -5,6 +5,7 @@ import {
   permissionIdSchema,
   ROLE_TEMPLATES,
 } from "@mustawfi/core-config/shared";
+import { licenseStandingSchema } from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
 import { pinSchema } from "./pin.ts";
 
@@ -175,12 +176,18 @@ export const loginResponseSchema = z.object({
   expiresAt: z.iso.datetime(),
   tenantId: z.uuid(),
   user: sessionUserSchema,
+  /**
+   * The store's license by the server's clock, so every client can explain read-only and
+   * suspended, and warn owners (`core-foundation` rule 10).
+   */
+  license: licenseStandingSchema,
 });
 
 export const currentSessionSchema = z.object({
   tenantId: z.uuid(),
   expiresAt: z.iso.datetime(),
   user: sessionUserSchema,
+  license: licenseStandingSchema,
 });
 
 /** A user's status: users are deactivated, never deleted. */

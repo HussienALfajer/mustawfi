@@ -1,5 +1,10 @@
 import { type PermissionCatalogue, problemDetailsSchema } from "@mustawfi/core-config/shared";
-import { currentTenant, type TenantTransaction } from "@mustawfi/core-tenancy/server";
+import {
+  currentLicenseStatus,
+  currentTenant,
+  type TenantTransaction,
+} from "@mustawfi/core-tenancy/server";
+import { licenseStanding } from "@mustawfi/core-tenancy/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -237,12 +242,17 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: { access: "session" },
       schema: { tags, response: { 200: currentSessionSchema, 401: problemDetailsSchema } },
     },
-    (request) => {
+    async (request) => {
       const session = sessionOf(request);
+      // The license by the server's clock, so the client explains read-only and warns owners.
+      const status = await context.tenants.withTenant({ tenantId: session.tenantId }, (tx) =>
+        currentLicenseStatus(tx, context.clock.now()),
+      );
       return {
         tenantId: session.tenantId,
         expiresAt: session.expiresAt.toISOString(),
         user: session.user,
+        license: licenseStanding(status.license.claims, status.state),
       };
     },
   );

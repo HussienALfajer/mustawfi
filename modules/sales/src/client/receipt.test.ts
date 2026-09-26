@@ -17,6 +17,8 @@ import { type ReceiptFormat, readReceiptInvoice, receiptDocument } from "./recei
 
 const clock = manualClock(new Date("2026-09-25T21:30:00.000Z"));
 const newId = uuidV7Generator({ clock, random: cryptoRandom });
+/** The license check of a device whose license allows documents. */
+const allowed = () => Promise.resolve(null);
 
 const device: LocalDevice = {
   deviceId: newId(),
@@ -83,7 +85,13 @@ async function product(name: string, price: string) {
 describe("receipt", () => {
   it("is the template version every new invoice records, headed by the store's name", async () => {
     await addToCart(db, await product("شاحن", "5"));
-    const sale = await completeCashSale(db, { device, userId: newId(), clock, newId });
+    const sale = await completeCashSale(db, {
+      device,
+      userId: newId(),
+      clock,
+      newId,
+      license: allowed,
+    });
     const invoice = (await readReceiptInvoice(db, sale.invoiceId))!;
     expect(invoice.templateVersion).toBe(CASH_RECEIPT_TEMPLATE.version);
     expect(CASH_RECEIPT_TEMPLATE.version).toBe("receipt.cash.2");
@@ -92,7 +100,13 @@ describe("receipt", () => {
 
   it("reprints an invoice recorded with the skeleton's template with that template", async () => {
     await addToCart(db, await product("شاحن", "5"));
-    const sale = await completeCashSale(db, { device, userId: newId(), clock, newId });
+    const sale = await completeCashSale(db, {
+      device,
+      userId: newId(),
+      clock,
+      newId,
+      license: allowed,
+    });
     const invoice = (await readReceiptInvoice(db, sale.invoiceId))!;
     const skeleton = cashReceiptTemplate("receipt.skeleton.1");
     const document = receiptDocument({ ...invoice, templateVersion: "receipt.skeleton.1" }, format);
@@ -114,7 +128,13 @@ describe("receipt", () => {
     await addToCart(db, charger);
     await addToCart(db, cover);
     await addToCart(db, charger);
-    const sale = await completeCashSale(db, { device, userId: newId(), clock, newId });
+    const sale = await completeCashSale(db, {
+      device,
+      userId: newId(),
+      clock,
+      newId,
+      license: allowed,
+    });
 
     const invoice = await readReceiptInvoice(db, sale.invoiceId);
     expect(invoice).toBeDefined();
@@ -153,7 +173,13 @@ describe("receipt", () => {
 
   it("uses Arabic-Indic digits when the user reads them", async () => {
     await addToCart(db, await product("شاحن", "5"));
-    const sale = await completeCashSale(db, { device, userId: newId(), clock, newId });
+    const sale = await completeCashSale(db, {
+      device,
+      userId: newId(),
+      clock,
+      newId,
+      license: allowed,
+    });
     const document = receiptDocument((await readReceiptInvoice(db, sale.invoiceId))!, {
       ...format,
       digits: "arab",
@@ -163,7 +189,13 @@ describe("receipt", () => {
 
   it("refuses an invoice recorded with a template this client does not have", async () => {
     await addToCart(db, await product("شاحن", "5"));
-    const sale = await completeCashSale(db, { device, userId: newId(), clock, newId });
+    const sale = await completeCashSale(db, {
+      device,
+      userId: newId(),
+      clock,
+      newId,
+      license: allowed,
+    });
     const invoice = (await readReceiptInvoice(db, sale.invoiceId))!;
     expect(() =>
       receiptDocument({ ...invoice, templateVersion: "receipt.other.2" }, format),
@@ -172,7 +204,13 @@ describe("receipt", () => {
 
   it("has an Arabic message for every label it shows", async () => {
     await addToCart(db, await product("شاحن", "5"));
-    const sale = await completeCashSale(db, { device, userId: newId(), clock, newId });
+    const sale = await completeCashSale(db, {
+      device,
+      userId: newId(),
+      clock,
+      newId,
+      license: allowed,
+    });
     const asked: string[] = [];
     receiptDocument((await readReceiptInvoice(db, sale.invoiceId))!, {
       ...format,

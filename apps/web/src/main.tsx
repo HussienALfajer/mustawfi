@@ -10,6 +10,7 @@ import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
 import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
 import { TENANCY_NAMESPACE, tenancyMessages } from "@mustawfi/core-tenancy/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { ORGANIZATION_NAMESPACE, organizationMessages } from "@mustawfi/core-organization/client";
 import { ApiProblem, ClientRuntimeProvider, configureApi } from "@mustawfi/core-config/client";
 import { SYNC_NAMESPACE, SyncEngineProvider, syncMessages } from "@mustawfi/core-sync/client";
@@ -67,8 +68,24 @@ function onApiError(error: Error): void {
   }
 }
 
+/**
+ * A query of a non-owner's session turned away because the store was suspended meanwhile goes to
+ * «store suspended» (rule 9) — once: that page's own session read is refused the same way. A
+ * refused sign-in is not a query, and the sign-in form says why itself.
+ */
+function onQueryError(error: Error): void {
+  onApiError(error);
+  if (
+    error instanceof ApiProblem &&
+    error.code === tenancyProblemCodes.licenseSuspended &&
+    router.state.location.pathname !== "/suspended"
+  ) {
+    void router.navigate({ to: "/suspended" });
+  }
+}
+
 const queryClient: QueryClient = new QueryClient({
-  queryCache: new QueryCache({ onError: onApiError }),
+  queryCache: new QueryCache({ onError: onQueryError }),
   mutationCache: new MutationCache({ onError: onApiError }),
   defaultOptions: {
     queries: {

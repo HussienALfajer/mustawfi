@@ -8,6 +8,7 @@ import {
   configLocalMigrations,
   loadBundle,
   verifyBundle,
+  verifyServerTime,
 } from "@mustawfi/core-config/client";
 import { signBundle } from "@mustawfi/core-config/server";
 import {
@@ -188,11 +189,24 @@ describe("the configuration bundle (core-foundation slice 11)", () => {
     ]);
   });
 
+  it("carries the server's time with every answer, signed for the device that asked", async () => {
+    const store = await newStore("متجر الوقت");
+    const device = await newDevice(store);
+    const first = await bundleOf(device);
+    const held = await bundleOf(device, first.version);
+    for (const response of [first, held]) {
+      expect(await verifyServerTime(response.time, verifier.keys, device.deviceId)).toEqual(
+        clock.now(),
+      );
+      expect(await verifyServerTime(response.time, verifier.keys, newId())).toBeUndefined();
+    }
+  });
+
   it("answers the version alone to a device that holds it, and bumps it only on a change", async () => {
     const store = await newStore("متجر الإصدارات");
     const device = await newDevice(store);
     const first = await bundleOf(device);
-    expect(await bundleOf(device, first.version)).toEqual({ version: 1, bundle: null });
+    expect(await bundleOf(device, first.version)).toMatchObject({ version: 1, bundle: null });
     // Rebuilt from the same data: the same version, and the same signed manifest — also when
     // several requests of one device meet.
     const again = await Promise.all([1, 2, 3, 4].map(() => bundleOf(device)));

@@ -17,4 +17,5 @@ export {
   parseBundleSigningKey,
   partDigest,
   signBundle,
+  signServerTime,
 } from "./bundle.ts";

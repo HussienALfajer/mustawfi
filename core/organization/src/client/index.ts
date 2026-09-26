@@ -31,3 +31,20 @@ export { storeProfileQueryKey, storeProfileQueryOptions } from "./store-profile/
 export { organizationBundlePart } from "./bundle-part.ts";
 export { LicenseScreen, type LicenseScreenProps } from "./license/license-screen.tsx";
 export { licenseQueryKey, licenseQueryOptions } from "./license/queries.ts";
+export {
+  deviceLicenseQueryKey,
+  deviceLicenseQueryOptions,
+  deviceLicenseRestriction,
+  openDeviceLicenseDay,
+} from "./license/device-license.ts";
+export {
+  LicenseIndicator,
+  type LicenseIndicatorProps,
+  type LicenseNotice,
+  LicenseRestrictionMessage,
+  type LicenseRestrictionMessageProps,
+  serverLicenseNotice,
+  StoreSuspendedScreen,
+  type StoreSuspendedScreenProps,
+  suspendedFor,
+} from "./license/license-notice.tsx";

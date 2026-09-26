@@ -102,10 +102,29 @@ export const bundleQuerySchema = z.object({
   version: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
 });
 
-/** The current version, and the bundle itself unless the device already holds that version. */
+/**
+ * The JWS `typ` of a server time: the tenant server's clock, signed with the bundle key for
+ * one device, which the device's clock guard trusts (ADR-0021, `core-foundation` rule 8).
+ */
+export const SERVER_TIME_TYPE = "mustawfi-time";
+
+/** What a server time signs: the server's instant, for the one device that asked. */
+export const serverTimeClaimsSchema = z.strictObject({
+  deviceId: z.uuid(),
+  serverTime: instantSchema,
+});
+
+export type ServerTimeClaims = z.infer<typeof serverTimeClaimsSchema>;
+
+/**
+ * The current version, and the bundle itself unless the device already holds that version;
+ * with the server's time when it answered, signed for the device (a compact JWS), so the
+ * device's clock guard can trust it.
+ */
 export const bundleResponseSchema = z.object({
   version: z.int().min(1),
   bundle: signedBundleSchema.nullable(),
+  time: z.string().min(1).max(2048),
 });
 
 export type BundleResponse = z.infer<typeof bundleResponseSchema>;

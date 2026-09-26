@@ -21,12 +21,12 @@ export async function signIn(
   page: Page,
   password = e2eStore().password,
   login = e2eStore().login,
+  storeCode = e2eStore().storeCode,
 ): Promise<void> {
-  const store = e2eStore();
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByLabel("رمز المتجر")).toBeFocused();
-  await page.keyboard.type(store.storeCode);
+  await page.keyboard.type(storeCode);
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("اسم الدخول")).toBeFocused();
   await page.keyboard.type(login);
@@ -86,4 +86,42 @@ export async function attachScreens(page: Page, testInfo: TestInfo, name: string
   await page.evaluate(() => {
     document.documentElement.dataset["theme"] = "light";
   });
+}
+
+/** Flow 3: the owner adds a product online, priced in the store's currency (SYP). */
+export async function addProduct(page: Page, name: string, barcode: string, price: string) {
+  await page.getByRole("link", { name: "المنتجات" }).click();
+  await page.getByLabel("اسم المنتج").fill(name);
+  await page.getByLabel("الباركود", { exact: true }).fill(barcode);
+  await page.getByLabel("سعر البيع").fill(price);
+  await page.getByRole("button", { name: "إضافة المنتج" }).click();
+  await expect(page.getByRole("main").getByRole("status")).toHaveText(`أُضيف المنتج «${name}»`);
+}
+
+/**
+ * Flow 4: the owner issues a registration code on the devices screen and registers this
+ * browser, as a companion, in the journey's store (the run's store by default).
+ */
+export async function registerDevice(
+  page: Page,
+  storeCode = e2eStore().storeCode,
+): Promise<string> {
+  await page.getByRole("link", { name: "الأجهزة" }).click();
+  await page.getByRole("button", { name: /جهاز جديد/ }).click();
+  await page.getByRole("button", { name: "إصدار رمز تسجيل" }).click();
+  const code = page.getByTestId("registration-code");
+  await expect(code).toHaveText(/^\S+$/);
+  await expect(page.getByTestId("store-code")).toHaveText(storeCode);
+  const registrationCode = (await code.textContent()) ?? "";
+  await page.getByRole("link", { name: "تسجيل الجهاز" }).click();
+  await page.getByLabel("رمز المتجر").fill(storeCode);
+  await page.getByLabel("رمز التسجيل").fill(registrationCode);
+  await page.getByLabel("اسم الجهاز").fill("الصندوق الرئيسي");
+  await page.getByRole("button", { name: "تسجيل الجهاز" }).click();
+  const prefix = page.getByTestId("device-prefix");
+  await expect(prefix).toHaveText(/^[A-HJ-NP-Z2-9]{2}$/);
+  // The browser is never the main POS (ADR-0019); the Windows app is.
+  await expect(page.getByTestId("device-type")).toHaveText("جهاز مساعد");
+  await expectAccessible(page);
+  return (await prefix.textContent()) ?? "";
 }

@@ -42,6 +42,7 @@ import {
   type SyncEngine,
   syncLocalMigrations,
 } from "@mustawfi/core-sync/client";
+import { tenancyLocalMigrations } from "@mustawfi/core-tenancy/client";
 import { openTenantDatabase, type TenantDatabase } from "@mustawfi/core-tenancy/server";
 import {
   inventoryLocalMigrations,
@@ -280,6 +281,7 @@ async function openDevice(
     ...salesLocalMigrations,
     ...organizationLocalMigrations,
     ...configLocalMigrations,
+    ...tenancyLocalMigrations,
   ];
   await migrateLocalDb(db, migrations);
   const { code } = await ownerRequest<{ code: string }>(
@@ -510,6 +512,8 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
           userId: store.tenant.ownerId,
           clock: device.clock,
           newId: device.newId,
+          // The simulation covers sync; the license gate has its own tests (sales, core.tenancy).
+          license: () => Promise.resolve(null),
         });
         device.sales.push({
           id: sale.invoiceId,

@@ -1,21 +1,13 @@
 import { ApiUnreachable } from "@mustawfi/core-config/client";
 import type { LicenseState } from "@mustawfi/core-tenancy/shared";
-import { DEFAULT_TIME_ZONE, LOCALE } from "@mustawfi/i18n";
 import { Badge, type BadgeTone, Button, FormSection } from "@mustawfi/ui";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { LicenseLimitName, LicenseSummary } from "../../shared/index.ts";
 import { ORGANIZATION_NAMESPACE } from "../messages.ts";
+import { formatDate } from "./format.ts";
 import { licenseQueryOptions } from "./queries.ts";
-
-const DATE = new Intl.DateTimeFormat(`${LOCALE}-u-nu-latn`, {
-  dateStyle: "long",
-  timeZone: DEFAULT_TIME_ZONE,
-});
-
-/** A date as the store reads it: in Damascus, Western digits. */
-const formatDate = (iso: string) => DATE.format(new Date(iso));
 
 const STATE_TONES: Record<LicenseState, BadgeTone> = {
   active: "positive",

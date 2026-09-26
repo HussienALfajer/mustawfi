@@ -25,6 +25,7 @@ export {
   storedBundleVersion,
   type VerifiedBundle,
   verifyBundle,
+  verifyServerTime,
 } from "./bundle.ts";
 export { type ClientRuntime, ClientRuntimeProvider, useClientRuntime } from "./runtime.tsx";
 
