@@ -72,6 +72,14 @@ export interface SyncOperationDefinition {
    * no document, such as device audit events, leave it out.
    */
   readonly businessDate?: (payload: Readonly<Record<string, unknown>>) => string | undefined;
+  /**
+   * For an operation whose document may carry supervisor overrides (`core-foundation` rule 18):
+   * the list, read from its unchecked payload (`undefined` when it carries none). Each is
+   * checked against its approver's role at ingest; one that does not cover what it approved
+   * flags the operation `overrideNotAuthorized`, and one that does stands in for the seller's
+   * missing permission.
+   */
+  readonly overrides?: (payload: Readonly<Record<string, unknown>>) => unknown;
   readonly versions: Readonly<Record<number, SyncOperationHandler>>;
 }
 

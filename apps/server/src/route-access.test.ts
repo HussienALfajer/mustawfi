@@ -96,7 +96,7 @@ describe("route authorization (core-foundation rule 17)", () => {
       "POST /api/v1/access/devices/current/wipe → deviceEvenRevoked",
       "GET /api/v1/access/devices → access.devices.manage",
       "POST /api/v1/access/devices/:id/revoke → access.devices.manage",
-      "GET /api/v1/access/catalogue → access.users.view",
+      "GET /api/v1/access/catalogue → session",
       "GET /api/v1/access/roles → access.users.view",
       "POST /api/v1/access/roles → access.roles.manage",
       "PUT /api/v1/access/roles/:id → access.roles.manage",

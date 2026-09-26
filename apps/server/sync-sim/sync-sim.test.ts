@@ -70,6 +70,7 @@ import {
   completeCashSale,
   listLocalInvoices,
   salesLocalMigrations,
+  salesOverrideLocalMigrations,
 } from "@mustawfi/sales/client";
 import { SKELETON_DOCUMENT_DEFAULTS } from "@mustawfi/sales/shared";
 import { createTestDatabase } from "@mustawfi/testing";
@@ -289,6 +290,7 @@ async function openDevice(
     ...organizationLocalMigrations,
     ...configLocalMigrations,
     ...tenancyLocalMigrations,
+    ...salesOverrideLocalMigrations,
   ];
   await migrateLocalDb(db, migrations);
   const { code } = await ownerRequest<{ code: string }>(
@@ -545,9 +547,28 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
         for (const product of step.shuffle(products).slice(0, step.int(1, 3))) {
           for (let n = step.int(1, 3); n > 0; n -= 1) await addToCart(device.db, product.id);
         }
+        // Now and then the owner sells as if outside their departments, with an override they
+        // approved, which the server must find covered through drops, resends, and reorders.
+        const withOverride = step.int(0, 3) === 0;
         const sale = await completeCashSale(device.db, {
           device: device.local,
-          userId: store.tenant.ownerId,
+          seller: {
+            userId: store.tenant.ownerId,
+            departmentScope: "all",
+            departments: [],
+            can: () => !withOverride,
+          },
+          overrides: withOverride
+            ? [
+                {
+                  id: device.newId(),
+                  approverId: store.tenant.ownerId,
+                  permission: "sales.invoice.create",
+                  departmentId: store.tenant.defaultDepartmentId,
+                  grantedAt: device.clock.now().toISOString(),
+                },
+              ]
+            : [],
           clock: device.clock,
           newId: device.newId,
           // The simulation covers sync; the license gate has its own tests (sales, core.tenancy).

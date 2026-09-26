@@ -402,10 +402,12 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     );
   }
 
+  // Every session: a client without the bundle resolves its user's grant against it
+  // (`core-foundation` slice 16). It names what the modules declare, nothing of the tenant's.
   app.get(
     "/catalogue",
     {
-      config: viewUsers,
+      config: { access: "session" },
       schema: { tags, response: { 200: permissionCatalogueSchema, ...refusals } },
     },
     () => catalogueView(context.permissionCatalogue),

@@ -1,4 +1,6 @@
 import {
+  type DeclaredLimit,
+  type DeclaredPermission,
   limitIdSchema,
   limitValueSchema,
   type PermissionCatalogue,
@@ -7,6 +9,7 @@ import {
 } from "@mustawfi/core-config/shared";
 import { licenseStandingSchema } from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
+import type { RoleAccess } from "./grant.ts";
 import { pinSchema } from "./pin.ts";
 
 export {
@@ -19,6 +22,15 @@ export {
   type StoredRole,
   templateGrants,
 } from "./grant.ts";
+export {
+  grantCovers,
+  OVERRIDE_DEVICE_EVENTS,
+  type OverrideRequest,
+  overrideRequestOf,
+  type SupervisorOverride,
+  supervisorOverrideSchema,
+  supervisorOverridesSchema,
+} from "./override.ts";
 export { isPinAllowed, pinSchema } from "./pin.ts";
 export {
   ACCESS_DEVICE_AUDIT_ACTIONS,
@@ -175,6 +187,11 @@ export const sessionUserSchema = z.object({
    * departments (rule 15).
    */
   permissions: z.array(z.string()),
+  /**
+   * The role's value of each limit it holds (`core-foundation` rule 16); none for the owner,
+   * who is unlimited. A limit left out may not go beyond zero.
+   */
+  limits: z.record(z.string(), limitValueSchema),
 });
 
 export const loginResponseSchema = z.object({
@@ -531,6 +548,28 @@ export function catalogueView(catalogue: PermissionCatalogue): PermissionCatalog
   };
 }
 
+/**
+ * The catalogue a client resolves grants against (`core-foundation` slice 16), from the view the
+ * API and the bundle carry: what a check needs — which permissions and limits are declared, and
+ * which permissions are scoped. Template grants are the server's alone and are left empty.
+ */
+export function catalogueFromView(view: PermissionCatalogueView): PermissionCatalogue {
+  return {
+    permissions: new Map(
+      view.permissions.map((p): [string, DeclaredPermission] => [
+        p.id,
+        { id: p.id, moduleId: p.moduleId, scoped: p.scoped, grants: [] },
+      ]),
+    ),
+    limits: new Map(
+      view.limits.map((l): [string, DeclaredLimit] => [
+        l.id,
+        { id: l.id, moduleId: l.moduleId, kind: l.kind, grants: {} },
+      ]),
+    ),
+  };
+}
+
 /** The name of the configuration bundle's part that carries access (ADR-0030). */
 export const ACCESS_BUNDLE_PART = "access";
 
@@ -570,3 +609,41 @@ export const accessPartSchema = z.strictObject({
 });
 
 export type AccessPart = z.infer<typeof accessPartSchema>;
+
+/**
+ * What `userId` holds as the bundle's `access` part describes them (`core-foundation` slice 16):
+ * the same `RoleAccess` the server resolves at a request, so a device checks what the server
+ * checks. `undefined` for a user the part does not allow on the device.
+ */
+export function bundleUserAccess(part: AccessPart, userId: string): RoleAccess | undefined {
+  const user = part.users.find((candidate) => candidate.id === userId);
+  const role = part.roles.find((candidate) => candidate.id === user?.roleId);
+  if (user === undefined || role === undefined) return undefined;
+  if (role.isOwner) {
+    return {
+      isOwner: true,
+      permissions: [],
+      limits: {},
+      departmentScope: user.departmentScope,
+      departments: [],
+    };
+  }
+  return {
+    isOwner: false,
+    permissions: role.permissions,
+    limits: role.limits,
+    departmentScope: user.departmentScope,
+    departments: user.departmentScope === "listed" ? user.departments : [],
+  };
+}
+
+/** What the signed-in user holds as the server's session answer describes them. */
+export function sessionUserAccess(user: z.infer<typeof sessionUserSchema>): RoleAccess {
+  return {
+    isOwner: user.role.isOwner,
+    permissions: user.permissions,
+    limits: user.limits,
+    departmentScope: user.departmentScope,
+    departments: user.departments,
+  };
+}

@@ -19,15 +19,20 @@ import {
   invoicePostPayloadV1Schema,
   SKELETON_DOCUMENT_DEFAULTS,
 } from "../shared/index.ts";
+import type { SupervisorOverride } from "@mustawfi/core-access/shared";
 import {
   addToCart,
   businessDate,
+  type CashSaleInput,
   completeCashSale,
   listLocalInvoices,
   readCart,
   removeFromCart,
   SaleRefused,
+  saleDepartmentId,
   salesLocalMigrations,
+  salesOverrideLocalMigrations,
+  type Seller,
 } from "./local-sales.ts";
 
 const clock = manualClock(new Date("2026-09-25T21:30:00.000Z"));
@@ -47,6 +52,8 @@ const device: LocalDevice = {
   registeredAt: clock.now().toISOString(),
 };
 const userId = newId();
+/** A seller who may sell everywhere, as the store's cashiers of every department. */
+const seller: Seller = { userId, departmentScope: "all", departments: [], can: () => true };
 const shop: DepartmentView = {
   id: newId(),
   name: "المتجر",
@@ -61,6 +68,7 @@ const migrations = [
   ...inventoryLocalMigrations,
   ...salesLocalMigrations,
   ...organizationLocalMigrations,
+  ...salesOverrideLocalMigrations,
 ];
 
 let db: LocalDb;
@@ -105,8 +113,24 @@ async function count(table: string): Promise<bigint> {
   return row?.["n"] as bigint;
 }
 
-function sell() {
-  return completeCashSale(db, { device, userId, clock, newId, license: allowed });
+function sell(input: Partial<CashSaleInput> = {}) {
+  return completeCashSale(db, { device, seller, clock, newId, license: allowed, ...input });
+}
+
+/** The payload of the outbox entry of `invoiceId`. */
+async function payloadOf(invoiceId: string): Promise<Record<string, unknown>> {
+  const [row] = await db.query(
+    "SELECT o.payload FROM sync_outbox o JOIN sales_invoices i ON i.op_id = o.op_id WHERE i.id = ?",
+    [invoiceId],
+  );
+  return JSON.parse(String(row?.["payload"])) as Record<string, unknown>;
+}
+
+async function departmentOf(invoiceId: string): Promise<unknown> {
+  const [row] = await db.query("SELECT department_id FROM sales_invoices WHERE id = ?", [
+    invoiceId,
+  ]);
+  return row?.["department_id"];
 }
 
 beforeEach(async () => {
@@ -230,10 +254,103 @@ describe("completeCashSale", () => {
     await pullDepartment({ ...shop, id: newId(), name: "الصيانة", isDefault: false, sortOrder: 1 });
     await addToCart(db, await product("شاحن", "12.5"));
     const sale = await sell();
-    const [row] = await db.query("SELECT department_id FROM sales_invoices WHERE id = ?", [
+    expect(await departmentOf(sale.invoiceId)).toBe(shop.id);
+  });
+
+  it("sells under the seller's one listed department, else the default one (rule 32)", async () => {
+    const repairs = { ...shop, id: newId(), name: "الصيانة", isDefault: false, sortOrder: 1 };
+    const accessories = {
+      ...shop,
+      id: newId(),
+      name: "الإكسسوارات",
+      isDefault: false,
+      sortOrder: 2,
+    };
+    await pullDepartment(repairs);
+    await pullDepartment(accessories);
+    const one: Seller = { ...seller, departmentScope: "listed", departments: [repairs.id] };
+    const two: Seller = { ...one, departments: [repairs.id, accessories.id] };
+    const charger = await product("شاحن", "12.5");
+    const sold: unknown[] = [];
+    for (const who of [one, two, seller]) {
+      await addToCart(db, charger);
+      sold.push(await departmentOf((await sell({ seller: who })).invoiceId));
+    }
+    expect(sold).toEqual([repairs.id, shop.id, shop.id]);
+    expect(saleDepartmentId({ ...one, departmentScope: "all" }, shop.id)).toBe(shop.id);
+    expect(saleDepartmentId({ ...one, departments: [] }, shop.id)).toBe(shop.id);
+  });
+
+  it("asks a supervisor when the seller may not sell there, recording nothing", async () => {
+    await addToCart(db, await product("شاحن", "12.5"));
+    const asked: [string, string][] = [];
+    const outside: Seller = {
+      ...seller,
+      can: (permission, departmentId) => {
+        asked.push([permission, departmentId]);
+        return false;
+      },
+    };
+    const refusal: unknown = await sell({ seller: outside }).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(SaleRefused);
+    expect(refusal).toMatchObject({
+      reason: "overrideNeeded",
+      request: { permission: "sales.invoice.create", departmentId: shop.id },
+    });
+    expect(asked).toEqual([["sales.invoice.create", shop.id]]);
+    expect(await count("sales_invoices")).toBe(0n);
+    expect(await count("sync_outbox")).toBe(0n);
+    expect(await count("sync_counters")).toBe(0n);
+    expect((await readCart(db, "SYP")).lines).toHaveLength(1);
+
+    // An override for another department, or another action, approves nothing here.
+    const override: SupervisorOverride = {
+      id: newId(),
+      approverId: newId(),
+      permission: "sales.invoice.create",
+      departmentId: shop.id,
+      grantedAt: clock.now().toISOString(),
+    };
+    for (const other of [
+      { ...override, departmentId: newId() },
+      { ...override, permission: "sales.invoices.view" },
+    ]) {
+      await expect(sell({ seller: outside, overrides: [other] })).rejects.toMatchObject({
+        reason: "overrideNeeded",
+      });
+    }
+    expect(await count("sales_invoices")).toBe(0n);
+
+    // With the supervisor's override, the sale goes through and the invoice carries it.
+    const sale = await sell({ seller: outside, overrides: [override] });
+    expect(sale.number).toBe("K7-INV-000001");
+    expect(invoicePostPayloadV1Schema.parse(await payloadOf(sale.invoiceId)).overrides).toEqual([
+      override,
+    ]);
+    const [row] = await db.query("SELECT overrides FROM sales_invoices WHERE id = ?", [
       sale.invoiceId,
     ]);
-    expect(row?.["department_id"]).toBe(shop.id);
+    expect(JSON.parse(String(row?.["overrides"]))).toEqual([override]);
+  });
+
+  it("carries no overrides on a sale that needed none, even when given one", async () => {
+    await addToCart(db, await product("شاحن", "12.5"));
+    const sale = await sell({
+      overrides: [
+        {
+          id: newId(),
+          approverId: newId(),
+          permission: "sales.invoice.create",
+          departmentId: shop.id,
+          grantedAt: clock.now().toISOString(),
+        },
+      ],
+    });
+    expect(await payloadOf(sale.invoiceId)).not.toHaveProperty("overrides");
+    const [row] = await db.query("SELECT overrides FROM sales_invoices WHERE id = ?", [
+      sale.invoiceId,
+    ]);
+    expect(row?.["overrides"]).toBe("[]");
   });
 
   it("refuses a sale before the store's departments reach the device, recording nothing", async () => {
@@ -256,9 +373,9 @@ describe("completeCashSale", () => {
   it("records nothing while the license lets the device create no document, and keeps the cart", async () => {
     await addToCart(db, await product("شاحن", "12.5"));
     const readOnly = () => Promise.resolve("readOnly" as const);
-    await expect(
-      completeCashSale(db, { device, userId, clock, newId, license: readOnly }),
-    ).rejects.toEqual(new SaleRefused("licenseRestricted", "readOnly"));
+    await expect(sell({ license: readOnly })).rejects.toEqual(
+      new SaleRefused("licenseRestricted", { restriction: "readOnly" }),
+    );
     expect(await count("sales_invoices")).toBe(0n);
     expect(await count("sync_outbox")).toBe(0n);
     expect(await count("sync_counters")).toBe(0n);

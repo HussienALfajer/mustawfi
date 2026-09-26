@@ -7,6 +7,7 @@ import { Button } from "../components/button.tsx";
 import { Checkbox, CheckboxGroup } from "../components/checkbox.tsx";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { DataTable } from "../components/data-table.tsx";
+import { ModalDialog } from "../components/dialog.tsx";
 import { Kbd } from "../components/kbd.tsx";
 import { MenuButton } from "../components/menu-button.tsx";
 import { MoneyInput } from "../components/money-input.tsx";
@@ -52,6 +53,7 @@ export const GALLERY_COMPONENTS = [
   "FormSection",
   "Kbd",
   "MenuButton",
+  "ModalDialog",
   "Money",
   "MoneyInput",
   "SearchField",
@@ -101,6 +103,7 @@ function Specimens() {
   const [selected, setSelected] = useState<string | null>("repairs");
   const [collapsed, setCollapsed] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [role, setRole] = useState<"cashier" | "accountant" | null>("cashier");
   const [allowed, setAllowed] = useState(true);
   const [scope, setScope] = useState<string[]>(["repairs"]);
@@ -377,6 +380,34 @@ function Specimens() {
         >
           {t("sample.confirmBody")}
         </ConfirmDialog>
+      </Specimen>
+      <Specimen name="ModalDialog">
+        <Button
+          variant="secondary"
+          onPress={() => {
+            setDialogOpen(true);
+          }}
+        >
+          {t("sample.dialogOpen")}
+        </Button>
+        <ModalDialog
+          isOpen={dialogOpen}
+          onOpenChange={setDialogOpen}
+          title={t("sample.dialogTitle")}
+          density="touch"
+        >
+          <p className="text-text-secondary">{t("sample.dialogBody")}</p>
+          <div>
+            <Button
+              variant="quiet"
+              onPress={() => {
+                setDialogOpen(false);
+              }}
+            >
+              {t("sample.cancel")}
+            </Button>
+          </div>
+        </ModalDialog>
       </Specimen>
     </div>
   );

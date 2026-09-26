@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineModule } from "@mustawfi/core-config/server";
-import { INVOICE_DOC_CODE } from "../shared/index.ts";
+import { INVOICE_CREATE_PERMISSION, INVOICE_DOC_CODE } from "../shared/index.ts";
 import type { SalesContext } from "./dependencies.ts";
 import { salesRoutes } from "./routes.ts";
 
@@ -26,7 +26,7 @@ export const salesModule = defineModule<SalesContext>({
   permissions: [
     { id: "sales.invoices.view", grants: ["accountant"] },
     /** Checked at ingest in the invoice's department; a miss flags `permissionMissing`. */
-    { id: "sales.invoice.create", scoped: true, grants: ["sectionCashier"] },
+    { id: INVOICE_CREATE_PERMISSION, scoped: true, grants: ["sectionCashier"] },
   ],
   migrations: fileURLToPath(new URL("../../migrations", import.meta.url)),
   routes: salesRoutes,

@@ -1,6 +1,15 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 import { e2eStore } from "./environment.ts";
-import { addProduct, attachScreens, registerDevice, signIn, tabTo } from "./steps.ts";
+import {
+  addProduct,
+  attachScreens,
+  pickTile,
+  registerDevice,
+  signIn,
+  switchUser,
+  tabTo,
+  typePin,
+} from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 /**
@@ -39,36 +48,6 @@ async function addPinUsers(request: APIRequestContext): Promise<void> {
     });
     expect(created.status()).toBe(201);
   }
-}
-
-/** The PIN screen's name tile of `name`, from the keyboard. */
-async function pickTile(page: Page, name: string, list = "المستخدمون على هذا الجهاز") {
-  const tile = page
-    .getByRole("list", { name: list })
-    .getByRole("button", { name: new RegExp(name) });
-  await tabTo(page, tile, 40);
-  await page.keyboard.press("Enter");
-}
-
-/** Types a PIN into the focused pad and sends it with Enter. */
-async function typePin(page: Page, forWhom: string, pin: string) {
-  await expect(page.getByLabel(forWhom)).toBeFocused();
-  await page.keyboard.type(pin);
-  await page.keyboard.press("Enter");
-}
-
-/** Switches user from the top bar's menu: the device returns to its PIN screen. */
-async function switchUser(page: Page, userName: string) {
-  const button = page.getByRole("banner").getByRole("button", { name: new RegExp(userName) });
-  await tabTo(page, button, 80);
-  await page.keyboard.press("Enter");
-  const target = page.getByRole("menu").getByRole("menuitem", { name: "تبديل المستخدم" });
-  for (let presses = 0; presses < 5; presses += 1) {
-    if (await target.evaluate((element) => element === document.activeElement)) break;
-    await page.keyboard.press("ArrowDown");
-  }
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/pin/);
 }
 
 test("keyboard only, offline: the PIN screen signs in PIN-only users, sells, locks a name out after five wrong PINs, a supervisor unlocks, auto-lock keeps the cart", async ({

@@ -15,7 +15,17 @@ import type { Clock } from "@mustawfi/kernel";
 import type { LocalDb } from "@mustawfi/local-db";
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
-import { loginResponseSchema, type sessionUserSchema } from "../../shared/index.ts";
+import {
+  type AccessGrant,
+  accessGrant,
+  type AccessPart,
+  bundleUserAccess,
+  catalogueFromView,
+  loginResponseSchema,
+  permissionCatalogueSchema,
+  sessionUserAccess,
+  type sessionUserSchema,
+} from "../../shared/index.ts";
 import { ACCESS_DEVICE_TABLE, localDevice } from "../device.ts";
 import { type CurrentSession, fetchSession, sessionQueryKey } from "../session.ts";
 import {
@@ -54,6 +64,12 @@ export interface SignedIn {
   readonly server: CurrentSession | null;
   /** This device's session, on a registered device of the user's store; else null. */
   readonly device: LocalSession | null;
+  /**
+   * What the user may do (`core-foundation` slice 16): resolved like the server resolves it, from
+   * the verified bundle on a registered device of the user's store — online or not, so a screen
+   * shows the same offline — and from the server's session answer and catalogue elsewhere.
+   */
+  readonly grant: AccessGrant;
 }
 
 /** How long a PIN sign-in waits for the server before checking the PIN on the device. */
@@ -73,7 +89,25 @@ function userFromBundle(user: BundleUser, role: BundleRole): SessionUser {
     departments: user.departments,
     // Every declared permission for the owner role; a scoped one holds only in the scope.
     permissions: role.permissions,
+    limits: role.isOwner ? {} : role.limits,
   };
+}
+
+/** `userId`'s grant as the bundle's `access` part describes them, if it allows them here. */
+function bundleGrant(access: AccessPart | undefined, userId: string): AccessGrant | undefined {
+  const held = access === undefined ? undefined : bundleUserAccess(access, userId);
+  return access === undefined || held === undefined
+    ? undefined
+    : accessGrant(catalogueFromView(access.catalogue), held);
+}
+
+/** The session user's grant, resolved against the server's catalogue (a client with no bundle). */
+async function serverGrant(server: CurrentSession, signal?: AbortSignal): Promise<AccessGrant> {
+  const catalogue = await apiRequest("/api/v1/access/catalogue", {
+    schema: permissionCatalogueSchema,
+    ...(signal === undefined ? {} : { signal }),
+  });
+  return accessGrant(catalogueFromView(catalogue), sessionUserAccess(server.user));
 }
 
 /** The server session, or null when the server cannot be reached. */
@@ -105,7 +139,8 @@ export async function fetchSignedIn(
     const server =
       device === undefined ? await fetchSession(signal) : await reachableSession(signal);
     if (server === null || server.tenantId === device?.tenantId) return null;
-    return { tenantId: server.tenantId, user: server.user, server, device: null };
+    const grant = await serverGrant(server, signal);
+    return { tenantId: server.tenantId, user: server.user, server, device: null, grant };
   }
   let server: CurrentSession | null = null;
   if (local.serverSession && hasSessionCredential()) {
@@ -116,17 +151,46 @@ export async function fetchSignedIn(
       server = null;
     }
   }
-  if (server !== null)
-    return { tenantId: server.tenantId, user: server.user, server, device: local };
   const access = accessPartOf(await loadBundle(db, verifier, device));
   const found = access === undefined ? undefined : bundleUser(access, local.userId);
+  const grant = bundleGrant(access, local.userId);
+  if (server !== null) {
+    if (found !== undefined && grant !== undefined) {
+      // The scope beside the grant comes from the same bundle, so a sale's department and the
+      // check of it never disagree while a newer bundle is on its way.
+      const { departmentScope, departments } = found.user;
+      const user = { ...server.user, departmentScope, departments };
+      return { tenantId: server.tenantId, user, server, device: local, grant };
+    }
+    // A device signed in by password before its first bundle arrived: the server's view,
+    // bounded like the session, and out of reach it is signed in as without the server.
+    try {
+      const fromServer = await serverGrant(
+        server,
+        AbortSignal.any([
+          ...(signal === undefined ? [] : [signal]),
+          AbortSignal.timeout(PIN_SERVER_TIMEOUT_MS),
+        ]),
+      );
+      return {
+        tenantId: server.tenantId,
+        user: server.user,
+        server,
+        device: local,
+        grant: fromServer,
+      };
+    } catch (error) {
+      if (!(error instanceof ApiUnreachable)) throw error;
+    }
+  }
   // No longer allowed on this device (deactivated, in a newer bundle): back to the PIN screen.
-  if (found === undefined) return null;
+  if (found === undefined || grant === undefined) return null;
   return {
     tenantId: device.tenantId,
     user: userFromBundle(found.user, found.role),
     server: null,
     device: local,
+    grant,
   };
 }
 

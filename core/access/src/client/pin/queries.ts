@@ -6,6 +6,7 @@ import {
 } from "@mustawfi/core-config/client";
 import type { LocalDb } from "@mustawfi/local-db";
 import { queryOptions } from "@tanstack/react-query";
+import type { OverrideRequest } from "../../shared/index.ts";
 import { ACCESS_DEVICE_TABLE, localDevice } from "../device.ts";
 import {
   accessPartOf,
@@ -16,6 +17,7 @@ import {
   mayUnlock,
   PIN_LOCKOUT_TABLE,
 } from "./local-sign-in.ts";
+import { bundleCovers } from "./override.ts";
 
 /** A name tile of the PIN screen: a user allowed on this device who has a PIN. */
 export interface PinTile {
@@ -79,6 +81,68 @@ export function pinScreenQueryOptions(db: LocalDb, verifier: BundleVerifier) {
       localTables: [
         PIN_LOCKOUT_TABLE,
         LOCAL_SESSION_TABLE,
+        ACCESS_DEVICE_TABLE,
+        CONFIG_BUNDLE_TABLE,
+        CONFIG_BUNDLE_REFUSAL_TABLE,
+      ],
+    },
+  });
+}
+
+/**
+ * The supervisors the override dialog offers for `request` (flow 15): the users with a PIN, not
+ * locked out here, other than `requestedBy`, whose role covers the action as the bundle
+ * describes it — so nobody picks a name that could only be refused. `undefined` without a
+ * bundle.
+ */
+async function overrideSupervisors(
+  db: LocalDb,
+  verifier: BundleVerifier,
+  request: OverrideRequest,
+  requestedBy: string,
+): Promise<readonly PinTile[] | undefined> {
+  const device = await localDevice(db);
+  if (device === undefined) return undefined;
+  const access = accessPartOf(
+    await loadBundle(db, verifier, { deviceId: device.deviceId, tenantId: device.tenantId }),
+  );
+  if (access === undefined) return undefined;
+  const locked = await lockedOutUsers(db, access);
+  const roles = new Map(access.roles.map((role) => [role.id, role]));
+  return access.users
+    .filter(
+      (user) =>
+        user.pinVerifier !== null &&
+        user.id !== requestedBy &&
+        !locked.has(user.id) &&
+        bundleCovers(access, user.id, request),
+    )
+    .map((user): PinTile => {
+      const role = roles.get(user.roleId);
+      return {
+        id: user.id,
+        name: user.name,
+        roleName: role?.name ?? "",
+        locked: false,
+        mayUnlock: role !== undefined && mayUnlock(role),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+}
+
+export function overrideSupervisorsQueryOptions(
+  db: LocalDb,
+  verifier: BundleVerifier,
+  request: OverrideRequest,
+  requestedBy: string,
+) {
+  return queryOptions({
+    queryKey: [...pinScreenQueryKey, "override", request, requestedBy],
+    queryFn: () => overrideSupervisors(db, verifier, request, requestedBy),
+    networkMode: "always",
+    meta: {
+      localTables: [
+        PIN_LOCKOUT_TABLE,
         ACCESS_DEVICE_TABLE,
         CONFIG_BUNDLE_TABLE,
         CONFIG_BUNDLE_REFUSAL_TABLE,

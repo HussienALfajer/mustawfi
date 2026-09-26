@@ -33,7 +33,7 @@ type Step =
     };
 
 /** A refusal or a failure to show under the pad, and whether it offers a supervisor's unlock. */
-interface Problem {
+export interface Problem {
   readonly message: string;
   readonly unlock?: boolean;
 }
@@ -54,7 +54,7 @@ function refusalKey(code: string): string {
   return "pin.refused";
 }
 
-function PinTiles(props: {
+export function PinTiles(props: {
   readonly label: string;
   readonly tiles: readonly PinTile[];
   readonly onPick: (tile: PinTile) => void;
@@ -90,7 +90,7 @@ function PinTiles(props: {
  * back — and the same digits as 48 px buttons for a touch screen, which leave the focus in the
  * field.
  */
-function PinPad(props: {
+export function PinPad(props: {
   readonly label: string;
   readonly pending: boolean;
   readonly problem: Problem | undefined;

@@ -65,6 +65,7 @@ export { Money, type MoneyProps, useCurrencyLabel } from "./components/money.tsx
 export { TextInput, type TextInputProps } from "./components/text-input.tsx";
 export { Badge, type BadgeTone } from "./components/badge.tsx";
 export { ConfirmDialog, type ConfirmDialogProps } from "./components/confirm-dialog.tsx";
+export { ModalDialog, type ModalDialogProps } from "./components/dialog.tsx";
 export { Kbd, shortcutLabel } from "./components/kbd.tsx";
 export {
   enterMovesToNextField,

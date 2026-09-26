@@ -4,7 +4,7 @@ import { organizationLocalMigrations } from "@mustawfi/core-organization/client"
 import { syncLocalMigrations } from "@mustawfi/core-sync/client";
 import { inventoryLocalMigrations } from "@mustawfi/inventory/client";
 import type { LocalMigration } from "@mustawfi/local-db";
-import { salesLocalMigrations } from "@mustawfi/sales/client";
+import { salesLocalMigrations, salesOverrideLocalMigrations } from "@mustawfi/sales/client";
 import { tenancyLocalMigrations } from "@mustawfi/core-tenancy/client";
 
 /**
@@ -21,4 +21,5 @@ export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   ...configLocalMigrations,
   ...tenancyLocalMigrations,
   ...pinLocalMigrations,
+  ...salesOverrideLocalMigrations,
 ];

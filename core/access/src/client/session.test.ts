@@ -12,6 +12,7 @@ const user = {
   departmentScope: "all",
   departments: [],
   permissions: ["organization.profile.edit"],
+  limits: {},
 };
 const session = {
   tenantId: "01a0d90e-759f-7223-90eb-cee31ed7e07c",

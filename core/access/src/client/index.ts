@@ -88,4 +88,14 @@ export {
   type UnlockOutcome,
 } from "./pin/local-sign-in.ts";
 export { PinScreen, type PinScreenProps } from "./pin/pin-screen.tsx";
+export {
+  SupervisorOverrideDialog,
+  type SupervisorOverrideDialogProps,
+} from "./pin/override-dialog.tsx";
+export {
+  grantOverride,
+  type OverrideDependencies,
+  type OverrideOutcome,
+  overrideOnDevice,
+} from "./pin/override.ts";
 export { pinScreenQueryKey, pinScreenQueryOptions } from "./pin/queries.ts";

@@ -1,4 +1,5 @@
 import { createRole, createUser, hashPassword } from "@mustawfi/core-access/server";
+import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import type { TenantDatabase } from "@mustawfi/core-tenancy/server";
 import type { Clock, IdGenerator, RandomSource } from "@mustawfi/kernel";
 import type { FastifyInstance } from "fastify";
@@ -21,6 +22,10 @@ export interface NewStaffUser {
   readonly permissions: readonly string[];
   /** A listed department scope; every department when omitted. */
   readonly departments?: readonly string[];
+  /** The limit values of the user's role; none when omitted. */
+  readonly limits?: Readonly<Record<string, string>>;
+  /** What the permissions and limits are declared in; the server's modules when omitted. */
+  readonly catalogue?: PermissionCatalogue;
 }
 
 /**
@@ -52,8 +57,13 @@ export async function createStaffUser(
     await createRole(
       tx,
       actor,
-      { id: roleId, name: `role of ${user.login}`, permissions: user.permissions },
-      serverPermissions(),
+      {
+        id: roleId,
+        name: `role of ${user.login}`,
+        permissions: user.permissions,
+        ...(user.limits === undefined ? {} : { limits: user.limits }),
+      },
+      user.catalogue ?? serverPermissions(),
       dependencies,
     );
     await createUser(

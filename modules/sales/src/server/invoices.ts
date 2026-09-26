@@ -18,6 +18,7 @@ import { knownProducts, moveStock } from "@mustawfi/inventory/server";
 import { Currency, Decimal, Money } from "@mustawfi/kernel";
 import { z } from "zod";
 import {
+  INVOICE_CREATE_PERMISSION,
   INVOICE_DOC_CODE,
   INVOICE_POST_OPERATION,
   invoicePostPayloadV1Schema,
@@ -152,6 +153,7 @@ async function postInvoiceV1(
       shiftId: operation.shiftId,
       templateVersion: invoice.templateVersion,
       total: invoice.total,
+      overrides: invoice.overrides ?? [],
     });
     await tx.insert(invoiceLines).values(
       invoice.lines.map((line, index) => ({
@@ -292,12 +294,15 @@ export const invoicePostOperation: SyncOperationDefinition = {
   type: INVOICE_POST_OPERATION,
   // Checked in the invoice's department at ingest; a cashier without it is flagged, not refused.
   access: {
-    permission: "sales.invoice.create",
+    permission: INVOICE_CREATE_PERMISSION,
     department: (payload) =>
       typeof payload["departmentId"] === "string" ? payload["departmentId"] : undefined,
   },
   // Flagged `licenseReadOnly` when dated after the tenant became read-only (ADR-0030).
   businessDate: (payload) =>
     typeof payload["businessDate"] === "string" ? payload["businessDate"] : undefined,
+  // A supervisor's override of the permission stands in for the seller's; one the approver's
+  // role does not cover is flagged `overrideNotAuthorized` (`core-foundation` rule 18).
+  overrides: (payload) => payload["overrides"],
   versions: { 1: postInvoiceV1 },
 };

@@ -51,6 +51,7 @@ import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/cor
 import { type LocalDb, useLocalDb } from "@mustawfi/local-db";
 import { ProductsScreen } from "@mustawfi/inventory/client";
 import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
+import { INVOICE_CREATE_PERMISSION } from "@mustawfi/sales/shared";
 import {
   type NavGroup,
   SIDE_NAVIGATION_WIDTH,
@@ -370,7 +371,8 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
       id: "sales",
       label: t("nav.group.sales"),
       items: [
-        ...item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />),
+        // Held in some department: a sale outside them asks a supervisor (rule 18).
+        ...item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />, INVOICE_CREATE_PERMISSION),
         ...item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />, "sales.invoices.view"),
       ],
     },
@@ -537,7 +539,8 @@ function AppShell() {
   const { clock } = useClientRuntime();
   const signedIn = useSignedIn();
   const [collapsed, setCollapsed] = useNavigationCollapsed(NAVIGATION_STORAGE_KEY);
-  const permissions = useMemo(() => new Set(signedIn?.user.permissions ?? []), [signedIn]);
+  // What the user holds somewhere, from the grant the device resolves as the server does.
+  const permissions = useMemo(() => new Set(signedIn?.grant.permissions ?? []), [signedIn]);
   const groups = useNavigationGroups(permissions);
   const page = usePage();
   const notice = useLicenseNotice();
@@ -718,7 +721,14 @@ function PosPage() {
   if (signedIn === undefined || signedIn === null) return null;
   return (
     <PosScreen
-      seller={{ userId: signedIn.user.id, tenantId: signedIn.tenantId }}
+      seller={{
+        userId: signedIn.user.id,
+        tenantId: signedIn.tenantId,
+        departmentScope: signedIn.user.departmentScope,
+        departments: signedIn.user.departments,
+        can: (permission, departmentId) => signedIn.grant.can(permission, departmentId),
+      }}
+      bundleVerifier={bundleVerifier()}
       license={{
         notice: license.data ?? undefined,
         failed: license.isError,
@@ -893,7 +903,7 @@ const LIMIT_SCREENS: Record<
 
 function LicensePage() {
   const { t } = useTranslation(SHELL_NAMESPACE);
-  const permissions = new Set(useSignedIn()?.user.permissions ?? []);
+  const permissions = new Set(useSignedIn()?.grant.permissions ?? []);
   return (
     <LicenseScreen
       limitLink={(limit) => {

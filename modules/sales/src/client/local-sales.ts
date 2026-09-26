@@ -1,4 +1,5 @@
 import type { LocalDevice } from "@mustawfi/core-access/client";
+import type { OverrideRequest, SupervisorOverride } from "@mustawfi/core-access/shared";
 import { localDefaultDepartment } from "@mustawfi/core-organization/client";
 import { formatDocumentNumber } from "@mustawfi/core-organization/shared";
 import type { LicenseRestriction } from "@mustawfi/core-tenancy/client";
@@ -10,6 +11,7 @@ import {
   type OutboxState,
   operationStates,
 } from "@mustawfi/core-sync/client";
+import type { SyncValues } from "@mustawfi/core-sync/shared";
 import { LOCAL_PRODUCTS_TABLE, localProductsById, priceCurrency } from "@mustawfi/inventory/client";
 import { type Clock, type Currency, Decimal, type IdGenerator, Money } from "@mustawfi/kernel";
 import {
@@ -24,6 +26,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import {
+  INVOICE_CREATE_PERMISSION,
   INVOICE_DOC_CODE,
   INVOICE_POST_OPERATION,
   type InvoicePostPayloadV1,
@@ -66,6 +69,8 @@ export const localInvoices = sqliteTable("sales_invoices", {
   shiftId: text("shift_id").notNull(),
   templateVersion: text("template_version").notNull(),
   totalScaled: int64("total_scaled").notNull(),
+  /** The supervisor overrides the sale needed, as JSON: approver and override id (rule 18). */
+  overrides: text().notNull(),
 });
 
 export const localInvoiceLines = sqliteTable("sales_invoice_lines", {
@@ -128,6 +133,20 @@ export const salesLocalMigrations: readonly LocalMigration[] = [
         BEGIN SELECT RAISE(ABORT, 'a recorded invoice line cannot change'); END`,
       `CREATE TRIGGER sales_invoice_lines_kept BEFORE DELETE ON sales_invoice_lines
         BEGIN SELECT RAISE(ABORT, 'a recorded invoice line cannot be deleted'); END`,
+    ],
+  },
+];
+
+/**
+ * The supervisor overrides a sale carries (`core-foundation` slice 16), appended at the end of the
+ * app's list: invoices recorded before needed none.
+ */
+export const salesOverrideLocalMigrations: readonly LocalMigration[] = [
+  {
+    id: "sales.0002_invoice_overrides",
+    statements: [
+      `ALTER TABLE sales_invoices ADD COLUMN overrides TEXT NOT NULL DEFAULT '[]'
+        CHECK (json_valid(overrides) AND json_type(overrides) = 'array')`,
     ],
   },
 ];
@@ -230,20 +249,68 @@ export class SaleRefused extends Error {
   override name = "SaleRefused";
   readonly reason: SaleRefusal;
   readonly restriction: LicenseRestriction | undefined;
+  /** For `overrideNeeded`: what a supervisor must approve. */
+  readonly request: OverrideRequest | undefined;
 
-  constructor(reason: SaleRefusal, restriction?: LicenseRestriction) {
-    super(restriction === undefined ? reason : `${reason}: ${restriction}`);
+  constructor(
+    reason: SaleRefusal,
+    detail?: { readonly restriction?: LicenseRestriction; readonly request?: OverrideRequest },
+  ) {
+    super(detail?.restriction === undefined ? reason : `${reason}: ${detail.restriction}`);
     this.reason = reason;
-    this.restriction = restriction;
+    this.restriction = detail?.restriction;
+    this.request = detail?.request;
   }
 }
 
-export type SaleRefusal = "emptyCart" | "notSellable" | "noDepartment" | "licenseRestricted";
+/**
+ * Why a cart did not become a sale; `overrideNeeded`: the seller may not sell in the sale's
+ * department, and no supervisor has approved it yet (rule 18).
+ */
+export type SaleRefusal =
+  "emptyCart" | "notSellable" | "noDepartment" | "licenseRestricted" | "overrideNeeded";
+
+/** An override as the payload's JSON carries it: no field left undefined. */
+function overrideValue(override: SupervisorOverride): SyncValues {
+  return {
+    id: override.id,
+    approverId: override.approverId,
+    permission: override.permission,
+    ...(override.departmentId === undefined ? {} : { departmentId: override.departmentId }),
+    ...(override.limit === undefined
+      ? {}
+      : { limit: { id: override.limit.id, value: override.limit.value } }),
+    grantedAt: override.grantedAt,
+  };
+}
+
+/** Who sells: their department scope, and what their role lets them do there. */
+export interface Seller {
+  readonly userId: string;
+  readonly departmentScope: "all" | "listed";
+  /** The active departments of a `listed` scope. */
+  readonly departments: readonly string[];
+  /** Whether the seller holds `permission` in `departmentId` (the client's grant). */
+  readonly can: (permission: string, departmentId: string) => boolean;
+}
+
+/**
+ * The department a sale is sold under (`core-foundation` rule 32, until `sales` refines it):
+ * the seller's one department when their scope lists exactly one, else the store's default.
+ */
+export function saleDepartmentId(seller: Seller, defaultDepartmentId: string): string {
+  const [only, ...others] = seller.departments;
+  return seller.departmentScope === "listed" && only !== undefined && others.length === 0
+    ? only
+    : defaultDepartmentId;
+}
 
 export interface CashSaleInput {
   readonly device: LocalDevice;
   /** The signed-in user who sells. */
-  readonly userId: string;
+  readonly seller: Seller;
+  /** The supervisor overrides granted for this sale (rule 18); none by default. */
+  readonly overrides?: readonly SupervisorOverride[];
   readonly clock: Clock;
   readonly newId: IdGenerator;
   /**
@@ -263,22 +330,40 @@ export interface RecordedSale {
  * Sells the cart for cash, offline or not (flow 5): the invoice, its number
  * `{prefix}-INV-{seq:6}`, its outbox entry, and the emptied cart commit in one local
  * transaction (ADR-0019), or nothing does. The network is never touched. The invoice is sold
- * under the store's default department (`core-foundation` rule 32, until `sales` chooses by the
- * user's scope) and records the current receipt template. A device whose license is read-only,
- * suspended, or not trusted records nothing (rule 9); the cart stays for later.
+ * under the seller's one department, or the store's default one (`core-foundation` rule 32), and
+ * records the current receipt template. A seller who may not sell there sells only with a
+ * supervisor's override of `sales.invoice.create` in that department, which the invoice then
+ * carries (rule 18); without one, nothing is recorded (`overrideNeeded`). A device whose license
+ * is read-only, suspended, or not trusted records nothing (rule 9); the cart stays for later.
  */
 export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promise<RecordedSale> {
   const { device, clock, newId } = input;
   // Before the transaction: the check verifies the bundle and writes the clock guard itself.
   const restriction = await input.license();
-  if (restriction !== null) throw new SaleRefused("licenseRestricted", restriction);
+  if (restriction !== null) throw new SaleRefused("licenseRestricted", { restriction });
+  const overrides = input.overrides ?? [];
   return db.transaction(async (tx) => {
     const cart = await readCart(tx, device.baseCurrency);
     if (cart.lines.length === 0) throw new SaleRefused("emptyCart");
     if (!cart.ready) throw new SaleRefused("notSellable");
     // Departments arrive with the first pull, before any product: a device with a cart has one.
-    const department = await localDefaultDepartment(tx);
-    if (department === undefined) throw new SaleRefused("noDepartment");
+    const defaultDepartment = await localDefaultDepartment(tx);
+    if (defaultDepartment === undefined) throw new SaleRefused("noDepartment");
+    const departmentId = saleDepartmentId(input.seller, defaultDepartment.id);
+    const needed = { permission: INVOICE_CREATE_PERMISSION, departmentId };
+    // Only an override of this sale's action, in its department, and only when the seller
+    // needed one: the invoice never names an approver who approved nothing of it.
+    const allowed = input.seller.can(needed.permission, departmentId);
+    const used = allowed
+      ? []
+      : overrides.filter(
+          (override) =>
+            override.permission === needed.permission && override.departmentId === departmentId,
+        );
+    // Nothing is recorded: the POS asks a supervisor, then sells again with the override.
+    if (!allowed && used.length === 0) {
+      throw new SaleRefused("overrideNeeded", { request: needed });
+    }
 
     const soldAt = clock.now();
     const seq = await nextDocumentSeq(tx, INVOICE_DOC_CODE);
@@ -300,13 +385,13 @@ export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promi
         amount: line.amount,
       };
     });
-    const payload: InvoicePostPayloadV1 = {
+    const payload: Omit<InvoicePostPayloadV1, "overrides"> = {
       id: invoiceId,
       number,
       businessDate: businessDate(soldAt, BUSINESS_TIME_ZONE),
       currency: cart.currency.code,
       exchangeRate: exchangeRate.toString(),
-      departmentId: department.id,
+      departmentId,
       templateVersion: CASH_RECEIPT_TEMPLATE.version,
       total: cart.total.amount.toString(),
       lines: lines.map((line) => ({
@@ -326,13 +411,14 @@ export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promi
       opId,
       businessDate: payload.businessDate,
       soldAt: soldAt.toISOString(),
-      userId: input.userId,
+      userId: input.seller.userId,
       currency: payload.currency,
       exchangeRateScaled: exchangeRate.toScaledInteger(RATE_SCALE),
       departmentId: payload.departmentId,
       shiftId: SKELETON_DOCUMENT_DEFAULTS.shiftId,
       templateVersion: payload.templateVersion,
       totalScaled: cart.total.amount.toScaledInteger(AMOUNT_SCALE),
+      overrides: JSON.stringify(used),
     });
     await orm.insert(localInvoiceLines).values(
       lines.map((line) => ({
@@ -351,8 +437,8 @@ export async function completeCashSale(db: LocalDb, input: CashSaleInput): Promi
       deviceId: device.deviceId,
       type: INVOICE_POST_OPERATION,
       payloadVersion: 1,
-      payload,
-      userId: input.userId,
+      payload: used.length === 0 ? payload : { ...payload, overrides: used.map(overrideValue) },
+      userId: input.seller.userId,
       shiftId: SKELETON_DOCUMENT_DEFAULTS.shiftId,
       createdAt: soldAt,
     });
