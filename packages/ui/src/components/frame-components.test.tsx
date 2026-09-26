@@ -38,6 +38,7 @@ function wrap(node: ReactNode) {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.localStorage.clear();
 });
 
@@ -217,6 +218,21 @@ describe("DataTable selection", () => {
 
 describe("MenuButton", () => {
   it("opens from the keyboard on the first action, acts on Enter, and closes with Esc back to the button", async () => {
+    // Slow frames, as on a loaded CI machine: React Aria returns focus to the button in an
+    // animation frame after the menu unmounts, so every check of it must wait.
+    const frames = new Set<ReturnType<typeof setTimeout>>();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const frame = setTimeout(() => {
+        frames.delete(frame);
+        callback(0);
+      }, 50);
+      frames.add(frame);
+      return frame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: ReturnType<typeof setTimeout>) => {
+      clearTimeout(frame);
+      frames.delete(frame);
+    });
     const onAction = vi.fn();
     wrap(
       <MenuButton
@@ -241,7 +257,9 @@ describe("MenuButton", () => {
     await waitFor(() => {
       expect(menu).not.toBeInTheDocument();
     });
-    expect(button).toHaveFocus();
+    await waitFor(() => {
+      expect(button).toHaveFocus();
+    });
 
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("menu");
@@ -251,7 +269,13 @@ describe("MenuButton", () => {
     });
     await userEvent.keyboard("{Enter}");
     expect(onAction).toHaveBeenCalledExactlyOnceWith("signOut");
-    expect(screen.queryByRole("menu")).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).toBeNull();
+    });
+    // Every slowed frame runs before the test's page is torn down.
+    await waitFor(() => {
+      expect(frames.size).toBe(0);
+    });
   });
 });
 
