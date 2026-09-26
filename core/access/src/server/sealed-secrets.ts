@@ -27,8 +27,8 @@ const TAG_BYTES = 16;
 /**
  * Reads a key ring file: one key per line, `kid:key` with the key 32 random bytes in base64url;
  * the first key is the current one. Blank lines and lines starting with `#` are ignored.
- * Generate a key with
- * `node -e "console.log('k1:' + require('node:crypto').randomBytes(32).toString('base64url'))"`.
+ * `pnpm --filter @mustawfi/server access:totp-key --kid <kid> --out <file>` writes a new file,
+ * and with `--rotate` puts a new current key first in an existing one.
  */
 export function parseTotpKeys(text: string): TotpKeyRing {
   const keys = new Map<string, Uint8Array>();

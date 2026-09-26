@@ -30,10 +30,6 @@ export const shellMessages = {
     device: "تسجيل الجهاز",
     printer: "الطابعة",
   },
-  /** The user's entries in the top bar. */
-  userMenu: {
-    account: "حسابي",
-  },
   /** Page titles in the top bar. */
   pages: {
     pos: "البيع",

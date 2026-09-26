@@ -38,6 +38,10 @@ export const galleryMessages = {
   },
   typeSample: "مستوفي — فاتورة مبيعات {size}",
   sample: {
+    userName: "سامر",
+    userRole: "المالك",
+    account: "حسابي",
+    signOut: "تسجيل الخروج",
     save: "حفظ",
     cancel: "إلغاء",
     more: "المزيد",

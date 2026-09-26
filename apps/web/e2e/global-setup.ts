@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -62,15 +61,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     app: { user: APP_ROLE, password: "app-e2e-password" },
   };
   let server: ChildProcess | undefined;
-  // The key sealing TOTP secrets, made for this run and removed with it.
+  // The key file sealing TOTP secrets, made for this run and removed with it.
   const secrets = mkdtempSync(join(tmpdir(), "mustawfi-e2e-"));
   const totpKeysFile = join(secrets, "totp.keys");
-  writeFileSync(
-    totpKeysFile,
-    `e2e:${randomBytes(32).toString("base64url")}
-`,
-    { mode: 0o600 },
-  );
   const teardown = async () => {
     await stopProcess(server);
     await container.stop();
@@ -92,6 +85,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const appUrl = connectionString(postgres, postgres.app, DATABASE);
 
     await runCli("src/cli/migrate.ts", [], { DATABASE_OWNER_URL: ownerUrl });
+    await runCli("src/cli/totp-key.ts", ["--kid", "e2e", "--out", totpKeysFile], {});
     const store: Omit<E2eStore, "storeCode"> = {
       login: "owner",
       password: "correct horse battery staple",

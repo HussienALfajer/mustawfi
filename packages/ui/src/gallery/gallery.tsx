@@ -8,6 +8,7 @@ import { Checkbox, CheckboxGroup } from "../components/checkbox.tsx";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { DataTable } from "../components/data-table.tsx";
 import { Kbd } from "../components/kbd.tsx";
+import { MenuButton } from "../components/menu-button.tsx";
 import { MoneyInput } from "../components/money-input.tsx";
 import { Money } from "../components/money.tsx";
 import { SearchField } from "../components/search-field.tsx";
@@ -50,6 +51,7 @@ export const GALLERY_COMPONENTS = [
   "FormFooter",
   "FormSection",
   "Kbd",
+  "MenuButton",
   "Money",
   "MoneyInput",
   "SearchField",
@@ -126,6 +128,20 @@ function Specimens() {
         <Button variant="quiet">{t("sample.more")}</Button>
         <Button variant="danger">{t("sample.archive")}</Button>
         <Button isPending>{t("sample.saving")}</Button>
+      </Specimen>
+      <Specimen name="MenuButton">
+        <MenuButton
+          actions={[
+            { id: "account", label: t("sample.account") },
+            { id: "signOut", label: t("sample.signOut") },
+          ]}
+          onAction={() => undefined}
+        >
+          <span className="flex flex-col text-sm leading-tight">
+            <span>{t("sample.userName")}</span>
+            <span className="text-xs text-text-secondary">{t("sample.userRole")}</span>
+          </span>
+        </MenuButton>
       </Specimen>
       <Specimen name="Kbd">
         <Button aria-keyshortcuts="Control+S">

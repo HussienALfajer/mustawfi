@@ -1,5 +1,5 @@
 import { expect, expectAccessible, test } from "./test.ts";
-import { signIn, tabTo } from "./steps.ts";
+import { signIn, signOut, tabTo } from "./steps.ts";
 
 test("renders right to left in Arabic", async ({ page }) => {
   await page.goto("/login");
@@ -60,8 +60,7 @@ test("keyboard only: sign in, add a product, see it listed, sign out", async ({ 
   await expect(page.getByRole("row").filter({ hasText: barcode })).toBeVisible();
   expect(await page.evaluate(() => document.cookie)).not.toContain("mustawfi_session");
 
-  await tabTo(page, page.getByRole("button", { name: "تسجيل الخروج" }));
-  await page.keyboard.press("Enter");
+  await signOut(page, "سامر");
   await expect(page).toHaveURL(/\/login$/);
   await page.goto("/products");
   await expect(page).toHaveURL(/\/login$/);

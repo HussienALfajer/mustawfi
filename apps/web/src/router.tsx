@@ -11,7 +11,7 @@ import {
   roleFiltersSchema,
   RolesScreen,
   sessionQueryOptions,
-  SignOutButton,
+  UserMenu,
   userFiltersSchema,
   UsersScreen,
 } from "@mustawfi/core-access/client";
@@ -351,19 +351,10 @@ function AppShell() {
           <h1 className="text-xl font-bold">{page.title === undefined ? null : t(page.title)}</h1>
           <div className="ms-auto flex items-center gap-3">
             <SyncStatusIndicator />
-            {session ? (
-              <span className="flex flex-col text-sm leading-tight">
-                <span className="text-text">{session.user.name}</span>
-                <span className="text-xs text-text-secondary">{session.user.role.name}</span>
-              </span>
-            ) : null}
-            <Link
-              to="/account"
-              className="rounded-sm px-2 py-1 text-sm text-text-accent underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-focus-ring"
-            >
-              {t("userMenu.account")}
-            </Link>
-            <SignOutButton
+            <UserMenu
+              onAccount={() => {
+                void navigate({ to: "/account" });
+              }}
               onSignedOut={() => {
                 void navigate({ to: "/login" });
               }}

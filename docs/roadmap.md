@@ -71,7 +71,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | 14 | `repairs` | repairs | Not started |
 | 15 | `recharge` | recharge | Not started |
 | 16 | `customer-portal` | customer-portal | Not started |
-| 17 | `ops` | Production deployment (server configuration checked before go-live, `TRUST_PROXY` set to the reverse proxy — the server warns in its log when it is missing; the TOTP key file `TOTP_KEYS_FILE` created root-only with an offline copy, and its rotation procedure), off-site backups and restore drill, monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
+| 17 | `ops` | Production deployment (server configuration checked before go-live, `TRUST_PROXY` set to the reverse proxy — the server warns in its log when it is missing; the TOTP key file `TOTP_KEYS_FILE` created with `access:totp-key` (root-only, with an offline copy) and its rotation procedure — a key leaves the file only once nothing sealed with it remains), off-site backups and restore drill, monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
 
 ## Phase C — Closed beta
 

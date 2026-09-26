@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { attachScreens, signIn, tabTo } from "./steps.ts";
+import { attachScreens, signIn, signOut, tabTo } from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 /** Presses a key until `target` has focus: the arrow keys in a list or a table. */
@@ -109,8 +109,7 @@ test("keyboard only: a section cashier scoped to a new department, and a copied 
   await attachScreens(page, testInfo, "roles");
 
   // The cashier sees only what their role opens: no administration.
-  await tabTo(page, page.getByRole("button", { name: "تسجيل الخروج" }), 80);
-  await page.keyboard.press("Enter");
+  await signOut(page, "سامر");
   await expect(page).toHaveURL(/\/login$/);
   await signIn(page, "cashier password 1", "layla");
   await expect(page).toHaveURL(/\/products$/);

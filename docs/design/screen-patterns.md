@@ -2,6 +2,7 @@
 
 - Agreed with the user on 2026-09-25 (`core-foundation` spec session). Builds on ADR-0023 (client stack), ADR-0024 (visual direction), and `design-system.md` (tokens, contrast, densities, patterns to avoid).
 - The rules below are decided. The frame and the list-with-side-panel pattern were approved by the user on a preview on 2026-09-25 and built in `core-foundation` slice 3; their measures below come from that preview. The notice pattern was approved by the user on 2026-09-26 on the screenshots of «device removed» (`core-foundation` slice 9): a centred card on the page background, an icon, the title as the page's `h1`, the reason, what to do next, and one primary action that has focus.
+- Decided on 2026-09-26 (`core-foundation` slice 10; the user left the choice to the agent's professional judgement): security settings save section by section, machine-read codes stay dark on light, and the user menu is built as the frame says. Each is recorded below.
 - Like `design-system.md`, this document changes only by recorded decision (an ADR or a unit spec's deviation note).
 
 ## Who the screens are for
@@ -12,7 +13,7 @@ Accountants, owners, and cashiers who spend whole shifts in the app, mostly on a
 
 - **Side navigation** on the start side (right in Arabic), 232 px wide, in groups in this order — Sales, Inventory, Accounting, Treasury, Reports, Administration, This device — each under a small muted heading. An entry appears only when the signed-in user may open it, and a group with no entry is not shown. The current page has the `selected` background, accent text, and a 3 px accent bar on its start edge.
 - **Collapsed** to 56 px: icons only; the group headings become dividers; each label stays the link's accessible name and appears beside the icon on hover or keyboard focus. The toggle sits at the foot of the navigation with its shortcut, `Ctrl+B` toggles from anywhere, and the choice is remembered on the device (browser storage; a refusal only means it is not remembered).
-- **Top bar**, 56 px: the page title (the page's one `h1`) at the start; at the end the license warning (owners), the sync status indicator, the user (name and role), and the user menu (My account, sign out, switch user).
+- **Top bar**, 56 px: the page title (the page's one `h1`) at the start; at the end the license warning (owners), the sync status indicator, the user menu — a button showing the user's name and role that opens My account and sign out (switch user joins it with the PIN screen). `MenuButton` in `packages/ui`: Enter or the down arrow opens it on its first item, `Esc` returns to the button.
 - **Content** fills the rest; no fixed maximum width on list screens (tables use the space), a readable maximum on forms.
 
 ## Patterns
@@ -23,7 +24,7 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 |---|---|---|
 | **List with side panel** | Master data and records: users, roles, departments, devices, audit entries, products, customers | A compact table under a filter bar (search, status choice, count, and «New» at the end); selecting a row opens its details in a 400 px side panel on the end side, never a modal, and the table narrows beside it. The arrow keys move the selection and the panel follows; «New» (`N`) opens an empty panel. The panel has its title and close button (`Esc`) on top, and a footer with Save (`Ctrl+S`) at the start and a destructive action at the end. The selection and the filters live in the URL. |
 | **Full document** | Invoices, journal entries, vouchers, statements | A full page with the document's header, lines, totals with the double rule, and its actions; opened from a list, back to the same list position. |
-| **Settings form** | Store profile, My account, printer | Sections with headings on one page; a sticky footer with Save and Cancel; unsaved changes guarded on leave. |
+| **Settings form** | Store profile, My account, printer | Sections with headings on one page; a sticky footer with Save and Cancel; unsaved changes guarded on leave. **Security settings** (My account: PIN, password, 2FA) are the exception: each section proves the change with the current secret and saves on its own with its own button, so there is no shared footer and no leave guard — a typed secret is never kept. |
 | **Summary** | License and plan, device status | Read-only facts with their state; actions link to where they are done. |
 | **Notice** | Store suspended, device removed, not registered | One message, the reason, and the one thing the user can do. |
 | **Touch panel** | PIN screen, POS, supervisor override | `touch` density, targets of at least 48 px, usable with a keyboard too. |
@@ -54,6 +55,7 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 - Important failures (sync, print, posting, save) stay on screen until resolved; toasts are for success only.
 - Every details panel ends with «last changed by … on …», linked to the audit log for users who may read it.
 - Loading never blocks the screen on the network and always says whether the app is offline.
+- Codes read by a machine (QR codes, barcodes) keep dark modules on a light box in every theme (`data-theme="light"` on the box): scanners and authenticator apps read dark on light. The same value is shown beside it as text for typing by hand.
 
 ## Components
 

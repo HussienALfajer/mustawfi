@@ -1,8 +1,8 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 import { Secret, TOTP } from "otpauth";
 import { e2eStore } from "./environment.ts";
 import { runCli } from "./server-cli.ts";
-import { attachScreens, signIn, tabTo } from "./steps.ts";
+import { attachScreens, chooseFromUserMenu, signIn, signOut, tabTo } from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 const LOGIN = "rana";
@@ -48,12 +48,6 @@ function appCode(secret: string, steps = 0): string {
   });
 }
 
-async function signOut(page: Page): Promise<void> {
-  await tabTo(page, page.getByRole("button", { name: "تسجيل الخروج" }), 60);
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/login/);
-}
-
 test("keyboard only: «My account» changes the PIN and password and turns on 2FA; sign-in asks for a code or a recovery code; a support reset code recovers", async ({
   page,
   request,
@@ -62,9 +56,8 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await signIn(page, FIRST_PASSWORD, LOGIN);
   await expect(page).toHaveURL(/\/products$/);
 
-  // «My account» from the top bar.
-  await tabTo(page, page.getByRole("link", { name: "حسابي" }), 60);
-  await page.keyboard.press("Enter");
+  // «My account» from the user menu in the top bar.
+  await chooseFromUserMenu(page, "رنا", "حسابي", { testInfo, name: "user-menu" });
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole("heading", { name: "حسابي", level: 1 })).toBeVisible();
 
@@ -114,7 +107,7 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await attachScreens(page, testInfo, "my-account");
 
   // Sign-in now asks for the app's code (the next one: the first was used up).
-  await signOut(page);
+  await signOut(page, "رنا");
   await signIn(page, SECOND_PASSWORD, LOGIN);
   const code = page.getByLabel("رمز التحقق");
   await expect(code).toBeFocused();
@@ -125,13 +118,13 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await expect(page).toHaveURL(/\/products$/);
 
   // Or a recovery code, when the phone is not at hand.
-  await signOut(page);
+  await signOut(page, "رنا");
   await signIn(page, SECOND_PASSWORD, LOGIN);
   await expect(page.getByLabel("رمز التحقق")).toBeFocused();
   await page.keyboard.type(recoveryCodes[0] ?? "");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/products$/);
-  await signOut(page);
+  await signOut(page, "رنا");
 
   // Lost the password: Vertex support issues a reset code; setting a new password with it
   // clears two-factor authentication too.

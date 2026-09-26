@@ -8,6 +8,7 @@
     "tenant:create": "node src/cli/create-tenant.ts",
     "license:install": "node src/cli/install-license.ts",
     "access:reset-code": "node src/cli/reset-code.ts",
+    "access:totp-key": "node src/cli/totp-key.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p sync-sim/tsconfig.json"
   },
   "dependencies": {

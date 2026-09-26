@@ -41,7 +41,7 @@ export {
   type SignInInput,
   signOut,
 } from "./session.ts";
-export { SignOutButton, type SignOutButtonProps } from "./sign-out-button.tsx";
+export { UserMenu, type UserMenuProps } from "./user-menu.tsx";
 export { limitLabelKey, moduleNamespace, permissionLabelKey } from "./permission-labels.ts";
 export {
   catalogueQueryKey,

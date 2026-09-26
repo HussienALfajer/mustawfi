@@ -111,6 +111,9 @@ export const accessMessages = {
     },
   },
   account: accountMessages,
+  userMenu: {
+    account: "حسابي",
+  },
   signOut: {
     action: "تسجيل الخروج",
     failed: "تعذّر تسجيل الخروج. حاول مجددًا",

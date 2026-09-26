@@ -97,3 +97,4 @@ export {
   type CheckboxProps,
 } from "./components/checkbox.tsx";
 export { Select, type SelectOption, type SelectProps } from "./components/select.tsx";
+export { type MenuAction, MenuButton, type MenuButtonProps } from "./components/menu-button.tsx";
