@@ -69,7 +69,12 @@ export async function signIn(input: SignInInput): Promise<CurrentSession> {
     if (answer.token === undefined) throw new Error("the bearer sign-in returned no token");
     holdSessionToken(answer.token);
   }
-  return { tenantId: answer.tenantId, expiresAt: answer.expiresAt, user: answer.user };
+  return {
+    tenantId: answer.tenantId,
+    expiresAt: answer.expiresAt,
+    user: answer.user,
+    license: answer.license,
+  };
 }
 
 export interface PasswordResetInput {

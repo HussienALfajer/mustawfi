@@ -1,2 +1,13 @@
 export { TENANCY_NAMESPACE, tenancyMessages } from "./messages.ts";
 export { licenseBundlePart } from "./license-part.ts";
+export {
+  CLOCK_GUARD_TABLE,
+  CLOCK_TOLERANCE_MS,
+  type DeviceLicense,
+  deviceLicense,
+  LICENSE_DAY_TABLE,
+  type LicenseRestriction,
+  openLicenseDay,
+  recordServerTime,
+  tenancyLocalMigrations,
+} from "./device-license.ts";

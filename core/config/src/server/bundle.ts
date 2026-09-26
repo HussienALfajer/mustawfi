@@ -6,6 +6,8 @@ import {
   BUNDLE_TYPE,
   type BundleManifest,
   bundleManifestSchema,
+  SERVER_TIME_TYPE,
+  serverTimeClaimsSchema,
   type SignedBundle,
   signingKeyIdSchema,
 } from "../shared/bundle.ts";
@@ -117,4 +119,21 @@ export async function signBundle(
     .setProtectedHeader({ alg: BUNDLE_ALGORITHM, typ: BUNDLE_TYPE, kid: key.kid })
     .sign(key.key);
   return { manifest: jws, parts: { ...contents.parts } };
+}
+
+/**
+ * Signs the server's time for one device with the bundle key (`typ` time): the trusted server
+ * time of the device's clock guard (ADR-0021). It names the device, so another device cannot
+ * use it, and devices take only a time later than the last one they took, so it cannot be
+ * replayed.
+ */
+export async function signServerTime(
+  deviceId: string,
+  at: Date,
+  key: BundleSigningKey,
+): Promise<string> {
+  const claims = serverTimeClaimsSchema.parse({ deviceId, serverTime: at.toISOString() });
+  return new CompactSign(new TextEncoder().encode(JSON.stringify(claims)))
+    .setProtectedHeader({ alg: BUNDLE_ALGORITHM, typ: SERVER_TIME_TYPE, kid: key.kid })
+    .sign(key.key);
 }

@@ -6,6 +6,7 @@ import { type ReactNode, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { accessProblemCodes } from "../shared/index.ts";
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { type CurrentSession, sessionQueryKey, signIn } from "./session.ts";
@@ -38,6 +39,8 @@ function failureKey(error: unknown): string {
         return "login.deviceRequired";
       case accessProblemCodes.deviceRevoked:
         return "login.deviceRevoked";
+      case tenancyProblemCodes.licenseSuspended:
+        return "login.suspended";
     }
   }
   return "login.refused";

@@ -177,6 +177,9 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | حالة الترخيص | License state (`active`, `expiring`, `grace`, `readOnly`, `suspended`) | `licenseState` |
 | أقصى أيام بلا اتصال | Maximum offline days | `maxOfflineDays` |
 | حارس الساعة | Clock guard (monotonic high-water mark, ADR-0021) | `clockGuard` |
+| وقت الخادم الموقّع | Signed server time (the clock guard's trusted server time) | `serverTime` |
+| وضع الترخيص | License standing: the state with its expiry, read-only, and suspension dates | `licenseStanding` |
+| قيد الترخيص | License restriction: why a device may create no document now | `licenseRestriction` |
 | ترخيص دائم | Perpetual license | `perpetualLicense` |
 | صيانة سنوية | Annual maintenance | `annualMaintenance` |
 | مهلة سماح | Grace period | `gracePeriod` |

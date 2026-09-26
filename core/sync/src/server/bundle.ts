@@ -4,6 +4,7 @@ import {
   type BundlePart,
   type BundleSigningKey,
   signBundle,
+  signServerTime,
 } from "@mustawfi/core-config/server";
 import type { BundleResponse } from "@mustawfi/core-config/shared";
 import {
@@ -28,7 +29,8 @@ export interface BundleDependencies {
  * The configuration bundle of `device` (`core-foundation` rules 11–12), rebuilt from current
  * data: every part is built in one tenant transaction and its text hashed; the device's version
  * increases when that digest differs from the one last offered. A device that already holds the
- * current version (`known`) gets the version alone.
+ * current version (`known`) gets the version alone. Every answer carries the server's time,
+ * signed for the device, for its clock guard (ADR-0021).
  *
  * The row is written only when the digest changed. Two calls for one device at once serialize
  * on its row: the one that loses the race to write the same digest reads the winner's row, and
@@ -95,9 +97,15 @@ export async function deviceBundle(
         row ??= (await offered()).find((current) => current.digest === digest);
         if (row === undefined) throw new Error("the bundle changed while it was built");
       }
-      if (row.version === known) return { version: row.version, bundle: null };
+      const time = await signServerTime(
+        device.deviceId,
+        dependencies.clock.now(),
+        dependencies.bundleKey,
+      );
+      if (row.version === known) return { version: row.version, bundle: null, time };
       return {
         version: row.version,
+        time,
         bundle: await signBundle(
           {
             version: row.version,

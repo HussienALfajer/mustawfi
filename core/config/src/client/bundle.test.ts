@@ -5,7 +5,12 @@ import { openNodeLocalDb } from "@mustawfi/local-db/node";
 import { CompactSign, exportJWK, generateKeyPair } from "jose";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { BUNDLE_ALGORITHM, BUNDLE_TYPE, type SignedBundle } from "../shared/bundle.ts";
+import {
+  BUNDLE_ALGORITHM,
+  BUNDLE_TYPE,
+  SERVER_TIME_TYPE,
+  type SignedBundle,
+} from "../shared/bundle.ts";
 import {
   acceptBundle,
   type BundlePartDecoder,
@@ -16,6 +21,7 @@ import {
   configLocalMigrations,
   loadBundle,
   verifyBundle,
+  verifyServerTime,
 } from "./bundle.ts";
 
 const clock = manualClock(new Date("2026-09-26T10:00:00.000Z"));
@@ -264,5 +270,41 @@ describe("the bundle on the device", () => {
       reason: "badHash",
       bundle: undefined,
     });
+  });
+});
+
+describe("the server's signed time (the clock guard's trusted server time)", () => {
+  async function timeToken(
+    key: TestKey,
+    claims: Record<string, unknown>,
+    typ: string = SERVER_TIME_TYPE,
+  ): Promise<string> {
+    return new CompactSign(new TextEncoder().encode(JSON.stringify(claims)))
+      .setProtectedHeader({ alg: BUNDLE_ALGORITHM, typ, kid: key.kid })
+      .sign(key.privateKey);
+  }
+
+  const serverTime = "2026-09-26T10:05:00.000Z";
+
+  it("is taken when a trusted bundle key signed it for this device", async () => {
+    const token = await timeToken(current, { deviceId: device.deviceId, serverTime });
+    expect(await verifyServerTime(token, verifier.keys, device.deviceId)).toEqual(
+      new Date(serverTime),
+    );
+  });
+
+  it("is ignored for another device, another type, an unknown key, or a bad signature", async () => {
+    const stranger = await testKey("stranger");
+    const tokens = [
+      await timeToken(current, { deviceId: newId(), serverTime }),
+      await timeToken(current, { deviceId: device.deviceId, serverTime }, BUNDLE_TYPE),
+      await timeToken(stranger, { deviceId: device.deviceId, serverTime }),
+      await timeToken({ ...stranger, kid: current.kid }, { deviceId: device.deviceId, serverTime }),
+      await timeToken(current, { deviceId: device.deviceId, serverTime: "yesterday" }),
+      "not.a.jws",
+    ];
+    for (const token of tokens) {
+      expect(await verifyServerTime(token, verifier.keys, device.deviceId)).toBeUndefined();
+    }
   });
 });

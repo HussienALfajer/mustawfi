@@ -19,6 +19,7 @@
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/i18n": "workspace:*",
     "@mustawfi/kernel": "workspace:*",
+    "@mustawfi/local-db": "workspace:*",
     "drizzle-orm": "0.45.3",
     "jose": "6.2.12",
     "pg": "8.23.0",

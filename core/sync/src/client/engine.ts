@@ -14,7 +14,9 @@ import {
   holdDeviceCredential,
   holdSessionToken,
   storedBundleVersion,
+  verifyServerTime,
 } from "@mustawfi/core-config/client";
+import { recordServerTime } from "@mustawfi/core-tenancy/client";
 import { type BundleResponse, bundleResponseSchema } from "@mustawfi/core-config/shared";
 import type { Clock } from "@mustawfi/kernel";
 import {
@@ -178,7 +180,8 @@ const PUSH_BATCHES_PER_ROUND = 20;
  * credential, and reports the wipe if it can.
  *
  * After push and pull, the device asks for its configuration bundle with the version it holds;
- * a refused bundle is recorded and the previous one kept, without failing the round.
+ * a refused bundle is recorded and the previous one kept, without failing the round. The answer's
+ * signed server time goes to the clock guard as the device's last server contact.
  */
 export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const { db, clock } = options;
@@ -277,6 +280,9 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       { deviceId: device.deviceId, tenantId: device.tenantId },
       clock,
     );
+    // The server's signed time is the clock guard's server contact (`core-foundation` rule 8).
+    const serverTime = await verifyServerTime(response.time, verifier.keys, device.deviceId);
+    if (serverTime !== undefined) await recordServerTime(db, serverTime, clock);
   }
 
   async function round(): Promise<void> {

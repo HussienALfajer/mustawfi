@@ -205,6 +205,31 @@ export function licenseState(terms: LicenseTerms, at: Date): LicenseState {
 }
 
 /**
+ * A license's state with the dates around it, as screens explain it: when it expires, when
+ * read-only begins, and when suspension begins. The state is the caller's: the server's at an
+ * instant, or a device's held for its business day (rule 6).
+ */
+export const licenseStandingSchema = z.object({
+  state: z.enum(LICENSE_STATES),
+  expiresAt: instantSchema,
+  readOnlyAt: instantSchema,
+  suspendedAt: instantSchema,
+});
+
+export type LicenseStanding = z.infer<typeof licenseStandingSchema>;
+
+/** The standing of a license whose state is `state`. */
+export function licenseStanding(terms: LicenseTerms, state: LicenseState): LicenseStanding {
+  const starts = licenseStateStarts(terms);
+  return {
+    state,
+    expiresAt: new Date(Date.parse(terms.expiresAt)).toISOString(),
+    readOnlyAt: new Date(starts.readOnly).toISOString(),
+    suspendedAt: new Date(starts.suspended).toISOString(),
+  };
+}
+
+/**
  * The time zone of the business day (`core-foundation` rule 6), the tenant's until it becomes a
  * setting (`core-config`).
  */

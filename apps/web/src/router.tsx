@@ -11,17 +11,28 @@ import {
   roleFiltersSchema,
   RolesScreen,
   sessionQueryOptions,
+  signOut,
   UserMenu,
   userFiltersSchema,
   UsersScreen,
 } from "@mustawfi/core-access/client";
+import { ApiProblem, holdSessionToken, useClientRuntime } from "@mustawfi/core-config/client";
 import {
   departmentFiltersSchema,
   DepartmentsScreen,
   departmentsQueryOptions,
+  deviceLicenseQueryOptions,
+  deviceLicenseRestriction,
+  LicenseIndicator,
+  type LicenseNotice,
   LicenseScreen,
+  openDeviceLicenseDay,
+  serverLicenseNotice,
   StoreProfileScreen,
+  StoreSuspendedScreen,
+  suspendedFor,
 } from "@mustawfi/core-organization/client";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
 import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/core-sync/client";
 import { useLocalDb } from "@mustawfi/local-db";
@@ -33,7 +44,7 @@ import {
   SideNavigation,
   useNavigationCollapsed,
 } from "@mustawfi/ui";
-import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createRootRouteWithContext,
   createRoute,
@@ -59,7 +70,7 @@ import {
   Store,
   Users,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { useTranslation } from "react-i18next";
 import { bundleVerifier } from "./bundle-verifier.ts";
@@ -318,18 +329,79 @@ function usePage() {
 }
 
 /**
+ * The license as this client knows it (`core-foundation` rules 6–11): a device registered to the
+ * signed-in store applies its own evaluation from the verified bundle; any other client (an
+ * unregistered browser) shows the server's state. `undefined` while it loads.
+ */
+function useLicenseNotice(): LicenseNotice | undefined {
+  const db = useLocalDb();
+  const { clock } = useClientRuntime();
+  const session = useQuery(sessionQueryOptions()).data;
+  const device = useQuery(localDeviceQueryOptions(db)).data;
+  const onDevice = device !== undefined && device !== null && device.tenantId === session?.tenantId;
+  const license = useQuery({
+    ...deviceLicenseQueryOptions(db, bundleVerifier(), clock),
+    enabled: onDevice,
+  }).data;
+  if (session === undefined || session === null || device === undefined) return undefined;
+  if (!onDevice) return serverLicenseNotice(session.license);
+  return license ?? undefined;
+}
+
+/** «Store suspended» in place of the app, with sign-out as the one action (rule 9). */
+function StoreSuspendedPage(props: { readonly standing?: LicenseNotice["standing"] }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const leave = useMutation({
+    mutationFn: signOut,
+    onSettled: () => {
+      // Signed out even when the server could not be told (offline): the token is forgotten.
+      holdSessionToken(undefined);
+      queryClient.clear();
+      void navigate({ to: "/login" });
+    },
+  });
+  return (
+    <StoreSuspendedScreen
+      standing={props.standing}
+      signingOut={leave.isPending}
+      onSignOut={() => {
+        leave.mutate();
+      }}
+    />
+  );
+}
+
+/**
  * The frame (`screen-patterns.md`, approved on the preview 2026-09-25): the grouped side
  * navigation on the start side, collapsible with `Ctrl+B`; a top bar with the page title, the
- * sync status, and the user; the page fills the rest.
+ * license warning, the sync status, and the user; the page fills the rest.
  */
 function AppShell() {
   const { t } = useTranslation(SHELL_NAMESPACE);
   const navigate = useNavigate();
+  const db = useLocalDb();
+  const { clock } = useClientRuntime();
   const session = useQuery(sessionQueryOptions()).data;
   const [collapsed, setCollapsed] = useNavigationCollapsed(NAVIGATION_STORAGE_KEY);
   const permissions = useMemo(() => new Set(session?.user.permissions ?? []), [session]);
   const groups = useNavigationGroups(permissions);
   const page = usePage();
+  const notice = useLicenseNotice();
+  const userId = session?.user.id;
+  // A session begins here — a sign-in, or the app opened with one: the device evaluates the
+  // license for the business day when the day changed since (rule 6).
+  useEffect(() => {
+    if (userId === undefined) return;
+    openDeviceLicenseDay(db, bundleVerifier(), clock).catch((error: unknown) => {
+      console.error("the license could not be evaluated on this device", error);
+    });
+  }, [db, clock, userId]);
+  const isOwner = session?.user.role.isOwner === true;
+  // Only owners come in while the store is suspended (rule 9).
+  if (suspendedFor(notice, isOwner)) {
+    return <StoreSuspendedPage standing={notice?.standing ?? null} />;
+  }
   return (
     <div
       className="grid h-screen bg-page text-text transition-[grid-template-columns]"
@@ -361,6 +433,21 @@ function AppShell() {
         <header className="flex min-h-14 items-center gap-4 border-b border-divider bg-surface px-6">
           <h1 className="text-xl font-bold">{page.title === undefined ? null : t(page.title)}</h1>
           <div className="ms-auto flex items-center gap-3">
+            {notice === undefined ? null : (
+              <LicenseIndicator
+                notice={notice}
+                isOwner={isOwner}
+                {...(permissions.has("organization.license.view")
+                  ? {
+                      link: (content: ReactNode) => (
+                        <Link to="/admin/license" className="underline">
+                          {content}
+                        </Link>
+                      ),
+                    }
+                  : {})}
+              />
+            )}
             <SyncStatusIndicator />
             <UserMenu
               onAccount={() => {
@@ -386,14 +473,48 @@ function AppShell() {
   );
 }
 
+/** Whether the server turned the session away because the store is suspended (rule 5). */
+function isSuspension(error: unknown): boolean {
+  return error instanceof ApiProblem && error.code === tenancyProblemCodes.licenseSuspended;
+}
+
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
   beforeLoad: async ({ context }) => {
-    const session = await context.queryClient.ensureQueryData(sessionQueryOptions());
+    let session;
+    try {
+      session = await context.queryClient.ensureQueryData(sessionQueryOptions());
+    } catch (error) {
+      // A non-owner's session while the store is suspended: the notice, not an error.
+      if (isSuspension(error)) redirect({ to: "/suspended", throw: true });
+      throw error;
+    }
     if (session === null) redirect({ to: "/login", throw: true });
   },
   component: AppShell,
+});
+
+/**
+ * «Store suspended» for a session the server turns away (rule 9). Reached only then: a session it
+ * accepts goes to the app, and no session to sign-in.
+ */
+const suspendedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/suspended",
+  beforeLoad: async ({ context }) => {
+    let session;
+    try {
+      session = await context.queryClient.fetchQuery(sessionQueryOptions());
+    } catch (error) {
+      if (isSuspension(error)) return;
+      throw error;
+    }
+    redirect({ to: session === null ? "/login" : "/products", throw: true });
+  },
+  component: function SuspendedPage() {
+    return <StoreSuspendedPage />;
+  },
 });
 
 const indexRoute = createRoute({
@@ -413,11 +534,20 @@ const productsRoute = createRoute({
 
 function PosPage() {
   const { t } = useTranslation(SHELL_NAMESPACE);
+  const db = useLocalDb();
+  const { clock } = useClientRuntime();
   const session = useQuery(sessionQueryOptions()).data;
+  const license = useQuery(deviceLicenseQueryOptions(db, bundleVerifier(), clock));
   if (session === undefined || session === null) return null;
   return (
     <PosScreen
       seller={{ userId: session.user.id, tenantId: session.tenantId }}
+      license={{
+        notice: license.data ?? undefined,
+        failed: license.isError,
+        // Read again right before the sale is recorded (ADR-0021).
+        check: () => deviceLicenseRestriction(db, bundleVerifier(), clock),
+      }}
       registerDeviceLink={
         <Link to="/device" className="text-text-accent underline">
           {t("registerDevice")}
@@ -641,6 +771,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   recoverRoute,
   galleryRoute,
+  suspendedRoute,
   appRoute.addChildren([
     indexRoute,
     posRoute,

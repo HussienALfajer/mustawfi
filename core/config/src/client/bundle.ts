@@ -18,6 +18,8 @@ import {
   bundleManifestSchema,
   type BundleResponse,
   type PublicKeyRing,
+  SERVER_TIME_TYPE,
+  serverTimeClaimsSchema,
   type SignedBundle,
   signedBundleSchema,
   signingKeyIdSchema,
@@ -183,6 +185,35 @@ export async function verifyBundle(
   };
 }
 
+/**
+ * The server's time from a bundle answer, when it is signed with a trusted bundle key for this
+ * device (ADR-0021: the clock guard's trusted server time); `undefined` for any other token,
+ * which the device then does not count as the server's time.
+ */
+export async function verifyServerTime(
+  jws: string,
+  keys: PublicKeyRing,
+  deviceId: string,
+): Promise<Date | undefined> {
+  try {
+    const { payload } = await jwtVerify(
+      jws,
+      async (header) => {
+        const kid = signingKeyIdSchema.safeParse(header.kid);
+        const x = kid.success && Object.hasOwn(keys, kid.data) ? keys[kid.data] : undefined;
+        if (!kid.success || x === undefined) throw new Error("unknown bundle key");
+        return importJWK({ kty: "OKP", crv: "Ed25519", x }, BUNDLE_ALGORITHM);
+      },
+      { algorithms: [BUNDLE_ALGORITHM], typ: SERVER_TIME_TYPE },
+    );
+    const claims = serverTimeClaimsSchema.safeParse(payload);
+    if (!claims.success || claims.data.deviceId !== deviceId) return undefined;
+    return new Date(claims.data.serverTime);
+  } catch {
+    return undefined;
+  }
+}
+
 /** The bundle in use, exactly as received: at most one row. */
 const configBundle = sqliteTable("config_bundle", {
   id: integer().primaryKey(),
@@ -254,7 +285,7 @@ export type BundleOutcome =
  */
 export async function acceptBundle(
   db: LocalDb,
-  response: BundleResponse,
+  response: Pick<BundleResponse, "version" | "bundle">,
   verifier: BundleVerifier,
   device: BundleDevice,
   clock: Clock,

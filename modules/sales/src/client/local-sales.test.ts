@@ -32,6 +32,8 @@ import {
 
 const clock = manualClock(new Date("2026-09-25T21:30:00.000Z"));
 const newId = uuidV7Generator({ clock, random: cryptoRandom });
+/** The license check of a device whose license allows documents. */
+const allowed = () => Promise.resolve(null);
 const directory = mkdtempSync(join(tmpdir(), "mustawfi-sales-"));
 
 const device: LocalDevice = {
@@ -104,7 +106,7 @@ async function count(table: string): Promise<bigint> {
 }
 
 function sell() {
-  return completeCashSale(db, { device, userId, clock, newId });
+  return completeCashSale(db, { device, userId, clock, newId, license: allowed });
 }
 
 beforeEach(async () => {
@@ -249,6 +251,20 @@ describe("completeCashSale", () => {
       await fresh.close();
       db = previous;
     }
+  });
+
+  it("records nothing while the license lets the device create no document, and keeps the cart", async () => {
+    await addToCart(db, await product("شاحن", "12.5"));
+    const readOnly = () => Promise.resolve("readOnly" as const);
+    await expect(
+      completeCashSale(db, { device, userId, clock, newId, license: readOnly }),
+    ).rejects.toEqual(new SaleRefused("licenseRestricted", "readOnly"));
+    expect(await count("sales_invoices")).toBe(0n);
+    expect(await count("sync_outbox")).toBe(0n);
+    expect(await count("sync_counters")).toBe(0n);
+    expect((await readCart(db, "SYP")).lines).toHaveLength(1);
+    // Once it may again, the same cart sells as the device's first invoice.
+    expect((await sell()).number).toBe("K7-INV-000001");
   });
 
   it("keeps the cart when the app closes mid-sale", async () => {

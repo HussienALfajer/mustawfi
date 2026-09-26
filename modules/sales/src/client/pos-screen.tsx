@@ -1,5 +1,7 @@
 import { type LocalDevice, localDeviceQueryOptions } from "@mustawfi/core-access/client";
 import { useClientRuntime } from "@mustawfi/core-config/client";
+import { type LicenseNotice, LicenseRestrictionMessage } from "@mustawfi/core-organization/client";
+import type { LicenseRestriction } from "@mustawfi/core-tenancy/client";
 import type { ProductView } from "@mustawfi/inventory/shared";
 import {
   localProductByBarcode,
@@ -11,7 +13,7 @@ import { Money as KernelMoney } from "@mustawfi/kernel";
 import { useLocalDb } from "@mustawfi/local-db";
 import { Button, type DataColumn, DataTable, Money, TextInput } from "@mustawfi/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addToCart,
@@ -35,6 +37,19 @@ export interface PosScreenProps {
    * not print by itself: printing is the platform's, and the browser is no printing client.
    */
   readonly receiptAction?: ((invoice: RecordedInvoiceRef) => ReactNode) | undefined;
+  /**
+   * The license as this device applies it (`core-foundation` rules 6–11), composed by the app
+   * from the verified bundle: `notice` for what the screen shows (`undefined` while it loads),
+   * `check` read again right before a sale is recorded.
+   */
+  readonly license: PosLicense;
+}
+
+export interface PosLicense {
+  readonly notice: LicenseNotice | undefined;
+  /** The license could not be read on this device: nothing is sold, and the POS says so. */
+  readonly failed: boolean;
+  readonly check: () => Promise<LicenseRestriction | null>;
 }
 
 /** An invoice this device recorded, as the receipt action receives it. */
@@ -169,6 +184,7 @@ function CartSection(props: {
   readonly device: LocalDevice;
   readonly userId: string;
   readonly receiptAction: PosScreenProps["receiptAction"];
+  readonly license: PosLicense;
 }) {
   const { t } = useTranslation(SALES_NAMESPACE);
   const db = useLocalDb();
@@ -182,7 +198,13 @@ function CartSection(props: {
   });
   const sale = useMutation({
     mutationFn: () =>
-      completeCashSale(db, { device: props.device, userId: props.userId, clock, newId }),
+      completeCashSale(db, {
+        device: props.device,
+        userId: props.userId,
+        clock,
+        newId,
+        license: props.license.check,
+      }),
     networkMode: "always",
     onSuccess: (done) => {
       setRecorded({ id: done.invoiceId, number: done.number });
@@ -244,18 +266,36 @@ function CartSection(props: {
     },
   ];
   const current = cart.data;
-  const reason =
-    current === undefined || current.lines.length === 0
-      ? "pos.emptyReason"
-      : current.ready
-        ? undefined
-        : "pos.notSellableReason";
+  const notice = props.license.notice;
+  const reason = props.license.failed
+    ? "pos.licenseFailedReason"
+    : notice === undefined
+      ? "pos.licensePendingReason"
+      : notice.restriction !== null
+        ? "pos.licenseReason"
+        : current === undefined || current.lines.length === 0
+          ? "pos.emptyReason"
+          : current.ready
+            ? undefined
+            : "pos.notSellableReason";
+  const refusedBy = sale.error instanceof SaleRefused ? sale.error.restriction : undefined;
+  // A refusal by the license is over once the device may sell again: its alert goes with it.
+  const lifted = notice !== undefined && notice.restriction === null;
+  const { reset } = sale;
+  useEffect(() => {
+    if (lifted && refusedBy !== undefined) reset();
+  }, [lifted, refusedBy, reset]);
 
   return (
     <section aria-labelledby="pos-cart-title" className="flex flex-col gap-density-gap">
       <h2 id="pos-cart-title" className="text-lg font-semibold text-text">
         {t("pos.cart.title")}
       </h2>
+      {notice === undefined || notice.restriction === null || refusedBy !== undefined ? null : (
+        <LicenseRestrictionMessage
+          notice={{ standing: notice.standing, restriction: notice.restriction }}
+        />
+      )}
       <DataTable
         label={t("pos.cart.title")}
         columns={columns}
@@ -295,7 +335,13 @@ function CartSection(props: {
           {t("pos.cart.changeFailed")}
         </p>
       ) : null}
-      {sale.isError ? (
+      {sale.isError && refusedBy !== undefined ? (
+        <div role="alert">
+          <LicenseRestrictionMessage
+            notice={{ standing: notice?.standing ?? null, restriction: refusedBy }}
+          />
+        </div>
+      ) : sale.isError ? (
         <p role="alert" className="text-text-negative">
           {sale.error instanceof SaleRefused && sale.error.reason === "noDepartment"
             ? t("pos.noDepartment")
@@ -399,7 +445,7 @@ function RecentInvoices(props: {
  * The minimal POS (flow 5): sells the products this device holds, for cash, from the local
  * database only — it works the same offline. Keyboard first: the barcode field has focus.
  */
-export function PosScreen({ seller, registerDeviceLink, receiptAction }: PosScreenProps) {
+export function PosScreen({ seller, registerDeviceLink, receiptAction, license }: PosScreenProps) {
   const { t } = useTranslation(SALES_NAMESPACE);
   const db = useLocalDb();
   const device = useQuery(localDeviceQueryOptions(db));
@@ -434,7 +480,12 @@ export function PosScreen({ seller, registerDeviceLink, receiptAction }: PosScre
           <ProductPicker />
         </div>
         <div className="flex flex-col gap-8">
-          <CartSection device={device.data} userId={seller.userId} receiptAction={receiptAction} />
+          <CartSection
+            device={device.data}
+            userId={seller.userId}
+            receiptAction={receiptAction}
+            license={license}
+          />
           <RecentInvoices device={device.data} receiptAction={receiptAction} />
         </div>
       </div>

@@ -1,46 +1,9 @@
-import type { Page } from "@playwright/test";
 import { expect, expectAccessible, test } from "./test.ts";
-import { e2eStore } from "./environment.ts";
-import { signIn } from "./steps.ts";
+import { addProduct, registerDevice, signIn } from "./steps.ts";
 
 /** A barcode no other journey uses. */
 function newBarcode(): string {
   return `628${String(Date.now()).slice(-10)}`;
-}
-
-/** Flow 3: the owner adds a product online, priced in the store's currency (SYP). */
-async function addProduct(page: Page, name: string, barcode: string, price: string) {
-  await page.getByRole("link", { name: "المنتجات" }).click();
-  await page.getByLabel("اسم المنتج").fill(name);
-  await page.getByLabel("الباركود", { exact: true }).fill(barcode);
-  await page.getByLabel("سعر البيع").fill(price);
-  await page.getByRole("button", { name: "إضافة المنتج" }).click();
-  await expect(page.getByRole("main").getByRole("status")).toHaveText(`أُضيف المنتج «${name}»`);
-}
-
-/**
- * Flow 4: the owner issues a registration code on the devices screen and registers this
- * browser, as a companion.
- */
-async function registerDevice(page: Page): Promise<string> {
-  await page.getByRole("link", { name: "الأجهزة" }).click();
-  await page.getByRole("button", { name: /جهاز جديد/ }).click();
-  await page.getByRole("button", { name: "إصدار رمز تسجيل" }).click();
-  const code = page.getByTestId("registration-code");
-  await expect(code).toHaveText(/^\S+$/);
-  await expect(page.getByTestId("store-code")).toHaveText(e2eStore().storeCode);
-  const registrationCode = (await code.textContent()) ?? "";
-  await page.getByRole("link", { name: "تسجيل الجهاز" }).click();
-  await page.getByLabel("رمز المتجر").fill(e2eStore().storeCode);
-  await page.getByLabel("رمز التسجيل").fill(registrationCode);
-  await page.getByLabel("اسم الجهاز").fill("الصندوق الرئيسي");
-  await page.getByRole("button", { name: "تسجيل الجهاز" }).click();
-  const prefix = page.getByTestId("device-prefix");
-  await expect(prefix).toHaveText(/^[A-HJ-NP-Z2-9]{2}$/);
-  // The browser is never the main POS (ADR-0019); the Windows app is.
-  await expect(page.getByTestId("device-type")).toHaveText("جهاز مساعد");
-  await expectAccessible(page);
-  return (await prefix.textContent()) ?? "";
 }
 
 test("flows 1–7: register, pull, sell offline, push, and see the sale with its entry", async ({

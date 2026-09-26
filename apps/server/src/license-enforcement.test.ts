@@ -585,3 +585,36 @@ describe("the «License and plan» summary", () => {
     });
   });
 });
+
+describe("the license in the sign-in and session answers (rule 10)", () => {
+  it("tells every signed-in user the state by the server's clock, with its dates", async () => {
+    const store = await newStore(5 * DAY, { graceDays: 7, readOnlyDays: 30 });
+    const expiresAt = new Date(clock.now().getTime() + 5 * DAY);
+    const standing = {
+      state: "expiring",
+      expiresAt: expiresAt.toISOString(),
+      readOnlyAt: new Date(expiresAt.getTime() + 7 * DAY).toISOString(),
+      suspendedAt: new Date(expiresAt.getTime() + 37 * DAY).toISOString(),
+    };
+    const login = await server.inject({
+      method: "POST",
+      url: "/api/v1/access/login",
+      payload: { storeCode: store.storeCode, login: "ahmad", password: PASSWORD },
+    });
+    expect(login.json()).toMatchObject({ license: standing });
+    const staff = await staffToken(store);
+    const session = await server.inject({
+      method: "GET",
+      url: "/api/v1/access/session",
+      headers: { authorization: `Bearer ${staff}` },
+    });
+    expect(session.json()).toMatchObject({ user: { role: { isOwner: false } }, license: standing });
+    clock.advance(6 * DAY);
+    const later = await server.inject({
+      method: "GET",
+      url: "/api/v1/access/session",
+      headers: { authorization: `Bearer ${staff}` },
+    });
+    expect(later.json()).toMatchObject({ license: { ...standing, state: "grace" } });
+  });
+});

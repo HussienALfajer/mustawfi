@@ -8,7 +8,11 @@ import {
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
-import { storeCodeSchema } from "@mustawfi/core-tenancy/shared";
+import {
+  type LicenseStanding,
+  licenseStanding,
+  storeCodeSchema,
+} from "@mustawfi/core-tenancy/shared";
 import { and, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { accessProblemCodes, loginSchema } from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
@@ -56,6 +60,8 @@ export interface LoggedIn {
   /** The bearer token, handed to the client once; only its hash is stored. */
   readonly token: string;
   readonly expiresAt: Date;
+  /** The license by the server's clock at sign-in (rule 10). */
+  readonly license: LicenseStanding;
 }
 
 export type SignInDependencies = AccessDependencies & {
@@ -344,13 +350,12 @@ async function admittedAccess(
   userId: string,
   now: Date,
   dependencies: SignInDependencies,
-): Promise<UserAccess> {
+): Promise<{ readonly access: UserAccess; readonly license: LicenseStanding }> {
   const access = await userAccess(tx, userId, dependencies.permissionCatalogue);
   if (access === undefined) throw new Error(`user ${userId} vanished during sign-in`);
-  if (!access.role.isOwner && (await currentLicenseStatus(tx, now)).state === "suspended") {
-    throw licenseSuspended();
-  }
-  return access;
+  const status = await currentLicenseStatus(tx, now);
+  if (!access.role.isOwner && status.state === "suspended") throw licenseSuspended();
+  return { access, license: licenseStanding(status.license.claims, status.state) };
 }
 
 /** How a sign-in was proved: its method, and the second factor of a password sign-in. */
@@ -376,7 +381,7 @@ async function openAuditedSession(
   const session = await tenants.withTenant(
     { tenantId, userId: user.id, ...(deviceId === undefined ? {} : { deviceId }) },
     async (tx) => {
-      const access = await admittedAccess(tx, user.id, now, dependencies);
+      const { access, license } = await admittedAccess(tx, user.id, now, dependencies);
       const opened = await openSession(
         tx,
         {
@@ -403,7 +408,7 @@ async function openAuditedSession(
           ...(how.secondFactor === undefined ? {} : { secondFactor: how.secondFactor }),
         },
       });
-      return { ...opened, access };
+      return { ...opened, access, license };
     },
   );
   return {
@@ -411,6 +416,7 @@ async function openAuditedSession(
     user: sessionUser(user, session.access, dependencies.permissionCatalogue).user,
     token: session.token,
     expiresAt: session.expiresAt,
+    license: session.license,
   };
 }
 
