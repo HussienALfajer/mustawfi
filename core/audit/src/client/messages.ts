@@ -1,4 +1,5 @@
 import type { Messages } from "@mustawfi/i18n";
+import { auditLogMessages } from "./log/messages.ts";
 
 /** The `audit` namespace (ADR-0023: one namespace per module, shipped in its client entry). */
 export const AUDIT_NAMESPACE = "audit";
@@ -10,4 +11,5 @@ export const auditMessages = {
   permission: {
     view: "عرض سجل التدقيق",
   },
+  log: auditLogMessages,
 } satisfies Messages;

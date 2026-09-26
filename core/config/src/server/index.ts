@@ -1,6 +1,7 @@
 export { configModule } from "./manifest.ts";
 export { defineModule, routePrefix, type ModuleManifest } from "./module.ts";
 export { ProblemError } from "./problem-error.ts";
+export type { RequestActor, RouteAccess, RouteConfig } from "./route-access.ts";
 export {
   createModuleRegistry,
   ModuleRegistryError,
