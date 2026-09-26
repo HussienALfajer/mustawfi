@@ -1,7 +1,7 @@
 # Mustawfi screen patterns
 
 - Agreed with the user on 2026-09-25 (`core-foundation` spec session). Builds on ADR-0023 (client stack), ADR-0024 (visual direction), and `design-system.md` (tokens, contrast, densities, patterns to avoid).
-- The rules below are decided. The frame and the list-with-side-panel pattern were approved by the user on a preview on 2026-09-25 and built in `core-foundation` slice 3; their measures below come from that preview.
+- The rules below are decided. The frame and the list-with-side-panel pattern were approved by the user on a preview on 2026-09-25 and built in `core-foundation` slice 3; their measures below come from that preview. The notice pattern was approved by the user on 2026-09-26 on the screenshots of «device removed» (`core-foundation` slice 9): a centred card on the page background, an icon, the title as the page's `h1`, the reason, what to do next, and one primary action that has focus.
 - Like `design-system.md`, this document changes only by recorded decision (an ADR or a unit spec's deviation note).
 
 ## Who the screens are for

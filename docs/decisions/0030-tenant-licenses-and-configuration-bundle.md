@@ -46,3 +46,7 @@ The user chose the license, bundle, lifecycle, and revoke options below in the s
 - **Transitions at the next sign-in, or immediately with no open cart** — can still change a cashier's state in the middle of a working day.
 - **Departments inside `core.organization`, with a host-injected scope provider for `core.access`** — keeps the table where `v1-scope.md` lists the feature, but loses the foreign keys from user scopes and journal lines and adds two ports for one table.
 - **Accept only operations created before the revocation time** — depends on the device clock and loses real sales made before the device learned of the revocation.
+
+## Amendments
+
+- 2026-09-26 (`core-foundation` slice 9, accepted by the user on 2026-09-26): besides push, a revoked device's credential opens one more call, the report that it wiped its local data (`POST /api/v1/access/devices/current/wipe`). The call can only record the wipe, once, on a revoked device; everything else still refuses the credential. Without it the owner could not tell a wiped device from one that never came back.
