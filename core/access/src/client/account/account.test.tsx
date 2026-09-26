@@ -34,6 +34,7 @@ const SESSION = {
     departmentScope: "all",
     departments: [],
     permissions: [],
+    limits: {},
   },
 };
 

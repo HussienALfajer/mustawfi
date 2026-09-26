@@ -1,5 +1,10 @@
-import { type LocalDevice, localDeviceQueryOptions } from "@mustawfi/core-access/client";
-import { useClientRuntime } from "@mustawfi/core-config/client";
+import {
+  type LocalDevice,
+  localDeviceQueryOptions,
+  SupervisorOverrideDialog,
+} from "@mustawfi/core-access/client";
+import type { OverrideRequest, SupervisorOverride } from "@mustawfi/core-access/shared";
+import { type BundleVerifier, useClientRuntime } from "@mustawfi/core-config/client";
 import { type LicenseNotice, LicenseRestrictionMessage } from "@mustawfi/core-organization/client";
 import type { LicenseRestriction } from "@mustawfi/core-tenancy/client";
 import type { ProductView } from "@mustawfi/inventory/shared";
@@ -24,12 +29,18 @@ import {
   localInvoicesQueryOptions,
   removeFromCart,
   SaleRefused,
+  type Seller,
 } from "./local-sales.ts";
 import { SALES_NAMESPACE } from "./messages.ts";
 
 export interface PosScreenProps {
-  /** The signed-in user who sells, and their store. */
-  readonly seller: { readonly userId: string; readonly tenantId: string };
+  /** The signed-in user who sells, their store, their scope, and what they may do there. */
+  readonly seller: Seller & { readonly tenantId: string };
+  /**
+   * How this app checks the bundle, for the supervisor override (`core-foundation` rule 18): a
+   * sale the seller may not make opens it.
+   */
+  readonly bundleVerifier: BundleVerifier;
   /** Where to register this device when it is not registered yet. */
   readonly registerDeviceLink: ReactNode;
   /**
@@ -182,7 +193,8 @@ function ProductPicker() {
 
 function CartSection(props: {
   readonly device: LocalDevice;
-  readonly userId: string;
+  readonly seller: Seller;
+  readonly bundleVerifier: BundleVerifier;
   readonly receiptAction: PosScreenProps["receiptAction"];
   readonly license: PosLicense;
 }) {
@@ -192,15 +204,17 @@ function CartSection(props: {
   const digits = useDigitShape();
   const cart = useQuery(cartQueryOptions(db, props.device.baseCurrency));
   const [recorded, setRecorded] = useState<{ id: string; number: string } | undefined>();
+  const [approval, setApproval] = useState<OverrideRequest | undefined>();
   const remove = useMutation({
     mutationFn: (productId: string) => removeFromCart(db, productId),
     networkMode: "always",
   });
   const sale = useMutation({
-    mutationFn: () =>
+    mutationFn: (overrides: readonly SupervisorOverride[]) =>
       completeCashSale(db, {
         device: props.device,
-        userId: props.userId,
+        seller: props.seller,
+        overrides,
         clock,
         newId,
         license: props.license.check,
@@ -209,7 +223,14 @@ function CartSection(props: {
     onSuccess: (done) => {
       setRecorded({ id: done.invoiceId, number: done.number });
     },
+    onError: (error) => {
+      // Not a failure: a supervisor approves, and the sale goes through with the override.
+      if (error instanceof SaleRefused && error.reason === "overrideNeeded") {
+        setApproval(error.request);
+      }
+    },
   });
+  const needsApproval = sale.error instanceof SaleRefused && sale.error.reason === "overrideNeeded";
   const columns: DataColumn<CartLine>[] = [
     {
       id: "name",
@@ -319,7 +340,7 @@ function CartSection(props: {
           {...(reason === undefined ? {} : { "aria-describedby": "pos-complete-reason" })}
           onPress={() => {
             setRecorded(undefined);
-            sale.mutate();
+            sale.mutate([]);
           }}
         >
           {sale.isPending ? t("pos.completing") : t("pos.complete")}
@@ -335,7 +356,7 @@ function CartSection(props: {
           {t("pos.cart.changeFailed")}
         </p>
       ) : null}
-      {sale.isError && refusedBy !== undefined ? (
+      {needsApproval ? null : sale.isError && refusedBy !== undefined ? (
         <div role="alert">
           <LicenseRestrictionMessage
             notice={{ standing: notice?.standing ?? null, restriction: refusedBy }}
@@ -348,6 +369,20 @@ function CartSection(props: {
             : t("pos.failed")}
         </p>
       ) : null}
+      <SupervisorOverrideDialog
+        request={approval}
+        requestedBy={props.seller.userId}
+        reason={t("pos.overrideReason")}
+        bundleVerifier={props.bundleVerifier}
+        onGranted={(override) => {
+          setApproval(undefined);
+          sale.mutate([override]);
+        }}
+        onCancel={() => {
+          setApproval(undefined);
+          sale.reset();
+        }}
+      />
       <p role="status" className="text-text-positive">
         {recorded === undefined ? null : (
           <>
@@ -445,7 +480,13 @@ function RecentInvoices(props: {
  * The minimal POS (flow 5): sells the products this device holds, for cash, from the local
  * database only — it works the same offline. Keyboard first: the barcode field has focus.
  */
-export function PosScreen({ seller, registerDeviceLink, receiptAction, license }: PosScreenProps) {
+export function PosScreen({
+  seller,
+  bundleVerifier,
+  registerDeviceLink,
+  receiptAction,
+  license,
+}: PosScreenProps) {
   const { t } = useTranslation(SALES_NAMESPACE);
   const db = useLocalDb();
   const device = useQuery(localDeviceQueryOptions(db));
@@ -482,7 +523,8 @@ export function PosScreen({ seller, registerDeviceLink, receiptAction, license }
         <div className="flex flex-col gap-8">
           <CartSection
             device={device.data}
-            userId={seller.userId}
+            seller={seller}
+            bundleVerifier={bundleVerifier}
             receiptAction={receiptAction}
             license={license}
           />

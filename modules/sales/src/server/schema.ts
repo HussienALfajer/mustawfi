@@ -1,3 +1,4 @@
+import type { SupervisorOverride } from "@mustawfi/core-access/shared";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -61,6 +62,15 @@ export const invoices = sales.table(
     templateVersion: text().notNull(),
     /** What the customer paid, in `currency`. */
     total: numeric({ precision: 20, scale: 4 }).notNull(),
+    /**
+     * The supervisor overrides the sale needed (`core-foundation` rule 18) — approver, override
+     * id, action, department, value — as the device attached them: an immutable snapshot of the
+     * payload. Whether each approver's role covers it is `core.sync`'s `overrideNotAuthorized`.
+     */
+    overrides: jsonb()
+      .$type<readonly SupervisorOverride[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
   },
   (t) => [
     unique("invoices_number_per_tenant").on(t.tenantId, t.number),
@@ -71,6 +81,7 @@ export const invoices = sales.table(
     check("invoices_currency", sql`${t.currency} ~ '^[A-Z]{3}$'`),
     check("invoices_exchange_rate_positive", sql`${t.exchangeRate} > 0`),
     check("invoices_total_not_negative", sql`${t.total} >= 0`),
+    check("invoices_overrides_array", sql`jsonb_typeof(${t.overrides}) = 'array'`),
   ],
 );
 

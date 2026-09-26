@@ -259,7 +259,7 @@ export type LocalPinOutcome =
  * checked. Each failure and the lockout are audited on the device path, in the transaction that
  * counts them. Only the count is written here; the caller does what a right PIN is for.
  */
-async function checkPinLocally(
+export async function checkPinLocally(
   db: LocalDb,
   access: AccessPart,
   userId: string,

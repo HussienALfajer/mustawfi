@@ -150,3 +150,33 @@ export async function signInAgainOnDevice(
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/products$/);
 }
+
+/** The PIN screen's name tile of `name`, from the keyboard. */
+export async function pickTile(page: Page, name: string, list = "المستخدمون على هذا الجهاز") {
+  const tile = page
+    .getByRole("list", { name: list })
+    .getByRole("button", { name: new RegExp(name) });
+  await tabTo(page, tile, 40);
+  await page.keyboard.press("Enter");
+}
+
+/** Types a PIN into the focused pad and sends it with Enter. */
+export async function typePin(page: Page, forWhom: string, pin: string) {
+  await expect(page.getByLabel(forWhom)).toBeFocused();
+  await page.keyboard.type(pin);
+  await page.keyboard.press("Enter");
+}
+
+/** Switches user from the top bar's menu: the device returns to its PIN screen. */
+export async function switchUser(page: Page, userName: string) {
+  const button = page.getByRole("banner").getByRole("button", { name: new RegExp(userName) });
+  await tabTo(page, button, 80);
+  await page.keyboard.press("Enter");
+  const target = page.getByRole("menu").getByRole("menuitem", { name: "تبديل المستخدم" });
+  for (let presses = 0; presses < 5; presses += 1) {
+    if (await target.evaluate((element) => element === document.activeElement)) break;
+    await page.keyboard.press("ArrowDown");
+  }
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/pin/);
+}

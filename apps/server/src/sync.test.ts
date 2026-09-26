@@ -1,10 +1,13 @@
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { hostProblemCodes, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import { authenticateDevice } from "@mustawfi/core-access/server";
+import type { SupervisorOverride } from "@mustawfi/core-access/shared";
+import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
 import {
   createSyncOperationTable,
   flagOperation,
   pushOperations,
+  type SyncOperationTable,
 } from "@mustawfi/core-sync/server";
 import {
   syncProblemCodes,
@@ -29,7 +32,7 @@ import { migrationSets } from "./db/migration-sets.ts";
 import { createServerRegistry, serverPermissions } from "./modules.ts";
 import { invoiceOperation, type InvoiceLineSpec } from "./sales-operations.test-helpers.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
-import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
+import { createStaffUser, signInAs, type StaffUser } from "./staff.test-helpers.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 import { testBundleKey } from "./bundle-key.test-helpers.ts";
 import { testTotpKeys } from "./totp-keys.test-helpers.ts";
@@ -1029,6 +1032,222 @@ describe("permissions on ingest (core-foundation rule 17)", () => {
     const again = await push(device, [operation]);
     expect(again.results.map((r) => r.status)).toEqual(["duplicate"]);
     expect(await permissionFlagsOf(operation.opId)).toHaveLength(1);
+  });
+});
+
+describe("supervisor overrides on ingest (core-foundation rule 18)", () => {
+  let store: Store;
+  let product: ProductView;
+  let device: TestDevice;
+  let otherDepartmentId: string;
+  let cashier: StaffUser;
+  let supervisor: StaffUser;
+  let operations: SyncOperationTable;
+
+  /** The server's catalogue with a fixture limit: no module declares one yet. */
+  const DISCOUNT = "sales.discount.maxPercent";
+  const catalogue = (): PermissionCatalogue => ({
+    permissions: serverPermissions().permissions,
+    limits: new Map([[DISCOUNT, { id: DISCOUNT, moduleId: "sales", kind: "percent", grants: {} }]]),
+  });
+
+  beforeAll(async () => {
+    store = await newStore("متجر الموافقات");
+    product = await newProduct(store);
+    await receiveStock(store, product.id, "100");
+    device = await newDevice(store);
+    const added = await server.inject({
+      method: "POST",
+      url: "/api/v1/organization/departments",
+      headers: { authorization: `Bearer ${store.token}` },
+      payload: { name: "الصيانة" },
+    });
+    expect(added.statusCode).toBe(201);
+    otherDepartmentId = added.json<{ id: string }>().id;
+    cashier = await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "override.cashier", permissions: [], departments: [otherDepartmentId] },
+      dependencies,
+    );
+    // Sells in the default department only, with discounts up to 10%.
+    supervisor = await createStaffUser(
+      tenants,
+      store.tenant,
+      {
+        login: "override.supervisor",
+        permissions: ["sales.invoice.create"],
+        departments: [store.tenant.defaultDepartmentId],
+        limits: { [DISCOUNT]: "10" },
+        catalogue: catalogue(),
+      },
+      dependencies,
+    );
+    // A fixture operation recording a discounted sale: the permission, in its department, with
+    // the overrides it carries.
+    operations = createSyncOperationTable(
+      [
+        {
+          type: "test.discount.post",
+          access: {
+            permission: "sales.invoice.create",
+            department: (payload) =>
+              typeof payload["departmentId"] === "string" ? payload["departmentId"] : undefined,
+          },
+          overrides: (payload) => payload["overrides"],
+          versions: { 1: () => Promise.resolve({ recorded: true }) },
+        },
+      ],
+      catalogue(),
+    );
+  });
+
+  const override = (extra: Partial<SupervisorOverride> = {}): SupervisorOverride => ({
+    id: newId(),
+    approverId: supervisor.userId,
+    permission: "sales.invoice.create",
+    departmentId: store.tenant.defaultDepartmentId,
+    limit: { id: DISCOUNT, value: "8" },
+    grantedAt: clock.now().toISOString(),
+    ...extra,
+  });
+
+  /** The cashier's discounted sale, carrying `overrides`. */
+  function discounted(
+    overrides: unknown,
+    departmentId = store.tenant.defaultDepartmentId,
+  ): SyncOperation {
+    return {
+      ...sale(device, [{ productId: product.id, quantity: "1", unitPrice: "1" }], {
+        userId: cashier.userId,
+      }),
+      type: "test.discount.post",
+      payload: { departmentId, ...(overrides === undefined ? {} : { overrides }) },
+    };
+  }
+
+  async function pushFixture(...ops: SyncOperation[]) {
+    const deviceOf = await authenticateDevice(tenants, device.credential);
+    if (deviceOf === undefined) throw new Error("the test device does not authenticate");
+    return pushOperations(tenants, deviceOf, ops, { ...dependencies, operations });
+  }
+
+  async function flagsOf(opId: string): Promise<Record<string, unknown>> {
+    const { rows } = await superuser.query<{ code: string; detail: unknown }>(
+      "select code, detail from core_sync.operation_flags where op_id = $1 order by code",
+      [opId],
+    );
+    return Object.fromEntries(rows.map((row) => [row.code, row.detail]));
+  }
+
+  /** An override as the flag's detail describes it. */
+  const described = (o: SupervisorOverride) => ({
+    overrideId: o.id,
+    approverId: o.approverId,
+    permission: o.permission,
+    ...(o.departmentId === undefined ? {} : { departmentId: o.departmentId }),
+    ...(o.limit === undefined ? {} : { limit: o.limit }),
+  });
+
+  it("takes a covered override in place of the seller's missing permission, flagging nothing", async () => {
+    const covered = discounted([override()]);
+    const pushed = await pushFixture(covered);
+    expect(pushed.results.map((r) => r.status)).toEqual(["accepted"]);
+    expect(await flagsOf(covered.opId)).toEqual({});
+    // Without the override the same sale is flagged as the seller's own.
+    const alone = discounted(undefined);
+    await pushFixture(alone);
+    expect(Object.keys(await flagsOf(alone.opId))).toEqual(["permissionMissing"]);
+  });
+
+  it("flags overrideNotAuthorized when the approver's role does not cover the value, the department, or anything", async () => {
+    const beyond = override({ limit: { id: DISCOUNT, value: "12.5" } });
+    const elsewhere = override({ departmentId: otherDepartmentId });
+    const nobody = override({ approverId: newId() });
+    const byCashier = override({ approverId: cashier.userId });
+    const [beyondOp, elsewhereOp, nobodyOp, byCashierOp] = [
+      discounted([beyond]),
+      discounted([elsewhere], otherDepartmentId),
+      discounted([nobody]),
+      discounted([byCashier]),
+    ] as const;
+    const pushed = await pushFixture(beyondOp, elsewhereOp, nobodyOp, byCashierOp);
+    expect(pushed.results.map((r) => r.status)).toEqual([
+      "accepted",
+      "accepted",
+      "accepted",
+      "accepted",
+    ]);
+    expect(await flagsOf(beyondOp.opId)).toEqual({
+      overrideNotAuthorized: {
+        overrides: [{ ...described(beyond), reason: "notCovered", roleId: supervisor.roleId }],
+      },
+      // Not covered, the seller's own permission is missing too.
+      permissionMissing: {
+        permission: "sales.invoice.create",
+        departmentId: store.tenant.defaultDepartmentId,
+        roleId: cashier.roleId,
+      },
+    });
+    expect((await flagsOf(elsewhereOp.opId))["overrideNotAuthorized"]).toEqual({
+      overrides: [{ ...described(elsewhere), reason: "notCovered", roleId: supervisor.roleId }],
+    });
+    expect((await flagsOf(nobodyOp.opId))["overrideNotAuthorized"]).toEqual({
+      overrides: [{ ...described(nobody), reason: "unknownApprover" }],
+    });
+    expect((await flagsOf(byCashierOp.opId))["overrideNotAuthorized"]).toEqual({
+      overrides: [{ ...described(byCashier), reason: "notCovered", roleId: cashier.roleId }],
+    });
+  });
+
+  it("approves only the action, in the department, that the override names", async () => {
+    // Covered where it was granted, but this sale is in another department.
+    const misplaced = discounted([override()], otherDepartmentId);
+    await pushFixture(misplaced);
+    expect(Object.keys(await flagsOf(misplaced.opId))).toEqual(["permissionMissing"]);
+  });
+
+  it("flags a malformed list, and nothing twice when an operation is pushed again", async () => {
+    const malformed = discounted([{ approverId: supervisor.userId }]);
+    await pushFixture(malformed);
+    expect((await flagsOf(malformed.opId))["overrideNotAuthorized"]).toEqual({ malformed: true });
+    const refused = discounted([override({ approverId: newId() })]);
+    await pushFixture(refused);
+    const again = await pushFixture(refused);
+    expect(again.results.map((r) => r.status)).toEqual(["duplicate"]);
+    expect(
+      await count("core_sync.operation_flags", "op_id = $1 and code = 'overrideNotAuthorized'", [
+        refused.opId,
+      ]),
+    ).toBe(1);
+  });
+
+  it("records a sale with the overrides it carries, flagging one the approver did not cover", async () => {
+    const byOwner = override({ approverId: store.tenant.ownerId, limit: undefined });
+    const line = { productId: product.id, quantity: "1", unitPrice: "100" };
+    // A device of its own: the fixture operations above took numbers no invoice used.
+    const till = await newDevice(store);
+    const covered = sale(till, [line], {
+      userId: cashier.userId,
+      payload: { overrides: [byOwner] },
+    });
+    const uncovered = sale(till, [line], {
+      userId: cashier.userId,
+      payload: { overrides: [override({ approverId: cashier.userId, limit: undefined })] },
+    });
+    const pushed = await push(till, [covered, uncovered]);
+    accepted(pushed.results[0]);
+    accepted(pushed.results[1]);
+    const { rows } = await superuser.query<{ overrides: unknown }>(
+      "select overrides from sales.invoices where id = $1",
+      [invoiceIdOf(covered)],
+    );
+    expect(rows[0]?.overrides).toEqual([byOwner]);
+    expect(await flagsOf(covered.opId)).toEqual({});
+    expect(Object.keys(await flagsOf(uncovered.opId))).toEqual([
+      "overrideNotAuthorized",
+      "permissionMissing",
+    ]);
   });
 });
 

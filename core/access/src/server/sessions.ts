@@ -52,6 +52,8 @@ export function sessionUser(
       departmentScope: access.access.departmentScope,
       departments: [...access.access.departments],
       permissions: [...grant.permissions],
+      // The role's own values; the owner holds none and is unlimited (rule 14).
+      limits: access.access.isOwner ? {} : { ...access.access.limits },
     },
   };
 }

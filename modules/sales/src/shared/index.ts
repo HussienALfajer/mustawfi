@@ -1,3 +1,4 @@
+import { supervisorOverridesSchema } from "@mustawfi/core-access/shared";
 import { syncIdSchema } from "@mustawfi/core-sync/shared";
 import { decimalString } from "@mustawfi/kernel";
 import { z } from "zod";
@@ -15,6 +16,12 @@ export const INVOICE_DOC_CODE = "INV";
 export const SKELETON_DOCUMENT_DEFAULTS = {
   shiftId: "00000000-0000-7000-8000-000000000002",
 } as const;
+
+/**
+ * The permission a sale needs, in the department it is sold under (scoped, `core-foundation`
+ * rule 15); a seller without it sells with a supervisor's override (rule 18).
+ */
+export const INVOICE_CREATE_PERMISSION = "sales.invoice.create";
 
 /** The sync operation that records a completed sale (ADR-0020). */
 export const INVOICE_POST_OPERATION = "sales.invoice.post";
@@ -46,6 +53,12 @@ export const invoicePostPayloadV1Schema = z.object({
   /** What the customer paid. */
   total: decimalString({ scale: 4, sign: "nonNegative" }),
   lines: z.array(invoiceLinePayloadSchema).min(1).max(500),
+  /**
+   * The supervisor overrides the sale needed (`core-foundation` rule 18), each with its approver
+   * and id; left out when it needed none. Added to version 1 as an optional field: a payload
+   * without it reads as before.
+   */
+  overrides: supervisorOverridesSchema.optional(),
 });
 
 export type InvoicePostPayloadV1 = z.input<typeof invoicePostPayloadV1Schema>;

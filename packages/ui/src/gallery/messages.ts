@@ -95,6 +95,9 @@ export const galleryMessages = {
     confirmOpen: "أرشفة القسم…",
     confirmTitle: "أرشفة قسم الصيانة؟",
     confirmBody: "لن يظهر القسم في البيع بعد الآن، وتبقى مستنداته كما هي.",
+    dialogOpen: "طلب موافقة مشرف…",
+    dialogTitle: "موافقة مشرف",
+    dialogBody: "يختار المشرف اسمه ثم يُدخل رمزه السري.",
     documentNumber: "رقم المستند",
   },
 } satisfies Messages;

@@ -87,6 +87,7 @@ function session(permissions: string[]): CurrentSession {
       departmentScope: "all",
       departments: [],
       permissions,
+      limits: {},
     },
   };
 }

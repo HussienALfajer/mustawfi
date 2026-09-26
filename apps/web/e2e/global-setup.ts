@@ -109,8 +109,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         store.login,
         "--license",
         // Journeys register the browser as a companion device, each in a fresh context.
-        // Journeys add users too, each with its own login.
-        (await issueTestLicense({ limits: { companionDevices: 20, users: 20 } })).jws,
+        // Journeys add users and departments too, each their own.
+        (await issueTestLicense({ limits: { companionDevices: 20, users: 20, departments: 20 } }))
+          .jws,
       ],
       { DATABASE_URL: appUrl, LICENSE_PUBLIC_KEYS: await testLicensePublicKeys() },
       `${store.password}\n`,

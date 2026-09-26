@@ -43,3 +43,17 @@ export const pinMessages = {
   refused: "رفض الخادم الدخول. أعد المحاولة.",
   failed: "تعذّر التحقق من الرمز. أعد المحاولة.",
 } as const;
+
+/** The supervisor override dialog's text, under `override.` in the `access` namespace. */
+export const overrideMessages = {
+  title: "موافقة مشرف",
+  chooseSupervisor: "اختر المشرف الذي يوافق",
+  supervisors: "المشرفون الذين يملكون الموافقة",
+  noSupervisors: "لا أحد على هذا الجهاز يملك الموافقة على هذا الإجراء.",
+  supervisorPin: "رمز المشرف {name}",
+  notCovered: "لا يملك {name} صلاحية الموافقة على هذا الإجراء.",
+  notAllowed: "لا يوافق المستخدم على إجرائه بنفسه.",
+  back: "رجوع",
+  cancel: "إلغاء",
+  failed: "تعذّر التحقق من الموافقة. أعد المحاولة.",
+} as const;

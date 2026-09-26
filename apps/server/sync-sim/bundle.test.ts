@@ -1,5 +1,12 @@
 import { accessBundlePart } from "@mustawfi/core-access/client";
-import type { AccessPart } from "@mustawfi/core-access/shared";
+import { userAccess } from "@mustawfi/core-access/server";
+import {
+  type AccessGrant,
+  accessGrant,
+  type AccessPart,
+  bundleUserAccess,
+  catalogueFromView,
+} from "@mustawfi/core-access/shared";
 import {
   acceptBundle,
   type BundleRefusal,
@@ -33,7 +40,7 @@ import { testBundleKey } from "../src/bundle-key.test-helpers.ts";
 import { applyMigrations } from "../src/db/migrate.ts";
 import { migrationSets } from "../src/db/migration-sets.ts";
 import { buildHostServer } from "../src/host-server.ts";
-import { createServerRegistry } from "../src/modules.ts";
+import { createServerRegistry, serverPermissions } from "../src/modules.ts";
 import { installTenantLicense } from "../src/tenants/install-license.ts";
 import type { CreatedTenant } from "../src/tenants/create-tenant.ts";
 import { createLicensedTenant } from "../src/tenants/licensed-tenant.test-helpers.ts";
@@ -430,6 +437,103 @@ describe("the configuration bundle (core-foundation slice 11)", () => {
     } finally {
       await db.close();
     }
+  });
+});
+
+describe("grants on the device (core-foundation slice 16)", () => {
+  /** Every answer a grant gives: each permission in each department and without one, each limit. */
+  function answers(grant: AccessGrant, part: AccessPart, departments: readonly string[]) {
+    const scoped = new Map(part.catalogue.permissions.map((p) => [p.id, p.scoped]));
+    return {
+      permissions: grant.permissions,
+      can: [...scoped].flatMap(([permission, isScoped]) => [
+        ...departments.map((department) => grant.can(permission, department)),
+        ...(isScoped ? [] : [grant.can(permission)]),
+      ]),
+      limits: part.catalogue.limits.map((limit) => grant.limitFor(limit.id)),
+    };
+  }
+
+  it("resolves each user from the access part exactly as the server resolves them", async () => {
+    const store = await newStore("متجر المنح");
+    const headers = { authorization: `Bearer ${store.token}` };
+    const departments = [store.tenant.defaultDepartmentId];
+    for (const name of ["الصيانة", "الإكسسوارات"]) {
+      const added = await server.inject({
+        method: "POST",
+        url: "/api/v1/organization/departments",
+        headers,
+        payload: { name },
+      });
+      expect(added.statusCode).toBe(201);
+      departments.push(added.json<{ id: string }>().id);
+    }
+    const [shop, repairs, accessories] = departments as [string, string, string];
+    // A copy holding one scoped and one unscoped permission, and the seeded templates.
+    const copy = await server.inject({
+      method: "POST",
+      url: "/api/v1/access/roles",
+      headers,
+      payload: { name: "مشرف الصيانة", permissions: ["sales.invoice.create", "audit.view"] },
+    });
+    expect(copy.statusCode, copy.body).toBe(201);
+    const users = [
+      { role: "كاشير القسم", departmentScope: "listed", departments: [repairs] },
+      { role: "كاشير القسم", departmentScope: "listed", departments: [repairs, accessories] },
+      { role: "كاشير القسم", departmentScope: "all", departments: [] },
+      { role: "المحاسب", departmentScope: "all", departments: [] },
+      { role: "مشرف الصيانة", departmentScope: "listed", departments: [shop] },
+    ];
+    for (const [index, user] of users.entries()) {
+      const created = await server.inject({
+        method: "POST",
+        url: "/api/v1/access/users",
+        headers,
+        payload: {
+          name: `مستخدم ${String(index)}`,
+          roleId: await roleIdOf(store, user.role),
+          departmentScope: user.departmentScope,
+          departments: user.departments,
+          pin: "2580",
+        },
+      });
+      expect(created.statusCode, created.body).toBe(201);
+    }
+    // Archived, the accessories department leaves every scope, on both sides.
+    const archived = await server.inject({
+      method: "POST",
+      url: `/api/v1/organization/departments/${accessories}/archive`,
+      headers,
+    });
+    expect(archived.statusCode).toBe(200);
+
+    const device = await newDevice(store);
+    const verified = await verifyBundle(
+      signedOf(await bundleOf(device)),
+      verifier,
+      identity(device),
+    );
+    const part = verified.parts["access"] as AccessPart;
+    expect(part.users).toHaveLength(users.length + 1);
+    const catalogue = catalogueFromView(part.catalogue);
+    const everywhere = [...departments, newId()];
+    for (const user of part.users) {
+      const onDevice = bundleUserAccess(part, user.id);
+      if (onDevice === undefined) throw new Error(`${user.name} is not in the part`);
+      const onServer = await tenants.withTenant(
+        { tenantId: store.tenant.tenantId, userId: store.tenant.ownerId },
+        (tx) => userAccess(tx, user.id, serverPermissions()),
+      );
+      if (onServer === undefined) throw new Error(`${user.name} is not on the server`);
+      expect(answers(accessGrant(catalogue, onDevice), part, everywhere), user.name).toEqual(
+        answers(accessGrant(serverPermissions(), onServer.access), part, everywhere),
+      );
+    }
+    // What the users above make of the resolution, so the comparison is not of nothing.
+    const cashier = part.users.find((user) => user.name === "مستخدم 0");
+    const grant = accessGrant(catalogue, bundleUserAccess(part, cashier?.id ?? "")!);
+    expect(grant.can("sales.invoice.create", repairs)).toBe(true);
+    expect(grant.can("sales.invoice.create", shop)).toBe(false);
   });
 });
 

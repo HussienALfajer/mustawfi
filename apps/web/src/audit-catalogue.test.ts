@@ -29,6 +29,8 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "access.login.failed" },
   { action: "access.login.succeeded" },
   { action: "access.login.throttled" },
+  { action: "access.override.granted", device: true },
+  { action: "access.override.refused", device: true },
   { action: "access.pin.failed", device: true },
   { action: "access.pin.lockedOut", device: true },
   { action: "access.pin.signedIn", device: true },
@@ -158,7 +160,10 @@ const UNIT_EVENTS: readonly (
   },
   { event: "maximum offline days reached", actions: ["tenancy.license.offlineTooLong"] },
   { event: "clock moved backwards", actions: ["tenancy.clock.movedBack"] },
-  { event: "supervisor override granted or refused", pending: "core-foundation slice 16" },
+  {
+    event: "supervisor override granted or refused",
+    actions: ["access.override.granted", "access.override.refused"],
+  },
   { event: "number gap", actions: ["organization.numbering.gap"] },
 ];
 
@@ -185,6 +190,7 @@ const PASS_THROUGH: Readonly<Record<string, string>> = {
   "core/organization/src/server/departments.ts": "reads DEPARTMENT_AUDIT, written out whole",
   "core/tenancy/src/client/device-license.ts": "reads DEVICE_LICENSE_EVENTS, written out whole",
   "core/access/src/client/pin/local-sign-in.ts": "reads PIN_DEVICE_EVENTS, written out whole",
+  "core/access/src/client/pin/override.ts": "reads OVERRIDE_DEVICE_EVENTS, written out whole",
 };
 
 function sourceFiles(dir: string): string[] {

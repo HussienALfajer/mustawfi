@@ -10,7 +10,13 @@ import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { type LocalDb, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addToCart, completeCashSale, salesLocalMigrations } from "./local-sales.ts";
+import {
+  addToCart,
+  completeCashSale,
+  salesLocalMigrations,
+  salesOverrideLocalMigrations,
+  type Seller,
+} from "./local-sales.ts";
 import { salesMessages } from "./messages.ts";
 import { CASH_RECEIPT_TEMPLATE, cashReceiptTemplate } from "./receipt-templates.ts";
 import { type ReceiptFormat, readReceiptInvoice, receiptDocument } from "./receipt.ts";
@@ -49,6 +55,7 @@ beforeEach(async () => {
     ...inventoryLocalMigrations,
     ...salesLocalMigrations,
     ...organizationLocalMigrations,
+    ...salesOverrideLocalMigrations,
   ]);
   const departmentId = newId();
   await db.transaction((tx) =>
@@ -82,12 +89,17 @@ async function product(name: string, price: string) {
   return id;
 }
 
+/** A seller who may sell in every department. */
+function anySeller(): Seller {
+  return { userId: newId(), departmentScope: "all", departments: [], can: () => true };
+}
+
 describe("receipt", () => {
   it("is the template version every new invoice records, headed by the store's name", async () => {
     await addToCart(db, await product("شاحن", "5"));
     const sale = await completeCashSale(db, {
       device,
-      userId: newId(),
+      seller: anySeller(),
       clock,
       newId,
       license: allowed,
@@ -102,7 +114,7 @@ describe("receipt", () => {
     await addToCart(db, await product("شاحن", "5"));
     const sale = await completeCashSale(db, {
       device,
-      userId: newId(),
+      seller: anySeller(),
       clock,
       newId,
       license: allowed,
@@ -130,7 +142,7 @@ describe("receipt", () => {
     await addToCart(db, charger);
     const sale = await completeCashSale(db, {
       device,
-      userId: newId(),
+      seller: anySeller(),
       clock,
       newId,
       license: allowed,
@@ -175,7 +187,7 @@ describe("receipt", () => {
     await addToCart(db, await product("شاحن", "5"));
     const sale = await completeCashSale(db, {
       device,
-      userId: newId(),
+      seller: anySeller(),
       clock,
       newId,
       license: allowed,
@@ -191,7 +203,7 @@ describe("receipt", () => {
     await addToCart(db, await product("شاحن", "5"));
     const sale = await completeCashSale(db, {
       device,
-      userId: newId(),
+      seller: anySeller(),
       clock,
       newId,
       license: allowed,
@@ -206,7 +218,7 @@ describe("receipt", () => {
     await addToCart(db, await product("شاحن", "5"));
     const sale = await completeCashSale(db, {
       device,
-      userId: newId(),
+      seller: anySeller(),
       clock,
       newId,
       license: allowed,

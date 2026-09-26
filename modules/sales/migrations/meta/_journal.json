@@ -22,6 +22,13 @@
       "when": 1790370846126,
       "tag": "0002_invoices_department_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790455969840,
+      "tag": "0003_invoice_overrides",
+      "breakpoints": true
     }
   ]
 }

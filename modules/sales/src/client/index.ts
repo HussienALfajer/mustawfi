@@ -20,6 +20,9 @@ export {
   type SaleRefusal,
   SaleRefused,
   salesLocalMigrations,
+  salesOverrideLocalMigrations,
+  saleDepartmentId,
+  type Seller,
 } from "./local-sales.ts";
 export {
   InvoicesScreen,

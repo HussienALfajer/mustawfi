@@ -1,7 +1,7 @@
 import type { Messages } from "@mustawfi/i18n";
 import { accountMessages } from "./account/messages.ts";
 import { devicesMessages } from "./devices/messages.ts";
-import { pinMessages } from "./pin/messages.ts";
+import { overrideMessages, pinMessages } from "./pin/messages.ts";
 import { rolesMessages } from "./roles/messages.ts";
 import { usersMessages } from "./users/messages.ts";
 
@@ -71,6 +71,10 @@ export const accessMessages = {
       failed: "رمز سري خاطئ على الجهاز دون اتصال",
       lockedOut: "قفل مستخدم على الجهاز بعد خمسة رموز خاطئة",
       unlocked: "فتح مشرف قفل مستخدم على الجهاز",
+    },
+    override: {
+      granted: "موافقة مشرف على إجراء على الجهاز",
+      refused: "رفض موافقة مشرف لا يملك دوره الإجراء",
     },
   },
   login: {
@@ -185,6 +189,7 @@ export const accessMessages = {
   },
   devices: devicesMessages,
   pin: pinMessages,
+  override: overrideMessages,
   users: usersMessages,
   roles: rolesMessages,
 } satisfies Messages;

@@ -1,3 +1,5 @@
+import { OVERRIDE_DEVICE_EVENTS } from "./override.ts";
+
 /** Wrong PINs in a row that lock a user on a device (`core-foundation` rule 20). */
 export const PIN_ATTEMPTS = 5;
 
@@ -26,7 +28,11 @@ export const PIN_DEVICE_EVENTS = {
   unlocked: { action: "access.pin.unlocked" },
 } as const;
 
-/** The device audit actions of `core.access`, which the server accepts from its devices. */
-export const ACCESS_DEVICE_AUDIT_ACTIONS: readonly string[] = Object.values(PIN_DEVICE_EVENTS).map(
-  (event) => event.action,
-);
+/**
+ * The device audit actions of `core.access` — PIN sign-in and supervisor overrides — which the
+ * server accepts from its devices.
+ */
+export const ACCESS_DEVICE_AUDIT_ACTIONS: readonly string[] = [
+  ...Object.values(PIN_DEVICE_EVENTS),
+  ...Object.values(OVERRIDE_DEVICE_EVENTS),
+].map((event) => event.action);

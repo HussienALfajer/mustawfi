@@ -108,6 +108,7 @@ function sessionAnswer(userId: string, tenantId = TENANT) {
       departmentScope: "all",
       departments: [],
       permissions: ["sales.invoice.create"],
+      limits: {},
     },
     license: {
       state: "active",
@@ -354,12 +355,80 @@ describe("who is signed in on a registered device", () => {
     expect(await fetchSignedIn(db, verifier)).toBeNull();
   });
 
-  it("is another store's back office on a device registered elsewhere", async () => {
-    answer = () => Response.json(sessionAnswer(OWNER, OTHER_TENANT));
-    expect(await fetchSignedIn(db, verifier)).toMatchObject({
-      tenantId: OTHER_TENANT,
-      device: null,
+  it("is another store's back office on a device registered elsewhere, resolved by the server's catalogue", async () => {
+    answer = (url) =>
+      Response.json(
+        url === "/api/v1/access/catalogue"
+          ? ACCESS.catalogue
+          : {
+              ...sessionAnswer(OWNER, OTHER_TENANT),
+              user: {
+                ...sessionAnswer(OWNER, OTHER_TENANT).user,
+                departmentScope: "listed",
+                departments: [OTHER_TENANT],
+              },
+            },
+      );
+    const signedIn = await fetchSignedIn(db, verifier);
+    expect(signedIn).toMatchObject({ tenantId: OTHER_TENANT, device: null });
+    expect(requests.map((request) => request.url)).toEqual([
+      "/api/v1/access/session",
+      "/api/v1/access/catalogue",
+    ]);
+    // The scope listed by the server holds; the scoped permission holds nowhere else.
+    expect(signedIn?.grant.can("sales.invoice.create", OTHER_TENANT)).toBe(true);
+    expect(signedIn?.grant.can("sales.invoice.create", TENANT)).toBe(false);
+    expect(signedIn?.grant.can("access.users.unlock")).toBe(false);
+  });
+
+  it("resolves what the user may do from the bundle, online or not (slice 16)", async () => {
+    const REPAIRS = "0199a000-0000-7000-8000-0000000000d2";
+    const listed: AccessPart = {
+      ...ACCESS,
+      catalogue: {
+        ...ACCESS.catalogue,
+        limits: [{ id: "sales.discount.maxPercent", moduleId: "sales", kind: "percent" }],
+      },
+      roles: ACCESS.roles.map((role) =>
+        role.id === CASHIER_ROLE ? { ...role, limits: { "sales.discount.maxPercent": "5" } } : role,
+      ),
+      users: ACCESS.users.map((user) =>
+        user.id === CASHIER ? { ...user, departmentScope: "listed", departments: [REPAIRS] } : user,
+      ),
+    };
+    await storeBundle(listed, 2);
+    await openAs(CASHIER, false);
+    const offlineGrant = (await fetchSignedIn(db, verifier))?.grant;
+    expect(offlineGrant?.can("sales.invoice.create", REPAIRS)).toBe(true);
+    expect(offlineGrant?.can("sales.invoice.create", OTHER_TENANT)).toBe(false);
+    expect(offlineGrant?.limitFor("sales.discount.maxPercent")).toEqual({
+      unlimited: false,
+      value: "5",
     });
+
+    // With the server's session too, the device still reads the bundle, and asks for no catalogue.
+    await openAs(CASHIER, true);
+    answer = () => Response.json(sessionAnswer(CASHIER));
+    requests = [];
+    const online = await fetchSignedIn(db, verifier);
+    const onlineGrant = online?.grant;
+    // The scope beside the grant is the bundle's too, whatever the server's answer says.
+    expect(online?.user).toMatchObject({
+      name: "من الخادم",
+      departmentScope: "listed",
+      departments: [REPAIRS],
+    });
+    expect(onlineGrant?.can("sales.invoice.create", OTHER_TENANT)).toBe(false);
+    expect(onlineGrant?.limitFor("sales.discount.maxPercent")).toEqual({
+      unlimited: false,
+      value: "5",
+    });
+    expect(requests.map((request) => request.url)).toEqual(["/api/v1/access/session"]);
+
+    await openAs(OWNER, false);
+    const ownerGrant = (await fetchSignedIn(db, verifier))?.grant;
+    expect(ownerGrant?.can("sales.invoice.create", OTHER_TENANT)).toBe(true);
+    expect(ownerGrant?.limitFor("sales.discount.maxPercent")).toEqual({ unlimited: true });
   });
 
   it("is nobody once the bundle no longer allows the user on the device", async () => {

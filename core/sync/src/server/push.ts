@@ -1,5 +1,14 @@
-import { type Device, deviceRevokedAt, userAccess } from "@mustawfi/core-access/server";
-import { accessGrant } from "@mustawfi/core-access/shared";
+import {
+  checkOverrides,
+  type Device,
+  deviceRevokedAt,
+  userAccess,
+} from "@mustawfi/core-access/server";
+import {
+  accessGrant,
+  type SupervisorOverride,
+  supervisorOverridesSchema,
+} from "@mustawfi/core-access/shared";
 import { ProblemError } from "@mustawfi/core-config/server";
 import {
   currentLicense,
@@ -203,18 +212,24 @@ async function processOperation(
   }
   const user = await userAccess(tx, operation.userId, dependencies.operations.permissionCatalogue);
   if (user === undefined) throw new OperationRejected(syncProblemCodes.unknownUser);
+  const covered = await checkOperationOverrides(tx, operation, definition, dependencies);
   const { access } = definition;
   if (access !== "device") {
     // Checked with the user's role at ingest; a miss is recorded, not refused (rule 17).
+    const catalogue = dependencies.operations.permissionCatalogue;
     const departmentId = access.department?.(operation.payload);
-    const grant = accessGrant(dependencies.operations.permissionCatalogue, user.access);
-    const scoped =
-      dependencies.operations.permissionCatalogue.permissions.get(access.permission)?.scoped ===
-      true;
+    const grant = accessGrant(catalogue, user.access);
+    const scoped = catalogue.permissions.get(access.permission)?.scoped === true;
     // A scoped operation that names no department cannot be shown to be allowed: flagged (the
-    // handler usually rejects such a payload, which rolls the flag back with it).
+    // handler usually rejects such a payload, which rolls the flag back with it). A supervisor's
+    // override of the permission, in the operation's department, stands in for the seller's
+    // (rule 18) once its approver's role covers it.
+    const needed = { permission: access.permission, departmentId };
     const allowed =
-      scoped && departmentId === undefined ? false : grant.can(access.permission, departmentId);
+      scoped && departmentId === undefined
+        ? false
+        : grant.can(access.permission, departmentId) ||
+          covered.some((override) => approves(override, needed, scoped));
     if (!allowed) {
       await flagOperation(
         tx,
@@ -249,6 +264,59 @@ async function processOperation(
     next: expected + 1,
     revoked,
   };
+}
+
+/** Whether `override` approved the permission `needed`, in its department when it is scoped. */
+function approves(
+  override: SupervisorOverride,
+  needed: { readonly permission: string; readonly departmentId: string | undefined },
+  scoped: boolean,
+): boolean {
+  return (
+    override.permission === needed.permission &&
+    (!scoped || override.departmentId === needed.departmentId)
+  );
+}
+
+/**
+ * Checks the supervisor overrides an operation's document carries (`core-foundation` rule 18)
+ * against each approver's role at ingest, and flags the operation `overrideNotAuthorized` with
+ * every one that does not cover what it approved — or with the list itself when it is malformed
+ * (the handler usually rejects such a payload, which rolls the flag back with it). Returns the
+ * overrides that hold.
+ */
+async function checkOperationOverrides(
+  tx: TenantTransaction,
+  operation: ReceivedOperation,
+  definition: SyncOperationDefinition,
+  dependencies: PushDependencies,
+): Promise<readonly SupervisorOverride[]> {
+  const carried = definition.overrides?.(operation.payload);
+  if (carried === undefined) return [];
+  const parsed = supervisorOverridesSchema.safeParse(carried);
+  if (!parsed.success) {
+    await flagOperation(
+      tx,
+      operation,
+      { code: "overrideNotAuthorized", detail: { malformed: true } },
+      dependencies,
+    );
+    return [];
+  }
+  const checked = await checkOverrides(
+    tx,
+    dependencies.operations.permissionCatalogue,
+    parsed.data,
+  );
+  if (checked.refused.length > 0) {
+    await flagOperation(
+      tx,
+      operation,
+      { code: "overrideNotAuthorized", detail: { overrides: [...checked.refused] } },
+      dependencies,
+    );
+  }
+  return checked.covered;
 }
 
 /**
