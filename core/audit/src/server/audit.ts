@@ -18,6 +18,12 @@ export interface AuditEntry {
   readonly after?: AuditValues;
   /** Why, as the person who acted typed it, when the action asks for one. */
   readonly reason?: string;
+  /**
+   * Set for an event that happened on a device and reached the server later through its outbox
+   * (`source = device`, `core-foundation` rule 33): when the server received it. `occurredAt`
+   * is then the device's clock, and `deviceId` is required.
+   */
+  readonly receivedAt?: Date;
 }
 
 /**
@@ -25,11 +31,17 @@ export interface AuditEntry {
  * change it records. The log is append-only: nothing can change or remove an entry.
  */
 export async function recordAudit(tx: TenantTransaction, entry: AuditEntry): Promise<void> {
+  const fromDevice = entry.receivedAt !== undefined;
+  if (fromDevice && entry.deviceId === undefined) {
+    throw new TypeError(`the device event ${entry.action} names no device`);
+  }
   await tx.insert(entries).values({
     id: entry.id,
     tenantId: entry.tenantId,
     branchId: entry.branchId,
     createdAt: entry.occurredAt,
+    recordedAt: entry.receivedAt ?? entry.occurredAt,
+    source: fromDevice ? "device" : "server",
     createdBy: entry.userId,
     deviceId: entry.deviceId ?? null,
     action: auditActionSchema.parse(entry.action),

@@ -1,3 +1,4 @@
+export { outboxAuditSink, type OutboxAuditSinkOptions } from "./audit-sink.ts";
 export {
   apiSyncTransport,
   type ApiSyncTransportOptions,

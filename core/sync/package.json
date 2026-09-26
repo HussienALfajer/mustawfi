@@ -10,6 +10,7 @@
   "mustawfi": {
     "dependsOn": [
       "core.access",
+      "core.audit",
       "core.config",
       "core.tenancy"
     ]
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@mustawfi/core-access": "workspace:*",
+    "@mustawfi/core-audit": "workspace:*",
     "@mustawfi/core-config": "workspace:*",
     "@mustawfi/core-tenancy": "workspace:*",
     "@mustawfi/i18n": "workspace:*",

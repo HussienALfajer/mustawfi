@@ -13,6 +13,7 @@ import { ledgerModule } from "@mustawfi/core-ledger/server";
 import { organizationBundlePart, organizationModule } from "@mustawfi/core-organization/server";
 import {
   createSyncOperationTable,
+  deviceAuditOperation,
   syncModule,
   type SyncOperationDefinition,
   type SyncOperationTable,
@@ -23,6 +24,7 @@ import {
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
+import { TENANCY_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-tenancy/shared";
 import { inventoryModule } from "@mustawfi/inventory/server";
 import type { Clock, IdGenerator, RandomSource } from "@mustawfi/kernel";
 import { salesModule, salesSyncOperations } from "@mustawfi/sales/server";
@@ -71,12 +73,26 @@ export function createServerRegistry(
 }
 
 /**
+ * The actions each module's devices audit through the device audit path (`audit.entry.record`,
+ * `core-foundation` rule 33), by module id.
+ */
+export const moduleDeviceAuditActions: Readonly<Record<string, readonly string[]>> = {
+  "core.tenancy": TENANCY_DEVICE_AUDIT_ACTIONS,
+};
+
+/**
  * The operation table push dispatches through: the operations of the registry's enabled
- * modules only, so a disabled module's operations are rejected as unsupported.
+ * modules only, so a disabled module's operations are rejected as unsupported — and
+ * `core.sync`'s device audit events, accepted for the actions the enabled modules declare.
  */
 export function hostSyncOperations(registry: ModuleRegistry<HostContext>): SyncOperationTable {
+  const enabled = registry.enabled.map((module) => module.id);
+  const deviceAuditActions = new Set(enabled.flatMap((id) => moduleDeviceAuditActions[id] ?? []));
   return createSyncOperationTable(
-    registry.enabled.flatMap((module) => moduleSyncOperations[module.id] ?? []),
+    [
+      ...(enabled.includes(syncModule.id) ? [deviceAuditOperation(deviceAuditActions)] : []),
+      ...enabled.flatMap((id) => moduleSyncOperations[id] ?? []),
+    ],
     registry.permissions,
   );
 }

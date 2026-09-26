@@ -27,6 +27,12 @@ export {
   verifyBundle,
   verifyServerTime,
 } from "./bundle.ts";
+export {
+  type AuditSink,
+  type DeviceAuditEvent,
+  type DeviceAuditValue,
+  type DeviceAuditValues,
+} from "./audit.ts";
 export { type ClientRuntime, ClientRuntimeProvider, useClientRuntime } from "./runtime.tsx";
 
 /** The API answered with problem details; `code` picks the Arabic message (ADR-0014). */

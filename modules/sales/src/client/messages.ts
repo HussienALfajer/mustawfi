@@ -11,6 +11,10 @@ export const salesMessages = {
     invoices: { view: "عرض الفواتير" },
     invoice: { create: "البيع وإنشاء الفواتير" },
   },
+  /** Labels of this module's audit actions: `sales.invoice.created` → `audit.invoice.created`. */
+  audit: {
+    invoice: { created: "تسجيل فاتورة بيع" },
+  },
   pos: {
     title: "البيع",
     loading: "جارٍ قراءة بيانات الجهاز…",

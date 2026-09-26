@@ -1,4 +1,9 @@
-import type { LoadedBundle, VerifiedBundle } from "@mustawfi/core-config/client";
+import type {
+  AuditSink,
+  DeviceAuditValues,
+  LoadedBundle,
+  VerifiedBundle,
+} from "@mustawfi/core-config/client";
 import type { Clock } from "@mustawfi/kernel";
 import {
   type LocalDb,
@@ -7,10 +12,12 @@ import {
   localOrm,
   safeInteger,
 } from "@mustawfi/local-db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import {
   businessDate,
+  DEVICE_LICENSE_EVENTS,
+  type DeviceLicenseCondition,
   LICENSE_BUNDLE_PART,
   LICENSE_STATES,
   type LicenseStanding,
@@ -77,8 +84,22 @@ const licenseDay = sqliteTable("tenancy_license_day", {
   evaluatedAt: safeInteger("evaluated_at").notNull(),
 });
 
+/**
+ * The conditions audited while they last (the device audit path, rule 33): one row per condition
+ * whose event was recorded, with the occurrence it was recorded for; removed when a reading finds
+ * the condition ended, and replaced when it finds a new occurrence, so each is recorded once.
+ */
+const licenseAudit = sqliteTable("tenancy_license_audit", {
+  condition: text().$type<DeviceLicenseCondition>().primaryKey(),
+  /** Which occurrence was recorded (`Occurrence.episode`). */
+  episode: text().notNull(),
+  /** The local time the event was recorded, in epoch milliseconds. */
+  auditedAt: safeInteger("audited_at").notNull(),
+});
+
 export const CLOCK_GUARD_TABLE = "tenancy_clock_guard";
 export const LICENSE_DAY_TABLE = "tenancy_license_day";
+export const LICENSE_AUDIT_TABLE = "tenancy_license_audit";
 
 /** `core.tenancy`'s local schema (ADR-0019). */
 export const tenancyLocalMigrations: readonly LocalMigration[] = [
@@ -100,6 +121,16 @@ export const tenancyLocalMigrations: readonly LocalMigration[] = [
         license_issued_at TEXT NOT NULL,
         offline_exceeded INTEGER NOT NULL CHECK (offline_exceeded IN (0, 1)),
         evaluated_at INTEGER NOT NULL
+      ) STRICT`,
+    ],
+  },
+  {
+    id: "core.tenancy.0002_license_audit",
+    statements: [
+      `CREATE TABLE tenancy_license_audit (
+        condition TEXT PRIMARY KEY CHECK (condition IN ('readOnly', 'suspended', 'offlineTooLong', 'clockBehind', 'clockWrong')),
+        episode TEXT NOT NULL,
+        audited_at INTEGER NOT NULL
       ) STRICT`,
     ],
   },
@@ -156,21 +187,38 @@ interface ClockReading {
    * the mark itself before any server time.
    */
   readonly now: number;
+  /** The local clock as read. */
+  readonly local: number;
+  /** The high-water mark the device's time was counted on. */
+  readonly mark: number;
   readonly behind: boolean;
   readonly wrong: boolean;
   readonly serverTime: number | null;
+  /** The local clock when that server time was taken. */
+  readonly localAtServerTime: number | null;
 }
 
-function readingOf(guard: GuardRow, mark: number, behind: boolean): ClockReading {
+function readingOf(guard: GuardRow, local: number, mark: number, behind: boolean): ClockReading {
   const { serverTime, localAtServerTime } = guard;
   if (serverTime === null || localAtServerTime === null) {
-    return { now: mark, behind, wrong: false, serverTime: null };
+    return {
+      now: mark,
+      local,
+      mark,
+      behind,
+      wrong: false,
+      serverTime: null,
+      localAtServerTime: null,
+    };
   }
   return {
     now: serverTime + Math.max(0, mark - localAtServerTime),
+    local,
+    mark,
     behind,
     wrong: Math.abs(localAtServerTime - serverTime) > CLOCK_SKEW_LIMIT_MS,
     serverTime,
+    localAtServerTime,
   };
 }
 
@@ -190,16 +238,16 @@ async function observeClock(tx: LocalExecutor, clock: Clock): Promise<ClockReadi
       behindSince: null,
     };
     await writeGuard(tx, first);
-    return readingOf(first, now, false);
+    return readingOf(first, now, now, false);
   }
   if (now < guard.highWaterMark - CLOCK_TOLERANCE_MS) {
     if (guard.behindSince === null) await writeGuard(tx, { ...guard, behindSince: now });
-    return readingOf(guard, guard.highWaterMark, true);
+    return readingOf(guard, now, guard.highWaterMark, true);
   }
   if (now >= guard.highWaterMark + MARK_WRITE_STEP_MS) {
     await writeGuard(tx, { ...guard, highWaterMark: now });
   }
-  return readingOf(guard, Math.max(guard.highWaterMark, now), guard.behindSince !== null);
+  return readingOf(guard, now, Math.max(guard.highWaterMark, now), guard.behindSince !== null);
 }
 
 /**
@@ -257,15 +305,19 @@ async function writeDay(executor: LocalExecutor, row: DayRow): Promise<void> {
     .onConflictDoUpdate({ target: licenseDay.id, set: row });
 }
 
+/**
+ * The last server contact: the last server time taken, or the bundle's own signed time, which is
+ * a server contact too — a device that upgraded before it recorded one still counts its offline
+ * days from its bundle.
+ */
+function lastContact(bundle: VerifiedBundle, reading: ClockReading): number {
+  return Math.max(reading.serverTime ?? Number.NEGATIVE_INFINITY, Date.parse(bundle.issuedAt));
+}
+
 /** The day's evaluation of `license` at the device's time (rules 3, 6, 7). */
 function evaluate(license: VerifiedLicense, bundle: VerifiedBundle, reading: ClockReading): DayRow {
   const { claims } = license;
-  // The bundle's own signed time is a server contact too: a device that upgraded before it
-  // recorded one still counts its offline days from its bundle.
-  const contact = Math.max(
-    reading.serverTime ?? Number.NEGATIVE_INFINITY,
-    Date.parse(bundle.issuedAt),
-  );
+  const contact = lastContact(bundle, reading);
   return {
     businessDate: businessDate(new Date(reading.now)),
     state: licenseState(claims, new Date(reading.now)),
@@ -305,11 +357,129 @@ function restrictionOf(
   return null;
 }
 
+/**
+ * Who reads the license, so the events it notices are audited (the device audit path, rule 33):
+ * the user signed in on the device, and the app's sink.
+ */
+export interface DeviceLicenseAudit {
+  readonly sink: AuditSink;
+  readonly userId: string;
+}
+
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/**
+ * A condition present at a reading: the event's values, and which occurrence it is. The clock
+ * conditions and the offline days end only at a server contact, which a reading may not witness,
+ * so an occurrence is named by the last server contact: a later one is a new occurrence. The
+ * day's states change only in readings, so a reading always sees them end.
+ */
+interface Occurrence {
+  readonly after: DeviceAuditValues;
+  readonly episode: string;
+}
+
+/**
+ * The audited conditions this reading can judge, each with its occurrence when present: the
+ * clock's always, the day's only with a verified license and its day.
+ */
+function auditedConditions(
+  reading: ClockReading,
+  licensed:
+    | { readonly license: VerifiedLicense; readonly bundle: VerifiedBundle; readonly day: DayRow }
+    | undefined,
+): Map<DeviceLicenseCondition, Occurrence | null> {
+  const conditions = new Map<DeviceLicenseCondition, Occurrence | null>();
+  const sinceServer = reading.serverTime === null ? "none" : iso(reading.serverTime);
+  conditions.set(
+    "clockBehind",
+    reading.behind
+      ? {
+          after: { localTime: iso(reading.local), highWaterMark: iso(reading.mark) },
+          episode: sinceServer,
+        }
+      : null,
+  );
+  conditions.set(
+    "clockWrong",
+    reading.wrong && reading.serverTime !== null && reading.localAtServerTime !== null
+      ? {
+          after: { localTime: iso(reading.localAtServerTime), serverTime: iso(reading.serverTime) },
+          episode: sinceServer,
+        }
+      : null,
+  );
+  if (licensed === undefined) return conditions;
+  const { license, bundle, day } = licensed;
+  const state = {
+    state: day.state,
+    businessDate: day.businessDate,
+    expiresAt: license.claims.expiresAt,
+    licenseIssuedAt: day.licenseIssuedAt,
+  };
+  conditions.set("readOnly", day.state === "readOnly" ? { after: state, episode: "" } : null);
+  conditions.set("suspended", day.state === "suspended" ? { after: state, episode: "" } : null);
+  const contact = iso(lastContact(bundle, reading));
+  conditions.set(
+    "offlineTooLong",
+    day.offlineExceeded
+      ? {
+          after: {
+            lastServerContact: contact,
+            maxOfflineDays: license.claims.maxOfflineDays,
+            businessDate: day.businessDate,
+          },
+          episode: contact,
+        }
+      : null,
+  );
+  return conditions;
+}
+
+/**
+ * Audits each occurrence of a condition not yet audited, through the sink in `tx`, and forgets
+ * each condition that ended, so it is audited again when it begins again. Writes only when
+ * something changed: a reading of a healthy device only reads. Without `audit` (no user signed
+ * in) nothing is recorded: the next reading with a user records what still holds.
+ */
+async function auditConditions(
+  tx: LocalExecutor,
+  conditions: ReadonlyMap<DeviceLicenseCondition, Occurrence | null>,
+  audit: DeviceLicenseAudit | undefined,
+  clock: Clock,
+): Promise<void> {
+  const orm = localOrm(tx);
+  const audited = new Map(
+    (await orm.select().from(licenseAudit)).map((row) => [row.condition, row.episode]),
+  );
+  const ended = [...conditions]
+    .filter(([condition, occurrence]) => occurrence === null && audited.has(condition))
+    .map(([condition]) => condition);
+  if (ended.length > 0) {
+    await orm.delete(licenseAudit).where(inArray(licenseAudit.condition, ended));
+  }
+  if (audit === undefined) return;
+  for (const [condition, occurrence] of conditions) {
+    if (occurrence === null || audited.get(condition) === occurrence.episode) continue;
+    await audit.sink.record(tx, {
+      action: DEVICE_LICENSE_EVENTS[condition].action,
+      userId: audit.userId,
+      after: occurrence.after,
+    });
+    const row = { episode: occurrence.episode, auditedAt: clock.now().getTime() };
+    await orm
+      .insert(licenseAudit)
+      .values({ condition, ...row })
+      .onConflictDoUpdate({ target: licenseAudit.condition, set: row });
+  }
+}
+
 async function resolve(
   db: LocalDb,
   loaded: LoadedBundle,
   clock: Clock,
   opening: boolean,
+  audit: DeviceLicenseAudit | undefined,
 ): Promise<DeviceLicense> {
   return db.transaction(async (tx) => {
     const reading = await observeClock(tx, clock);
@@ -328,6 +498,17 @@ async function resolve(
         await writeDay(tx, day);
       }
     }
+    await auditConditions(
+      tx,
+      auditedConditions(
+        reading,
+        license !== undefined && bundle !== undefined && day !== undefined
+          ? { license, bundle, day }
+          : undefined,
+      ),
+      audit,
+      clock,
+    );
     return {
       standing:
         license === undefined || day === undefined
@@ -347,19 +528,25 @@ export function openLicenseDay(
   db: LocalDb,
   loaded: LoadedBundle,
   clock: Clock,
+  audit?: DeviceLicenseAudit,
 ): Promise<DeviceLicense> {
-  return resolve(db, loaded, clock, true);
+  return resolve(db, loaded, clock, true, audit);
 }
 
 /**
  * The license as this device applies it now: the day's held state, a renewal applied at once,
  * the clock guard, and the bundle's own state. Only the first evaluation happens here; a new
  * business day waits for a sign-in (`openLicenseDay`). Before any document is created (ADR-0021).
+ *
+ * With `audit`, the reading records the events it notices — the clock moved back or wrong, the
+ * day read-only or suspended, offline too long — once each while they last, in its own
+ * transaction (the device audit path, rule 33).
  */
 export function deviceLicense(
   db: LocalDb,
   loaded: LoadedBundle,
   clock: Clock,
+  audit?: DeviceLicenseAudit,
 ): Promise<DeviceLicense> {
-  return resolve(db, loaded, clock, false);
+  return resolve(db, loaded, clock, false, audit);
 }

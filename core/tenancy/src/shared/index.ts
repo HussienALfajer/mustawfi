@@ -34,6 +34,11 @@ export {
   tenancyProblemCodes,
 } from "./departments.ts";
 export {
+  DEVICE_LICENSE_EVENTS,
+  type DeviceLicenseCondition,
+  TENANCY_DEVICE_AUDIT_ACTIONS,
+} from "./device-events.ts";
+export {
   BUSINESS_TIME_ZONE,
   businessDate,
   EXPIRING_DAYS,

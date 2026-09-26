@@ -9,7 +9,7 @@ import { syncRoutes } from "./routes.ts";
  */
 export const syncModule = defineModule<SyncContext>({
   id: "core.sync",
-  dependsOn: ["core.access", "core.config", "core.tenancy"],
+  dependsOn: ["core.access", "core.audit", "core.config", "core.tenancy"],
   migrations: fileURLToPath(new URL("../../migrations", import.meta.url)),
   routes: syncRoutes,
 });

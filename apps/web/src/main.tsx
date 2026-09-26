@@ -6,20 +6,15 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
-import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
-import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
-import { TENANCY_NAMESPACE, tenancyMessages } from "@mustawfi/core-tenancy/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
-import { ORGANIZATION_NAMESPACE, organizationMessages } from "@mustawfi/core-organization/client";
 import { ApiProblem, ClientRuntimeProvider, configureApi } from "@mustawfi/core-config/client";
-import { SYNC_NAMESPACE, SyncEngineProvider, syncMessages } from "@mustawfi/core-sync/client";
+import { outboxAuditSink, SyncEngineProvider } from "@mustawfi/core-sync/client";
 import { createI18n, DIRECTION, LANGUAGE } from "@mustawfi/i18n";
-import { INVENTORY_NAMESPACE, inventoryMessages } from "@mustawfi/inventory/client";
 import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import { loadReceiptFonts } from "@mustawfi/printing";
 import { LocalDbProvider } from "@mustawfi/local-db";
-import { SALES_NAMESPACE, salesMessages } from "@mustawfi/sales/client";
+import { SKELETON_DOCUMENT_DEFAULTS } from "@mustawfi/sales/shared";
 import { LocaleProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import { GALLERY_NAMESPACE, galleryMessages } from "@mustawfi/ui/gallery";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -29,6 +24,7 @@ import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { startLocalRuntime } from "./local.ts";
 import { SHELL_NAMESPACE, shellMessages } from "./messages.ts";
+import { MODULE_MESSAGES } from "./module-messages.ts";
 import { detectPlatform } from "./platform.ts";
 import { PrintingProvider } from "./printing.tsx";
 import { RECEIPT_FONT_SOURCES } from "./receipt-fonts.ts";
@@ -45,13 +41,7 @@ const i18n = createI18n({
   [SHELL_NAMESPACE]: shellMessages,
   [UI_NAMESPACE]: uiMessages,
   [GALLERY_NAMESPACE]: galleryMessages,
-  [ACCESS_NAMESPACE]: accessMessages,
-  [TENANCY_NAMESPACE]: tenancyMessages,
-  [AUDIT_NAMESPACE]: auditMessages,
-  [ORGANIZATION_NAMESPACE]: organizationMessages,
-  [INVENTORY_NAMESPACE]: inventoryMessages,
-  [SYNC_NAMESPACE]: syncMessages,
-  [SALES_NAMESPACE]: salesMessages,
+  ...MODULE_MESSAGES,
 });
 document.documentElement.lang = LANGUAGE;
 document.documentElement.dir = DIRECTION;
@@ -95,9 +85,17 @@ const queryClient: QueryClient = new QueryClient({
 });
 const router = createAppRouter(queryClient, platform.deviceType);
 
+const newId = uuidV7Generator({ clock: systemClock, random: cryptoRandom });
 const runtime = {
   clock: systemClock,
-  newId: uuidV7Generator({ clock: systemClock, random: cryptoRandom }),
+  newId,
+  // Events audited on the device go up through the outbox (`core-foundation` rule 33), with the
+  // shift the device's documents carry until `treasury` opens real shifts.
+  audit: outboxAuditSink({
+    clock: systemClock,
+    newId,
+    shiftId: SKELETON_DOCUMENT_DEFAULTS.shiftId,
+  }),
 };
 
 /**

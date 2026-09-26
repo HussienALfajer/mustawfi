@@ -122,6 +122,28 @@ export const pullResponseSchema = z.object({
 
 export type PullResponse = z.infer<typeof pullResponseSchema>;
 
+/**
+ * The operation that carries an event audited on a device (`core-foundation` rule 33): its
+ * envelope gives who (`userId`), which device, and when (`createdAt`, the device's clock); the
+ * server adds when it received it.
+ */
+export const DEVICE_AUDIT_OPERATION = "audit.entry.record";
+
+/** A JSON object of before or after values, as the audit log keeps them. */
+const auditValuesSchema = z.record(z.string(), z.json());
+
+/** The payload of `audit.entry.record`, version 1. */
+export const deviceAuditPayloadSchema = z.strictObject({
+  /** `module.subject.event`, one the server's modules declare as a device event. */
+  action: operationTypeSchema,
+  entity: z.strictObject({ type: operationTypeSchema, id: syncIdSchema }).optional(),
+  before: auditValuesSchema.optional(),
+  after: auditValuesSchema.optional(),
+  reason: z.string().min(1).max(500).optional(),
+});
+
+export type DeviceAuditPayload = z.infer<typeof deviceAuditPayloadSchema>;
+
 /** The refusals and rejections of `core.sync`; clients map each code to an Arabic message. */
 export const syncProblemCodes = {
   /** A push carried an operation of another device (the whole push is refused). */
@@ -137,6 +159,10 @@ export const syncProblemCodes = {
    * taken), so it is answered again on every push.
    */
   seqTaken: "sync.operation.seqTaken",
+  /** A device audit event whose payload is not an audit entry. */
+  auditEntryMalformed: "sync.auditEntry.malformed",
+  /** A device audit event whose action no enabled module declares as a device event. */
+  auditEntryUnknownAction: "sync.auditEntry.unknownAction",
 } as const;
 
 /**

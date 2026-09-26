@@ -12,6 +12,9 @@
  * every sale it made still reaches the server, exactly the operations that arrived after the
  * revoke are flagged `deviceRevoked`, and it ends with its local data wiped.
  *
+ * Devices also audit events through the device audit path (`core-foundation` rule 33): each
+ * event a device queued is in the server's log exactly once, from that device.
+ *
  * Replay a failing run with its seed: `SYNC_SIM_SEEDS=1234 pnpm test:agent sync-sim`.
  * Longer runs: `SYNC_SIM_STEPS=2000`.
  */
@@ -38,6 +41,7 @@ import { testLicenseKeys } from "@mustawfi/tools-license/testing";
 import {
   createApiSyncTransport,
   createSyncEngine,
+  outboxAuditSink,
   outboxCounts,
   type SyncEngine,
   syncLocalMigrations,
@@ -67,6 +71,7 @@ import {
   listLocalInvoices,
   salesLocalMigrations,
 } from "@mustawfi/sales/client";
+import { SKELETON_DOCUMENT_DEFAULTS } from "@mustawfi/sales/shared";
 import { createTestDatabase } from "@mustawfi/testing";
 import {
   converge,
@@ -178,6 +183,8 @@ interface SimDevice {
   readonly newId: IdGenerator;
   /** Every sale it made, as the POS answered: a wiped device keeps no record of them. */
   readonly sales: DeviceInvoice[];
+  /** The number of each event it audited through the device audit path, in order. */
+  readonly audited: number[];
 }
 
 interface Store {
@@ -308,7 +315,7 @@ async function openDevice(
     if (status.phase === "failed") failures.push(`${name}: ${status.failure ?? "?"}`);
   });
   const newId = uuidV7Generator({ clock, random: random.fork("ids").source });
-  return { name, db, local, engine, link, clock, newId, sales: [] };
+  return { name, db, local, engine, link, clock, newId, sales: [], audited: [] };
 }
 
 async function deviceSnapshot(device: SimDevice): Promise<DeviceSnapshot> {
@@ -403,6 +410,34 @@ function serverSnapshot(store: Store): Promise<ServerSnapshot> {
   });
 }
 
+/**
+ * What the server's log holds against what each device audited (rule 33): every event once, from
+ * its own device, with the device's time and a later receipt.
+ */
+async function auditProblems(store: Store, devices: readonly SimDevice[]): Promise<string[]> {
+  const { tenantId, ownerId } = store.tenant;
+  const rows = await tenants.withTenant({ tenantId, userId: ownerId }, (tx) =>
+    tx.execute<{ device_id: string; event: number; created_at: Date; recorded_at: Date }>(sql`
+      SELECT device_id, (after->>'simEvent')::int AS event, created_at, recorded_at
+      FROM core_audit.entries WHERE source = 'device' ORDER BY event`),
+  );
+  const problems: string[] = [];
+  for (const device of devices) {
+    const logged = rows.rows.filter((row) => row.device_id === device.local.deviceId);
+    const events = logged.map((row) => row.event);
+    if (JSON.stringify(events) !== JSON.stringify(device.audited)) {
+      problems.push(
+        `${device.name} audited events ${JSON.stringify(device.audited)}, the server logged ${JSON.stringify(events)}`,
+      );
+    }
+  }
+  const strangers = rows.rows.filter(
+    (row) => !devices.some((device) => device.local.deviceId === row.device_id),
+  );
+  if (strangers.length > 0) problems.push(`${String(strangers.length)} device events of no device`);
+  return problems;
+}
+
 /** The revoked device's rows left on it once it wiped: every count must be zero. */
 async function leftAfterWipe(device: SimDevice): Promise<string[]> {
   const left: string[] = [];
@@ -444,6 +479,8 @@ interface RunResult {
   readonly invoices: number;
   /** Sales the revoked device made, and how many of them reached the server after its revoke. */
   readonly revoked: { readonly sales: number; readonly flagged: number };
+  /** Events the devices audited through the device audit path. */
+  readonly audited: number;
   readonly convergeRounds: number;
   readonly elapsedMs: number;
 }
@@ -484,6 +521,7 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
   const revokedDevice = devices[devices.length - 1];
   if (revokedDevice === undefined) throw new Error("no devices");
   let revokedAt: string | undefined;
+  let auditedEvents = 0;
   async function revoke(): Promise<string> {
     if (revokedDevice === undefined) throw new Error("no devices");
     const view = await ownerRequest<DeviceView>(
@@ -523,6 +561,30 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
           rejectionCode: null,
         });
         return `${device.name} sold ${sale.number} for ${sale.total.amount.toString()}`;
+      },
+    },
+    {
+      name: "audit",
+      weight: 6,
+      async run(step) {
+        // An event noticed on the device (the clock moved back, a lockout…), queued in its outbox.
+        const device = step.pick(devices);
+        if ((await localDevice(device.db)) === undefined) return `${device.name} was wiped`;
+        const event = (auditedEvents += 1);
+        const sink = outboxAuditSink({
+          clock: device.clock,
+          newId: device.newId,
+          shiftId: SKELETON_DOCUMENT_DEFAULTS.shiftId,
+        });
+        await device.db.transaction((tx) =>
+          sink.record(tx, {
+            action: "tenancy.clock.movedBack",
+            userId: store.tenant.ownerId,
+            after: { simEvent: event },
+          }),
+        );
+        device.audited.push(event);
+        return `${device.name} audited event ${String(event)}`;
       },
     },
     {
@@ -631,6 +693,7 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
         devices.filter((device) => device !== revokedDevice).map((device) => bundleProblem(device)),
       )
     ).filter((problem) => problem !== undefined),
+    ...(await auditProblems(store, devices)),
   ];
   const elapsedMs = performance.now() - started;
   const outboxStates: Record<string, number> = {};
@@ -650,6 +713,7 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
     outboxStates,
     invoices: snapshots.reduce((sum, snapshot) => sum + snapshot.invoices.length, 0),
     revoked: { sales: revokedDevice.sales.length, flagged: expectedFlags.size },
+    audited: auditedEvents,
     convergeRounds,
     elapsedMs,
   };
@@ -669,6 +733,7 @@ describe("the sync simulation harness", () => {
       expect(result.network.serverErrors, context).toBe(0);
       // The run exercised what it claims: sales, and every kind of fault.
       expect(result.invoices, context).toBeGreaterThan(20);
+      expect(result.audited, context).toBeGreaterThan(3);
       for (const counter of [
         "offline",
         "droppedRequests",
@@ -684,7 +749,7 @@ describe("the sync simulation harness", () => {
       expect(result.outboxStates["duplicate"] ?? 0, context).toBeGreaterThan(0);
       expect(result.elapsedMs, `time budget — ${context}`).toBeLessThan(BUDGET_MS);
       console.info(
-        `sync-sim seed ${String(seed)}: ${String(STEPS)} steps, ${String(result.invoices)} invoices ${JSON.stringify(result.outboxStates)}, revoked device ${JSON.stringify(result.revoked)}, converged in ${String(result.convergeRounds)} rounds, ${String(Math.round(result.elapsedMs))} ms; network ${JSON.stringify(result.network)}`,
+        `sync-sim seed ${String(seed)}: ${String(STEPS)} steps, ${String(result.invoices)} invoices ${JSON.stringify(result.outboxStates)}, ${String(result.audited)} device audit events, revoked device ${JSON.stringify(result.revoked)}, converged in ${String(result.convergeRounds)} rounds, ${String(Math.round(result.elapsedMs))} ms; network ${JSON.stringify(result.network)}`,
       );
     },
     BUDGET_MS + 60_000,
