@@ -1,12 +1,14 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
 import {
+  currentLicense,
   currentTenant,
   type TenantDatabase,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { randomIndex, UNAMBIGUOUS_ALPHABET } from "@mustawfi/kernel";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import {
   accessProblemCodes,
   deviceNameSchema,
@@ -16,12 +18,7 @@ import {
 import type { AccessDependencies } from "./dependencies.ts";
 import { devices, registrationCodes } from "./schema.ts";
 import { bearerToken } from "./sessions.ts";
-import {
-  issueBearer,
-  issueRegistrationSecret,
-  readBearer,
-  registrationCodeHash,
-} from "./secrets.ts";
+import { issueBearer, issueOneTimeCode, readBearer, oneTimeCodeHash } from "./secrets.ts";
 
 /** A registration code works for fifteen minutes (ADR-0022: short-lived). */
 export const REGISTRATION_CODE_LIFETIME_MS = 15 * 60 * 1000;
@@ -46,7 +43,7 @@ export async function issueRegistrationCode(
 ): Promise<IssuedRegistrationCode> {
   const now = dependencies.clock.now();
   const expiresAt = new Date(now.getTime() + REGISTRATION_CODE_LIFETIME_MS);
-  const { token: code, hash } = issueRegistrationSecret(dependencies.random);
+  const { token: code, hash } = issueOneTimeCode(dependencies.random);
   const id = dependencies.newId();
   await tx.insert(registrationCodes).values({
     id,
@@ -98,9 +95,12 @@ export function registrationFailed(): ProblemError {
 /**
  * Registers a device with a registration code in `tx`, a `withTenant` transaction for the
  * code's tenant (ADR-0022). The code is used up in the same transaction, so two devices
- * racing with one code get one registration. The device gets a prefix no device of the
- * tenant has ever had, chosen at random among the free ones, and a fresh credential. A
- * refusal throws and rolls everything back.
+ * racing with one code get one registration. A device beyond the license's limit for its
+ * type is refused (409 `tenancy.limit.mainPosDevices` or `tenancy.limit.companionDevices`,
+ * `core-foundation` rule 4) after the code is checked, so only a holder of a valid code learns
+ * the limit. The device gets a prefix no device of the tenant has ever had, chosen at random
+ * among the free ones, and a fresh credential. A refusal throws and rolls everything back,
+ * the code's use included.
  */
 export async function registerDevice(
   tx: TenantTransaction,
@@ -109,7 +109,7 @@ export async function registerDevice(
 ): Promise<RegisteredDevice> {
   const type = deviceTypeSchema.parse(device.type);
   const name = deviceNameSchema.parse(device.name);
-  const codeHash = registrationCodeHash(device.registrationCode);
+  const codeHash = oneTimeCodeHash(device.registrationCode);
   if (codeHash === undefined) throw registrationFailed();
 
   const now = dependencies.clock.now();
@@ -130,10 +130,12 @@ export async function registerDevice(
     });
   if (code === undefined) throw registrationFailed();
 
-  // One registration at a time per tenant, so two cannot pick the same free prefix.
+  // One registration at a time per tenant, so two cannot pick the same free prefix or both
+  // take the last place the license allows.
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`core_access.devices:${device.tenantId}`}, 0))`,
   );
+  await checkDeviceLimit(tx, type);
   const taken = new Set(
     (await tx.select({ prefix: devices.prefix }).from(devices)).map((row) => row.prefix),
   );
@@ -186,6 +188,28 @@ export async function registerDevice(
   };
 }
 
+/**
+ * Refuses one more device of `type` beyond the license's limit (rule 4); run under the
+ * registration lock. A lower limit after a downgrade removes no device. Revoked devices will
+ * stop counting with revoke (slice 9).
+ */
+async function checkDeviceLimit(tx: TenantTransaction, type: DeviceType): Promise<void> {
+  const license = await currentLicense(tx);
+  if (license === undefined) throw new Error("the tenant has no license");
+  const { limits } = license.claims;
+  const [allowed, code] =
+    type === "mainPos"
+      ? [limits.mainPosDevices, tenancyProblemCodes.mainPosDeviceLimit]
+      : [limits.companionDevices, tenancyProblemCodes.companionDeviceLimit];
+  const [row] = await tx.select({ devices: count() }).from(devices).where(eq(devices.type, type));
+  if ((row?.devices ?? 0) >= allowed) {
+    throw new ProblemError(code, 409, {
+      title: "The license's device limit is reached",
+      detail: `the license allows ${String(allowed)} ${type} devices`,
+    });
+  }
+}
+
 /** An authenticated device. */
 export interface Device {
   readonly deviceId: string;
@@ -231,10 +255,13 @@ export async function requireDevice(
   const credential = bearerToken(request.headers.authorization);
   const device =
     credential === undefined ? undefined : await authenticateDevice(context.tenants, credential);
-  if (device === undefined) {
-    throw new ProblemError(accessProblemCodes.deviceRequired, 401, {
-      title: "This device is not registered",
-    });
-  }
+  if (device === undefined) throw deviceRequired();
   return device;
+}
+
+/** 401 `access.device.required`. */
+export function deviceRequired(): ProblemError {
+  return new ProblemError(accessProblemCodes.deviceRequired, 401, {
+    title: "This device is not registered",
+  });
 }

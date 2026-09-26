@@ -1,4 +1,4 @@
-import { apiRequest } from "@mustawfi/core-config/client";
+import { apiRequest, holdDeviceCredential } from "@mustawfi/core-config/client";
 import type { Clock } from "@mustawfi/kernel";
 import {
   type LocalDb,
@@ -155,5 +155,15 @@ export async function registerThisDevice(
       registeredAt: device.registeredAt,
     });
   });
+  holdDeviceCredential(device.credential);
   return device;
+}
+
+/**
+ * Holds this client's device credential, if it is registered, for the requests made with the
+ * session (`core-foundation` rule 22). The composition root calls it once the local database
+ * is open, before anything calls the API.
+ */
+export async function holdLocalDeviceCredential(executor: LocalExecutor): Promise<void> {
+  holdDeviceCredential((await localDevice(executor))?.credential);
 }

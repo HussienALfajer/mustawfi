@@ -29,7 +29,10 @@ let store: CreatedTenant;
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
-function newTenant(name: string): Promise<CreatedTenant> {
+function newTenant(
+  name: string,
+  terms: Parameters<typeof createLicensedTenant>[3] = {},
+): Promise<CreatedTenant> {
   return createLicensedTenant(
     tenants,
     {
@@ -40,6 +43,7 @@ function newTenant(name: string): Promise<CreatedTenant> {
       ownerPassword: PASSWORD,
     },
     dependencies,
+    terms,
   );
 }
 
@@ -585,8 +589,11 @@ describe("device prefixes", () => {
     );
   }
 
+  // More companion devices than any plan allows: the prefixes are under test, not the limit.
+  const manyDevices = { limits: { companionDevices: 100 } };
+
   it("never hands out a prefix the tenant has used, and stays unique per tenant", async () => {
-    const tenant = await newTenant("متجر البادئات");
+    const tenant = await newTenant("متجر البادئات", manyDevices);
     const prefixes = [];
     for (let i = 0; i < 3; i += 1) prefixes.push((await registerDirect(tenant, firstFree)).prefix);
     expect(prefixes).toEqual(["AA", "AB", "AC"]);
@@ -596,7 +603,7 @@ describe("device prefixes", () => {
     expect(new Set([...prefixes, ...random]).size).toBe(23);
 
     // Concurrent registrations take turns, so they cannot pick the same free prefix.
-    const racing = await newTenant("متجر السباق");
+    const racing = await newTenant("متجر السباق", manyDevices);
     const raced = await Promise.all(
       Array.from({ length: 4 }, () => registerDirect(racing, firstFree)),
     );

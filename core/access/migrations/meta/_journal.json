@@ -64,6 +64,20 @@
       "when": 1790375067332,
       "tag": "0008_users_and_roles_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790380193602,
+      "tag": "0009_sign_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790380194348,
+      "tag": "0010_sign_in_rules",
+      "breakpoints": true
     }
   ]
 }

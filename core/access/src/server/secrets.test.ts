@@ -1,12 +1,7 @@
 import { createHash } from "node:crypto";
 import { seededRandom } from "@mustawfi/kernel";
 import { describe, expect, it } from "vitest";
-import {
-  issueBearer,
-  issueRegistrationSecret,
-  readBearer,
-  registrationCodeHash,
-} from "./secrets.ts";
+import { issueBearer, issueOneTimeCode, readBearer, oneTimeCodeHash } from "./secrets.ts";
 
 const TENANT = "0199a5c4-7b1e-7000-8000-000000000001";
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -42,19 +37,19 @@ describe("bearer secrets", () => {
   });
 });
 
-describe("registration codes", () => {
+describe("one-time codes (registration, support reset)", () => {
   it("are ten unambiguous symbols shown in two groups, hashed without the dash", () => {
-    const { token, hash } = issueRegistrationSecret(seededRandom(4));
+    const { token, hash } = issueOneTimeCode(seededRandom(4));
     expect(token).toMatch(/^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/);
     expect(hash).toBe(sha256(token.replace("-", "")));
   });
 
   it("forgive case, spaces, and dashes when typed, and refuse anything else", () => {
-    const { token, hash } = issueRegistrationSecret(seededRandom(5));
-    expect(registrationCodeHash(token)).toBe(hash);
-    expect(registrationCodeHash(` ${token.toLowerCase().replace("-", " - ")} `)).toBe(hash);
+    const { token, hash } = issueOneTimeCode(seededRandom(5));
+    expect(oneTimeCodeHash(token)).toBe(hash);
+    expect(oneTimeCodeHash(` ${token.toLowerCase().replace("-", " - ")} `)).toBe(hash);
     for (const malformed of ["", "ABCDE-FGHJ", "ABCDE-FGHJKL", "ABCDE-FGHJ1", "ABCDE_FGHJK"]) {
-      expect(registrationCodeHash(malformed)).toBeUndefined();
+      expect(oneTimeCodeHash(malformed)).toBeUndefined();
     }
   });
 });

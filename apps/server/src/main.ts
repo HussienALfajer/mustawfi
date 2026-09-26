@@ -18,6 +18,7 @@ const app = await buildHostServer({
   },
   logger: true,
   clientOrigins: config.CLIENT_ORIGINS,
+  trustProxy: config.TRUST_PROXY,
 });
 app.addHook("onClose", () => tenants.close());
 

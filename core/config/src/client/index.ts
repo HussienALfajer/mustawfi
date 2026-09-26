@@ -1,5 +1,9 @@
 import type { z } from "zod";
-import { hostProblemCodes, problemDetailsSchema } from "../shared/index.ts";
+import {
+  DEVICE_CREDENTIAL_HEADER,
+  hostProblemCodes,
+  problemDetailsSchema,
+} from "../shared/index.ts";
 
 export { type ClientRuntime, ClientRuntimeProvider, useClientRuntime } from "./runtime.tsx";
 
@@ -35,6 +39,7 @@ export interface ApiEndpoint {
 
 let endpoint: ApiEndpoint = { origin: "", session: "cookie" };
 let sessionBearer: string | undefined;
+let deviceCredential: string | undefined;
 
 export function configureApi(next: ApiEndpoint): void {
   endpoint = next;
@@ -49,6 +54,15 @@ export function sessionTransport(): ApiEndpoint["session"] {
 /** Keeps (or, with `undefined`, forgets) the session token of the bearer transport. */
 export function holdSessionToken(token: string | undefined): void {
   sessionBearer = token;
+}
+
+/**
+ * Keeps (or forgets) this client's device credential once it is a registered device: every
+ * request made with the session then carries it in `Mustawfi-Device`, since a session opened on
+ * a device is accepted only with that device's credential (`core-foundation` rule 22).
+ */
+export function holdDeviceCredential(credential: string | undefined): void {
+  deviceCredential = credential;
 }
 
 /** Whether a bearer-transport client holds a session token; always true for the cookie. */
@@ -78,6 +92,8 @@ export interface ApiRequest<T> {
 /** Sends a request with the session (or `bearer`); no answer throws `ApiUnreachable`. */
 async function send(path: string, request: Omit<ApiRequest<unknown>, "schema">): Promise<Response> {
   const bearer = request.bearer ?? (endpoint.session === "bearer" ? sessionBearer : undefined);
+  // A request with its own bearer (sync) is the device itself; the session's go with it.
+  const device = request.bearer === undefined ? deviceCredential : undefined;
   try {
     return await (request.fetch ?? fetch)(`${endpoint.origin}${path}`, {
       method: request.method ?? "GET",
@@ -86,6 +102,7 @@ async function send(path: string, request: Omit<ApiRequest<unknown>, "schema">):
       headers: {
         ...(request.body === undefined ? {} : { "content-type": "application/json" }),
         ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),
+        ...(device === undefined ? {} : { [DEVICE_CREDENTIAL_HEADER]: device }),
       },
       ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
       ...(request.signal === undefined ? {} : { signal: request.signal }),

@@ -55,6 +55,29 @@ export const loginRequestSchema = z.object({
   transport: z.enum(["bearer", "cookie"]).default("bearer"),
 });
 
+/**
+ * `POST /api/v1/access/pin-login`: online PIN sign-in on a registered device (rule 21), with
+ * the device credential in the `Mustawfi-Device` header. The user is picked from the name
+ * tiles, so the request names them by id.
+ */
+export const pinLoginRequestSchema = z.object({
+  userId: z.uuid(),
+  pin: z.string().max(6),
+  transport: z.enum(["bearer", "cookie"]).default("bearer"),
+});
+
+/**
+ * `POST /api/v1/access/password-reset` (rule 27): an owner sets a new password — and a new
+ * PIN, when asked — with the one-time code Vertex support issued them.
+ */
+export const passwordResetRequestSchema = z.object({
+  storeCode: z.string().max(20),
+  login: z.string().max(100),
+  code: z.string().max(20),
+  password: passwordSchema,
+  pin: pinSchema.optional(),
+});
+
 /** A user's department scope: every department, or the listed ones. */
 export const departmentScopeSchema = z.enum(["all", "listed"]);
 export type DepartmentScope = z.infer<typeof departmentScopeSchema>;
@@ -286,6 +309,13 @@ export const currentDeviceSchema = z.object({
 export const accessProblemCodes = {
   /** Unknown store, unknown login, or wrong password — never which one. */
   loginFailed: "access.login.failed",
+  /**
+   * Too many failed sign-ins for this login, this user on this device, or from this address
+   * (429, rule 21); the detail says until when.
+   */
+  loginThrottled: "access.login.throttled",
+  /** Unknown store or login, not an owner, or a reset code that is unknown, used, or expired. */
+  resetCodeInvalid: "access.resetCode.invalid",
   /** No session, or a malformed, unknown, expired, or revoked one. */
   sessionRequired: "access.session.required",
   /** The user's role lacks the permission the action needs (`core-foundation` rule 17). */
@@ -296,7 +326,10 @@ export const accessProblemCodes = {
   registrationFailed: "access.registration.failed",
   /** Every device prefix of the tenant is taken. */
   prefixesExhausted: "access.device.prefixesExhausted",
-  /** No device credential, or an unknown one. */
+  /**
+   * No device credential, or an unknown one: on sync, on PIN sign-in, and on a password
+   * sign-in that sends one.
+   */
   deviceRequired: "access.device.required",
   /** A cookie-authenticated change sent from another origin (CSRF, ADR-0022). */
   crossOrigin: "access.request.crossOrigin",

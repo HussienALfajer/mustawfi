@@ -6,6 +6,7 @@ import {
   apiRequest,
   configureApi,
   hasSessionCredential,
+  holdDeviceCredential,
   holdSessionToken,
 } from "./index.ts";
 
@@ -31,8 +32,38 @@ function authorization(sent: Sent | undefined): string | undefined {
   return (sent?.init.headers as Record<string, string> | undefined)?.["authorization"];
 }
 
+function deviceHeader(sent: Sent | undefined): string | undefined {
+  return (sent?.init.headers as Record<string, string> | undefined)?.["mustawfi-device"];
+}
+
 afterEach(() => {
   configureApi({ origin: "", session: "cookie" });
+  holdDeviceCredential(undefined);
+});
+
+describe("the device credential beside the session (core-foundation rule 22)", () => {
+  it("goes with every session request of a registered client, in both transports", async () => {
+    const { fetch, sent } = recordingFetch();
+    await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
+    expect(deviceHeader(sent[0])).toBeUndefined();
+
+    holdDeviceCredential("d1.device");
+    await apiRequest("/api/v1/access/session", { schema: okSchema, fetch });
+    expect(deviceHeader(sent[1])).toBe("d1.device");
+
+    configureApi({ origin: "http://127.0.0.1:3000", session: "bearer" });
+    holdSessionToken("s1.session");
+    await apiRequest("/api/v1/access/login", { method: "POST", body: {}, schema: okSchema, fetch });
+    expect(deviceHeader(sent[2])).toBe("d1.device");
+    expect(authorization(sent[2])).toBe("Bearer s1.session");
+  });
+
+  it("is not added to a request that carries its own bearer (sync, as the device itself)", async () => {
+    holdDeviceCredential("d1.device");
+    const { fetch, sent } = recordingFetch();
+    await apiRequest("/api/v1/sync/pull", { schema: okSchema, fetch, bearer: "d1.device" });
+    expect(deviceHeader(sent[0])).toBeUndefined();
+  });
 });
 
 describe("apiRequest endpoints (ADR-0022)", () => {

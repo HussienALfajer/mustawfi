@@ -84,6 +84,8 @@ describe("route authorization (core-foundation rule 17)", () => {
       "GET /api/v1/health → public",
       "GET /api/v1/openapi.json → public",
       "POST /api/v1/access/login → public",
+      "POST /api/v1/access/pin-login → public",
+      "POST /api/v1/access/password-reset → public",
       "POST /api/v1/access/logout → session",
       "GET /api/v1/access/session → session",
       "POST /api/v1/access/registration-codes → access.devices.manage",

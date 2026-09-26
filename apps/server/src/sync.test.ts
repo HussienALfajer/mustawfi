@@ -79,6 +79,8 @@ async function newStore(name: string): Promise<Store> {
     tenants,
     { name, baseCurrency: "SYP", ownerName: "أحمد", ownerLogin: "ahmad", ownerPassword: PASSWORD },
     dependencies,
+    // More devices than a plan allows: sync is under test, not the device limit.
+    { limits: { mainPosDevices: 20 } },
   );
   const login = await server.inject({
     method: "POST",

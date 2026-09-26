@@ -1,9 +1,9 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
-import type { PermissionCatalogue } from "@mustawfi/core-config/shared";
+import { DEVICE_CREDENTIAL_HEADER, type PermissionCatalogue } from "@mustawfi/core-config/shared";
 import type { TenantDatabase, TenantTransaction } from "@mustawfi/core-tenancy/server";
 import type { Clock } from "@mustawfi/kernel";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { z } from "zod";
 import {
   accessGrant,
@@ -12,7 +12,7 @@ import {
   sessionUserSchema,
 } from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
-import { sessions, users } from "./schema.ts";
+import { devices, sessions, users } from "./schema.ts";
 import { issueBearer, readBearer } from "./secrets.ts";
 import type { UserAccess } from "./users.ts";
 import { userAccess } from "./users.ts";
@@ -70,7 +70,10 @@ export async function openSession(
     readonly tenantId: string;
     readonly branchId: string;
     readonly userId: string;
+    /** The registered device it is opened on: every request must then carry its credential. */
     readonly deviceId?: string;
+    /** How the user proved who they are; `password` unless said. */
+    readonly method?: "password" | "pin";
   },
   dependencies: AccessDependencies,
 ): Promise<OpenedSession> {
@@ -86,6 +89,7 @@ export async function openSession(
     createdBy: user.userId,
     userId: user.userId,
     deviceId: user.deviceId ?? null,
+    method: user.method ?? "password",
     tokenHash: hash,
     expiresAt,
   });
@@ -94,16 +98,21 @@ export async function openSession(
 
 /**
  * The session a bearer token opens, or `undefined` when the token is malformed, unknown,
- * expired, or revoked. Checked against the database on every request, with the user's role
- * and scope, so a revocation or a role change takes effect on the next one (ADR-0022).
+ * expired, or revoked, or when the session was opened on a registered device and
+ * `deviceCredential` is not that device's (`core-foundation` rule 22). Checked against the
+ * database on every request, with the user's role and scope, so a revocation or a role change
+ * takes effect on the next one (ADR-0022).
  */
 export async function authenticateSession(
   tenants: TenantDatabase,
   token: string,
   context: { readonly clock: Clock; readonly permissionCatalogue: PermissionCatalogue },
+  deviceCredential?: string,
 ): Promise<Session | undefined> {
   const bearer = readBearer("session", token);
   if (bearer === undefined) return undefined;
+  const device =
+    deviceCredential === undefined ? undefined : readBearer("device", deviceCredential);
   const now = context.clock.now();
   return tenants.withTenant({ tenantId: bearer.tenantId }, async (tx) => {
     const [row] = await tx
@@ -117,9 +126,14 @@ export async function authenticateSession(
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
+      .leftJoin(devices, eq(devices.id, sessions.deviceId))
       .where(
         and(
           eq(sessions.tokenHash, bearer.hash),
+          // A session opened on a device goes only with that device's credential.
+          device === undefined
+            ? isNull(sessions.deviceId)
+            : or(isNull(sessions.deviceId), eq(devices.credentialHash, device.hash)),
           isNull(sessions.revokedAt),
           gt(sessions.expiresAt, now),
           // Deactivating a user revokes their sessions; this holds even if one was missed.
@@ -193,7 +207,14 @@ export interface SessionRequest {
     readonly cookie?: string | undefined;
     readonly origin?: string | undefined;
     readonly host?: string | undefined;
+    readonly [DEVICE_CREDENTIAL_HEADER]?: string | string[] | undefined;
   };
+}
+
+/** The device credential a request carries beside its session (`Mustawfi-Device`), if one. */
+export function deviceCredentialOf(request: Pick<SessionRequest, "headers">): string | undefined {
+  const value = request.headers[DEVICE_CREDENTIAL_HEADER];
+  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -228,7 +249,8 @@ export function bearerToken(authorization: string | undefined): string | undefin
 /**
  * The session of a request's `Authorization: Bearer` header or, failing that, its session
  * cookie; otherwise a 401 `access.session.required` — the same refusal whatever was wrong with
- * it. A change (not GET, HEAD, OPTIONS) made with the cookie from another origin is a 403
+ * it, a session opened on a device without that device's credential in `Mustawfi-Device`
+ * included (rule 22). A change (not GET, HEAD, OPTIONS) made with the cookie from another origin is a 403
  * `access.request.crossOrigin`. The route guard (`installRouteAccess`) calls it for every
  * route that needs a signed-in user.
  */
@@ -248,7 +270,9 @@ export async function requireSession(
     }
   }
   const session =
-    token === undefined ? undefined : await authenticateSession(context.tenants, token, context);
+    token === undefined
+      ? undefined
+      : await authenticateSession(context.tenants, token, context, deviceCredentialOf(request));
   if (session === undefined) {
     throw new ProblemError(accessProblemCodes.sessionRequired, 401, {
       title: "Sign in to continue",

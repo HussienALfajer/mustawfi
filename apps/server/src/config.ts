@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { z } from "zod";
 
 const moduleList = z
@@ -25,6 +26,27 @@ const originList = z
     ),
   );
 
+const proxyList = z
+  .string()
+  .default("")
+  .transform((value) =>
+    value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== ""),
+  )
+  .pipe(
+    z.array(
+      z
+        .string()
+        .refine(
+          (entry) =>
+            /^[0-9a-f:.]+(\/\d{1,3})?$/i.test(entry) && isIP(entry.split("/")[0] ?? "") !== 0,
+          "not an address or CIDR range",
+        ),
+    ),
+  );
+
 /** The server's environment (ADR-0014): validated at startup, or the process refuses to start. */
 export const serverEnvSchema = z.object({
   /** `mustawfi_app` — never the owner or a superuser; `openTenantDatabase` checks. */
@@ -38,6 +60,13 @@ export const serverEnvSchema = z.object({
    * Windows app's by default.
    */
   CLIENT_ORIGINS: originList,
+  /**
+   * Comma-separated addresses or CIDR ranges of the reverse proxies in front of the server,
+   * whose `X-Forwarded-For` is trusted for the client's address; none by default. Sign-in rate
+   * limiting counts per source address (`core-foundation` rule 21): behind a proxy that is not
+   * listed, every client would share the proxy's address.
+   */
+  TRUST_PROXY: proxyList,
 });
 
 export type ServerConfig = z.infer<typeof serverEnvSchema>;

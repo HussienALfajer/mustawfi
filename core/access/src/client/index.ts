@@ -2,6 +2,7 @@ export {
   ACCESS_DEVICE_TABLE,
   accessLocalMigrations,
   DeviceAlreadyRegistered,
+  holdLocalDeviceCredential,
   issueRegistrationCode,
   type LocalDevice,
   localDevice,

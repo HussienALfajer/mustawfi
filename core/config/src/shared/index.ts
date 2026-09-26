@@ -1,4 +1,5 @@
 export { documentCodeSchema } from "./document-code.ts";
+export { DEVICE_CREDENTIAL_HEADER } from "./http.ts";
 export {
   type DeclaredLimit,
   type DeclaredPermission,
