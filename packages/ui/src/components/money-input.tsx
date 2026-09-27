@@ -10,11 +10,13 @@ import { UI_NAMESPACE } from "./messages.ts";
 import { useCurrencyLabel } from "./money.tsx";
 
 /** Why typed text is not an acceptable amount; each has a message in the `ui` namespace. */
-export type MoneyInputProblem = "required" | "notANumber" | "tooPrecise" | "negative";
+export type MoneyInputProblem = "required" | "notANumber" | "tooPrecise" | "tooLarge" | "negative";
 
 export interface ReadMoneyOptions {
   /** Most decimal places accepted; the currency's minor units by default. Unit prices take more. */
   readonly scale?: number;
+  /** Most digits before the point, when the value must fit a bound (a device's integer). */
+  readonly integerDigits?: number;
   readonly allowNegative?: boolean;
 }
 
@@ -36,6 +38,10 @@ export function readMoneyInput(
   if (canonical === undefined) return { problem: "notANumber" };
   const amount = Decimal.of(canonical);
   if (amount.scale() > (options.scale ?? currency.minorUnits)) return { problem: "tooPrecise" };
+  const integerPart = canonical.replace(/^-/, "").split(".")[0] ?? "";
+  if (options.integerDigits !== undefined && integerPart.length > options.integerDigits) {
+    return { problem: "tooLarge" };
+  }
   if (amount.isNegative() && options.allowNegative !== true) return { problem: "negative" };
   return { money: KernelMoney.of(amount, currency) };
 }
@@ -49,9 +55,10 @@ export interface MoneyInputProps {
   /** When there is more than one, the field offers them next to the amount (dollarization). */
   readonly currencies?: readonly Currency[];
   readonly onCurrencyChange?: (currency: Currency) => void;
-  /** The problem to show; `scale` fills the `tooPrecise` message. */
+  /** The problem to show; `scale` and `integerDigits` fill its message. */
   readonly problem?: MoneyInputProblem | undefined;
   readonly scale?: number;
+  readonly integerDigits?: number;
   readonly name?: string;
   readonly autoFocus?: boolean;
   readonly onBlur?: () => void;
@@ -71,6 +78,7 @@ export function MoneyInput({
   onCurrencyChange,
   problem,
   scale,
+  integerDigits,
   name,
   autoFocus,
   onBlur,
@@ -82,7 +90,7 @@ export function MoneyInput({
   const errorMessage =
     problem === undefined
       ? undefined
-      : t(`moneyInput.${problem}`, { scale: scale ?? currency.minorUnits });
+      : t(`moneyInput.${problem}`, { scale: scale ?? currency.minorUnits, digits: integerDigits });
   return (
     <div className="flex flex-col gap-1">
       <TextField

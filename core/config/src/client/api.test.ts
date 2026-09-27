@@ -5,6 +5,7 @@ import {
   apiBlob,
   ApiProblem,
   apiRequest,
+  ApiUnreachable,
   configureApi,
   hasSessionCredential,
   holdDeviceCredential,
@@ -212,6 +213,33 @@ describe("the session token in the secure store (ADR-0022, core-foundation slice
     await sessionKept();
     expect(store.secrets.size).toBe(0);
     expect(hasSessionCredential()).toBe(false);
+  });
+});
+
+describe("an answer cut off by a timeout (QA slice 23)", () => {
+  it("is no answer, not a malformed one: the headers came, the body never did", async () => {
+    configureApi({ origin: "", session: "cookie" });
+    // The status and headers arrive, then the link goes silent until the request is aborted.
+    const stalled: typeof fetch = (_input, init) =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              init?.signal?.addEventListener("abort", () => {
+                controller.error(init.signal?.reason as Error);
+              });
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    await expect(
+      apiRequest("/api/v1/sync/pull", {
+        schema: z.object({}),
+        fetch: stalled,
+        signal: AbortSignal.timeout(20),
+      }),
+    ).rejects.toBeInstanceOf(ApiUnreachable);
   });
 });
 

@@ -738,11 +738,16 @@ const indexRoute = createRoute({
   },
 });
 
+function ProductsPage() {
+  const canManage = useSignedIn()?.grant.permissions.includes("inventory.products.manage") === true;
+  return <ProductsScreen canManage={canManage} />;
+}
+
 const productsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/products",
   staticData: { title: "pages.products" },
-  component: ProductsScreen,
+  component: ProductsPage,
 });
 
 function PosPage() {

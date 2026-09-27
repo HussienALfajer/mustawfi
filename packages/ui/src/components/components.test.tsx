@@ -127,6 +127,16 @@ describe("readMoneyInput", () => {
     expect(readMoneyInput("-1", SYP).problem).toBe("negative");
   });
 
+  it("bounds the digits before the point when asked, as a device's integer needs (QA slice 23)", () => {
+    const bound = { scale: 6, integerDigits: 12 };
+    expect(readMoneyInput("9780201379624", SYP, bound).problem).toBe("tooLarge");
+    expect(readMoneyInput("١٬٠٠٠٬٠٠٠٬٠٠٠٬٠٠٠", SYP, bound).problem).toBe("tooLarge");
+    expect(readMoneyInput("999999999999.999999", SYP, bound).money?.amount.toString()).toBe(
+      "999999999999.999999",
+    );
+    expect(readMoneyInput("9780201379624", SYP).money).toBeDefined();
+  });
+
   it("takes a wider scale for unit prices and negatives when allowed", () => {
     expect(readMoneyInput("1.005", SYP, { scale: 6 }).money?.amount.toString()).toBe("1.005");
     expect(readMoneyInput("-1", SYP, { allowNegative: true }).money?.isNegative()).toBe(true);

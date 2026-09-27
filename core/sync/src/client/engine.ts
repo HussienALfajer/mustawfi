@@ -32,6 +32,7 @@ import {
 } from "@mustawfi/local-db";
 import {
   PULL_PAGE_LIMIT,
+  PUSH_BATCH_BYTES,
   PUSH_BATCH_LIMIT,
   type PullResponse,
   pullResponseSchema,
@@ -75,11 +76,26 @@ export interface SyncTransport {
 export interface ApiSyncTransportOptions {
   /** How requests travel; the platform `fetch` by default. */
   readonly fetch?: typeof fetch;
+  /** How long a request may go unanswered; `SYNC_REQUEST_TIMEOUT_MS` by default. */
+  readonly timeoutMs?: number;
 }
+
+/**
+ * How long a sync request may take before the round counts as offline. A connection that went
+ * silent (a dropped link the socket has not noticed) would otherwise hold the one running round,
+ * and the device would say «syncing» with nothing moving (QA slice 23). A full push
+ * (`PUSH_BATCH_BYTES`) fits within it down to about 20 kbit/s.
+ */
+export const SYNC_REQUEST_TIMEOUT_MS = 120_000;
 
 /** The sync API over HTTP with the device credential (ADR-0020). */
 export function createApiSyncTransport(options: ApiSyncTransportOptions = {}): SyncTransport {
-  const via = options.fetch === undefined ? {} : { fetch: options.fetch };
+  const timeoutMs = options.timeoutMs ?? SYNC_REQUEST_TIMEOUT_MS;
+  // A timeout rejects with a `TimeoutError`, which `apiRequest` reports as `ApiUnreachable`.
+  const via = () => ({
+    signal: AbortSignal.timeout(timeoutMs),
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+  });
   return {
     push: (credential, operations) =>
       apiRequest("/api/v1/sync/push", {
@@ -87,18 +103,19 @@ export function createApiSyncTransport(options: ApiSyncTransportOptions = {}): S
         body: { operations },
         schema: pushResponseSchema,
         bearer: credential,
-        ...via,
+        ...via(),
       }),
     pull: (credential, cursor) =>
       apiRequest(
         `/api/v1/sync/pull?${new URLSearchParams({ cursor, limit: String(PULL_PAGE_LIMIT) }).toString()}`,
-        { schema: pullResponseSchema, bearer: credential, ...via },
+        { schema: pullResponseSchema, bearer: credential, ...via() },
       ),
-    reportWiped: (credential) => reportDeviceWiped(credential, via),
+    reportWiped: (credential) =>
+      reportDeviceWiped(credential, options.fetch === undefined ? {} : { fetch: options.fetch }),
     bundle: (credential, version) =>
       apiRequest(
         `/api/v1/sync/bundle?${new URLSearchParams({ version: String(version) }).toString()}`,
-        { schema: bundleResponseSchema, bearer: credential, ...via },
+        { schema: bundleResponseSchema, bearer: credential, ...via() },
       ),
   };
 }
@@ -181,6 +198,23 @@ const PULL_PAGES_PER_ROUND = 20;
 const PUSH_BATCHES_PER_ROUND = 20;
 
 /**
+ * The first of `operations` whose push body stays within `PUSH_BATCH_BYTES` (UTF-8, as sent),
+ * in order, and always the first one: the rest go in the next push.
+ */
+function withinPushBytes(operations: readonly SyncOperation[]): SyncOperation[] {
+  const encoder = new TextEncoder();
+  let bytes = encoder.encode(JSON.stringify({ operations: [] })).length;
+  const batch: SyncOperation[] = [];
+  for (const operation of operations) {
+    // Each operation after the first adds its comma.
+    bytes += encoder.encode(JSON.stringify(operation)).length + (batch.length === 0 ? 0 : 1);
+    if (batch.length > 0 && bytes > PUSH_BATCH_BYTES) break;
+    batch.push(operation);
+  }
+  return batch;
+}
+
+/**
  * The device's sync loop (ADR-0020): push the outbox in `deviceSeq` order, record each answer,
  * then pull the change log from the saved cursor, applying each page and its cursor in one local
  * transaction. The network never blocks a sale: the loop runs beside it.
@@ -229,7 +263,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   async function push(credential: string, deviceId: string): Promise<boolean> {
     let revoked = false;
     for (let batch = 0; batch < PUSH_BATCHES_PER_ROUND; batch += 1) {
-      const operations = await pendingOperations(db, deviceId, PUSH_BATCH_LIMIT);
+      const operations = withinPushBytes(await pendingOperations(db, deviceId, PUSH_BATCH_LIMIT));
       if (operations.length === 0) return revoked;
       const response = await transport.push(credential, operations);
       revoked ||= response.revoked;

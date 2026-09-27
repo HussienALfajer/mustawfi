@@ -122,6 +122,40 @@ describe("the pulled store profile", () => {
   });
 });
 
+/**
+ * The change log keeps each row in the shape the server wrote it in, and a device registered
+ * later pulls it from the start: every shape a release wrote must still apply (QA slice 23).
+ * A field added to a pulled entity is optional or has a default; add its new shape here.
+ */
+describe("pulled rows in the shapes earlier releases wrote", () => {
+  it("apply departments as written since slice 2", async () => {
+    await apply([department(shop)]);
+    expect(await listLocalDepartments(db)).toEqual([shop]);
+  });
+
+  it("apply a store profile written before slice 21 (no print mode, no unreadable phones)", async () => {
+    const beforeSlice21 = {
+      id: profile.id,
+      name: "متجر التجربة",
+      address: null,
+      phones: ["+963 944 123 456"],
+      taxNumber: null,
+      commercialRegister: null,
+      logo: { type: "image/png", sha256: "b".repeat(64), size: 227_686 },
+      updatedAt: "2026-09-27T00:43:49.080Z",
+    };
+    await apply([{ entity: "organization.storeProfile", id: profile.id, row: beforeSlice21 }]);
+    expect(await readLocalStoreProfile(db)).toEqual({
+      ...beforeSlice21,
+      unreadablePhones: [],
+      logoPrint: "threshold",
+    });
+    // The next change, in today's shape, replaces it.
+    await apply([{ entity: "organization.storeProfile", id: profile.id, row: profile }]);
+    expect(await readLocalStoreProfile(db)).toEqual(profile);
+  });
+});
+
 describe("the store's logo on the device", () => {
   const LOGO = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
   const OTHER = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9]);

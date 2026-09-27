@@ -115,7 +115,9 @@ test("keyboard only, offline: the PIN screen signs in PIN-only users, sells, loc
   await page.keyboard.press("Enter");
   await pickTile(page, SUPERVISOR.name, "المشرفون على هذا الجهاز");
   await typePin(page, `رمز المشرف ${SUPERVISOR.name}`, SUPERVISOR.pin);
-  await expect(page.getByRole("status")).toHaveText(`فُتح قفل ${CASHIER.name}. يمكنه الدخول الآن.`);
+  await expect(page.getByRole("status")).toHaveText(
+    `فُتح قفل ${CASHIER.name}. أدخل الرمز السري للدخول.`,
+  );
   await typePin(page, forCashier, CASHIER.pin);
   await expect(page).toHaveURL(/\/pos$/);
 

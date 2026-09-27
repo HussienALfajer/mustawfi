@@ -107,7 +107,9 @@ test("keyboard only, offline: a sale outside the cashier's departments is approv
   // A wrong PIN counts against the supervisor and approves nothing.
   const forSupervisor = `رمز المشرف ${SUPERVISOR.name}`;
   await typePin(page, forSupervisor, "1470");
-  await expect(dialog.getByRole("alert")).toContainText("الرمز غير صحيح");
+  await expect(dialog.getByRole("alert")).toContainText(
+    `الرمز غير صحيح. بقيت 4 محاولات قبل قفل ${SUPERVISOR.name} على هذا الجهاز`,
+  );
   await expectAccessible(page);
   await attachScreens(page, testInfo, "override-pin");
   await typePin(page, forSupervisor, SUPERVISOR.pin);

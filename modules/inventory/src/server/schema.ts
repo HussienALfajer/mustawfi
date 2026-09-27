@@ -38,6 +38,9 @@ export const products = inventory.table(
     // tenant's product, which a plain foreign key would not ensure (it bypasses RLS).
     unique("products_id_per_tenant").on(t.tenantId, t.id),
     check("products_price_not_negative", sql`${t.price} >= 0`),
+    // What a device can hold (`PRICE_INTEGER_DIGITS`): a price above it would stop every
+    // device's pull (QA slice 23).
+    check("products_price_fits_devices", sql`${t.price} < 1000000000000`),
     check("products_price_currency", sql`${t.priceCurrency} ~ '^[A-Z]{3}$'`),
   ],
 );

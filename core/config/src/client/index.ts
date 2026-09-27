@@ -256,7 +256,13 @@ export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promi
   const response = await send(path, request);
   if (response.status === 204) return request.schema.parse(null);
   if (!response.ok) return refuse(response);
-  const json: unknown = await response.json().catch(() => undefined);
+  const json: unknown = await response.json().catch((error: unknown) => {
+    // Aborted while the body was arriving (a timeout, say): no answer, not a malformed one.
+    if (request.signal?.aborted === true) {
+      throw new ApiUnreachable("the API's answer did not arrive", { cause: error });
+    }
+    return undefined;
+  });
   return request.schema.parse(json);
 }
 
