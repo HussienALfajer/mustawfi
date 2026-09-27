@@ -1,7 +1,7 @@
 import type { Ref } from "react";
 import { Input, TextField, type TextFieldProps as AriaTextFieldProps } from "react-aria-components";
 import { cx } from "./cx.ts";
-import { FieldHelp, FieldLabel, INPUT_CLASS } from "./field.tsx";
+import { FieldHelp, FieldLabel, INPUT_CLASS, westernDigitsOnChange } from "./field.tsx";
 
 export interface TextInputProps extends Omit<
   AriaTextFieldProps,
@@ -17,7 +17,10 @@ export interface TextInputProps extends Omit<
   readonly className?: string;
 }
 
-/** A labelled text field on React Aria; the label, help, and error are wired for assistive tech. */
+/**
+ * A labelled text field on React Aria; the label, help, and error are wired for assistive tech.
+ * A number (`inputMode` `numeric` or `decimal`) or a one-time code takes Arabic-Indic digits too.
+ */
 export function TextInput({
   label,
   description,
@@ -27,9 +30,12 @@ export function TextInput({
   className,
   ...props
 }: TextInputProps) {
+  const onChange = westernDigitsOnChange(props.onChange, props.inputMode, props.autoComplete);
+  const onChangeProp = onChange === undefined ? {} : { onChange };
   return (
     <TextField
       {...props}
+      {...onChangeProp}
       validationBehavior="aria"
       isInvalid={errorMessage !== undefined || props.isInvalid === true}
       className={cx("flex flex-col gap-1", className)}

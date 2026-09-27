@@ -343,6 +343,12 @@ describe("departments", () => {
     expect(renames).toMatchObject([
       { before: { name: DEFAULT_DEPARTMENT_NAME }, after: { name: "المحل" } },
     ]);
+    // The same name again changes nothing, so nothing is audited (QA slice 22).
+    const same = await call(store, "PATCH", `/departments/${store.tenant.defaultDepartmentId}`, {
+      name: " المحل ",
+    });
+    expect(same.statusCode).toBe(200);
+    expect(await auditOf(store.tenant.tenantId, "organization.department.renamed")).toHaveLength(1);
 
     const repairs = await addDepartment(store, "الصيانة");
     await call(store, "POST", `/departments/${repairs.id}/archive`);
@@ -563,8 +569,29 @@ describe("the store profile", () => {
       400,
       hostProblemCodes.invalidRequest,
     );
+    for (const name of ["", "‏", " ​ "]) {
+      expectProblem(
+        await call(store, "PUT", "/profile", { name }),
+        400,
+        hostProblemCodes.invalidRequest,
+      );
+    }
+  });
+
+  it("audits only a real change: the same profile again, or no logo removed, writes nothing (QA slice 22)", async () => {
+    const store = await newStore("متجر بلا تغيير");
+    const body = { name: "متجر بلا تغيير", phones: ["0944123456"], taxNumber: "77" };
+    const first = (await call(store, "PUT", "/profile", body)).json<StoreProfileView>();
+    clock.advance(60_000);
+    const again = await call(store, "PUT", "/profile", { ...body, phones: ["+963 944 123 456"] });
+    expect(again.statusCode).toBe(200);
+    expect(again.json<StoreProfileView>().updatedAt).toBe(first.updatedAt);
+    const removed = await call(store, "DELETE", "/profile/logo");
+    expect(removed.statusCode).toBe(200);
+    expect(await auditOf(store.tenant.tenantId, "organization.profile.changed")).toHaveLength(1);
+    // One number written twice would print twice.
     expectProblem(
-      await call(store, "PUT", "/profile", { name: "" }),
+      await call(store, "PUT", "/profile", { ...body, phones: ["0944123456", "+963944123456"] }),
       400,
       hostProblemCodes.invalidRequest,
     );

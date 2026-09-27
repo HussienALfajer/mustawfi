@@ -10,6 +10,7 @@ import { z } from "zod";
 import { accessProblemCodes, passwordSchema, pinSchema } from "../shared/index.ts";
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { resetPasswordWithCode } from "./session.ts";
+import { storeCodeFieldSchema } from "./store-code-field.ts";
 
 /**
  * The form's values, on the server's own rules: the password as `passwordSchema`, the PIN, when
@@ -17,7 +18,7 @@ import { resetPasswordWithCode } from "./session.ts";
  */
 const recoveryFormSchema = z
   .object({
-    storeCode: z.string().trim().min(1, "required"),
+    storeCode: storeCodeFieldSchema,
     login: z.string().trim().min(1, "required"),
     code: z.string().trim().min(1, "required"),
     password: z.string().superRefine((value, context) => {

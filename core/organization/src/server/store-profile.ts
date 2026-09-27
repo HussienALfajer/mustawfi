@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { recordAudit } from "@mustawfi/core-audit/server";
 import { ProblemError } from "@mustawfi/core-config/server";
 import { recordChange } from "@mustawfi/core-sync/server";
@@ -122,24 +123,31 @@ export async function createStoreProfile(
   return after;
 }
 
-/** The store profile of the tenant `tx` runs in, locked for a change when `forUpdate`. */
-export async function storeProfile(
-  tx: TenantTransaction,
-  options: { readonly forUpdate?: boolean } = {},
-): Promise<StoreProfileView> {
-  const query = tx.select(viewColumns).from(storeProfiles);
-  const [row] = await (options.forUpdate === true ? query.for("update") : query);
+/** The store profile of the tenant `tx` runs in. */
+export async function storeProfile(tx: TenantTransaction): Promise<StoreProfileView> {
+  const [row] = await tx.select(viewColumns).from(storeProfiles);
   if (row === undefined) throw new Error("the tenant has no store profile");
   return toView(row);
 }
 
+/**
+ * Writes `values` to the profile, audited and published — unless they change nothing it shows
+ * (the same fields saved again, a logo removed when there is none): then nothing is written, so
+ * the audit log and the devices' change log carry only real changes (QA slice 22).
+ */
 async function update(
   tx: TenantTransaction,
   actor: Actor,
   values: Partial<typeof storeProfiles.$inferInsert>,
   dependencies: OrganizationDependencies,
 ): Promise<StoreProfileView> {
-  const before = await storeProfile(tx, { forUpdate: true });
+  const [current] = await tx.select(viewColumns).from(storeProfiles).for("update");
+  if (current === undefined) throw new Error("the tenant has no store profile");
+  const before = toView(current);
+  const shown = Object.fromEntries(
+    Object.entries(values).filter(([column]) => column in viewColumns),
+  ) as Partial<ViewRow>;
+  if (isDeepStrictEqual(toView({ ...current, ...shown }), before)) return before;
   const [row] = await tx
     .update(storeProfiles)
     .set({ ...values, updatedAt: actor.at, updatedBy: actor.userId })

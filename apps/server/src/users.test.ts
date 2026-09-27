@@ -237,6 +237,8 @@ describe("adding users (flow 8)", () => {
         pin,
       })),
       { name: "x", roleId, departmentScope: "listed", departments: [] },
+      // A name of only a bidi mark and a zero-width space reads blank (QA slice 22).
+      { name: "‏​", roleId },
       {
         name: "x",
         roleId,
@@ -1155,6 +1157,26 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
     );
     const renamed = await call(deputy, "PATCH", `/users/${staff.userId}`, { name: "النائب" });
     expect(renamed.statusCode, renamed.body).toBe(200);
+  });
+
+  it("lets no one deactivate their own account, owners included (QA slice 22)", async () => {
+    const { store, staff, deputy } = await withManager();
+    expectProblem(
+      await call(deputy, "POST", `/users/${staff.userId}/deactivate`, { reason: "leaving" }),
+      409,
+      accessProblemCodes.selfDeactivation,
+    );
+    // An owner with another owner beside them is refused too; the only owner hears rule 14.
+    const ownerRole = await roleNamed(store, "المالك");
+    await addUser(store, { roleId: ownerRole.id, login: "second" });
+    expectProblem(
+      await call(store.owner, "POST", `/users/${store.tenant.ownerId}/deactivate`, {
+        reason: "leaving",
+      }),
+      409,
+      accessProblemCodes.selfDeactivation,
+    );
+    expect(await auditOf(store.tenant.tenantId, "access.user.deactivated")).toEqual([]);
   });
 
   it("changes one's own PIN or password only from one's account, owners included", async () => {

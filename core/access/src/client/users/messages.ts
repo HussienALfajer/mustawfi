@@ -115,6 +115,7 @@ export const usersMessages = {
     lastOwner: "يجب أن يبقى للمتجر مالك نشط واحد على الأقل",
     beyondOwnGrant: "لا يمكنك إعطاء دور فيه صلاحيات أو حدود ليست لديك",
     ownAccessChange: "لا يمكنك تغيير دورك أو أقسامك بنفسك",
+    selfDeactivation: "لا يمكنك إيقاف حسابك بنفسك؛ يوقفه مستخدم آخر يدير المستخدمين",
     useOwnAccount: "رمزك السري وكلمة مرورك والتحقق بخطوتين تغيّرها من «حسابي»",
     twoFactorNotEnabled: "التحقق بخطوتين غير مفعّل لهذا المستخدم",
     clearReasonRequired: "اكتب السبب",

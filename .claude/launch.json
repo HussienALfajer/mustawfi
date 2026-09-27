@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@mustawfi/web", "dev", "--port", "5173", "--strictPort"],
       "port": 5173
+    },
+    {
+      "name": "manual-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/.cache/manual-test/run.mjs", "up"],
+      "port": 4300
     }
   ]
 }

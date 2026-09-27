@@ -66,7 +66,12 @@ const optionalText = (max: number) =>
 export const storeProfileInputSchema = z.object({
   name: tenantNameSchema,
   address: optionalText(500),
-  phones: z.array(phoneNumberSchema).max(STORE_PHONES_MAX).default([]),
+  // One number written twice (`0944…` and `+963944…`) would print twice (QA slice 22).
+  phones: z
+    .array(phoneNumberSchema)
+    .max(STORE_PHONES_MAX)
+    .refine((phones) => new Set(phones).size === phones.length, "a phone is listed twice")
+    .default([]),
   taxNumber: optionalText(50),
   commercialRegister: optionalText(50),
   logoPrint: z.enum(LOGO_PRINT_MODES).default("threshold"),

@@ -31,9 +31,10 @@ import { DeviceLimitNote, useDeviceKind } from "./devices/device-kind.tsx";
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { beginDeviceSession } from "./pin/device-session.ts";
 import { sessionQueryKey, sessionQueryOptions } from "./session.ts";
+import { storeCodeFieldSchema } from "./store-code-field.ts";
 
 const registerFormSchema = z.object({
-  storeCode: z.string().trim().min(1, "required"),
+  storeCode: storeCodeFieldSchema,
   registrationCode: z.string().trim().min(1, "required"),
   name: z
     .string()

@@ -15,10 +15,19 @@ export function nameKey(name: string): string {
 }
 
 /**
+ * Whether `name` shows something: not only spaces, bidi marks (RLM, LRM, ALM), zero-width
+ * characters, or control characters, which pass a trimmed length check but read as a blank
+ * name in every list (QA slice 22).
+ */
+export function isVisibleName(name: string): boolean {
+  return /[^\s\p{Cc}\p{Cf}]/u.test(name);
+}
+
+/**
  * The name of a record people pick from a list — a department, a role: 1–100 characters once
  * trimmed, stored with its spaces collapsed so that the unique index and people see one spelling.
  */
 export const recordNameSchema = z
   .string()
   .transform(collapseSpaces)
-  .pipe(z.string().min(1).max(100));
+  .pipe(z.string().min(1).max(100).refine(isVisibleName, "a name needs a visible character"));

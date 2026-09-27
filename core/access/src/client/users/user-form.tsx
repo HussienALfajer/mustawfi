@@ -79,6 +79,8 @@ export function userProblem(error: unknown): string {
       return "ownAccessChange";
     case accessProblemCodes.useOwnAccount:
       return "useOwnAccount";
+    case accessProblemCodes.selfDeactivation:
+      return "selfDeactivation";
     case accessProblemCodes.twoFactorNotEnabled:
       return "twoFactorNotEnabled";
     case accessProblemCodes.userNotFound:

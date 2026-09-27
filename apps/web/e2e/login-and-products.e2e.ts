@@ -22,6 +22,20 @@ test("reports a wrong password in words and stays on the sign-in page", async ({
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test("says on its field that a store code is mistyped, before asking the server", async ({
+  page,
+}) => {
+  let loginRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/api/v1/access/login")) loginRequests += 1;
+  });
+  await signIn(page, "any password", "owner", "n7g");
+  const storeCode = page.getByLabel("رمز المتجر");
+  await expect(storeCode).toHaveAccessibleDescription(/رمز المتجر ستة أحرف لاتينية وأرقام/);
+  await expect(storeCode).toBeFocused();
+  expect(loginRequests).toBe(0);
+});
+
 test("keyboard only: sign in, add a product, see it listed, sign out", async ({ page }) => {
   await signIn(page);
   await expect(page).toHaveURL(/\/products$/);

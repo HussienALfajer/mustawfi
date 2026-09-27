@@ -78,6 +78,14 @@ export const storeProfileFormSchema = storeProfileInputSchema.extend({
   phones: z
     .array(phoneInputSchema)
     .length(STORE_PHONES_MAX)
+    .superRefine((phones, context) => {
+      // The same number again, however written, is said on the field that repeats it.
+      phones.forEach((phone, i) => {
+        if (phone !== null && phones.indexOf(phone) < i) {
+          context.addIssue({ code: "custom", message: "phoneRepeated", path: [i, "number"] });
+        }
+      });
+    })
     .transform((phones) => phones.filter((phone) => phone !== null)),
 });
 
@@ -457,7 +465,11 @@ export function StoreProfileForm({
                       errorMessage={
                         errors.phones?.[i] === undefined
                           ? undefined
-                          : t("profile.problem.phoneInvalid")
+                          : t(
+                              errors.phones[i]?.number?.message === "phoneRepeated"
+                                ? "profile.problem.phoneRepeated"
+                                : "profile.problem.phoneInvalid",
+                            )
                       }
                       value={field.value}
                       onChange={field.onChange}

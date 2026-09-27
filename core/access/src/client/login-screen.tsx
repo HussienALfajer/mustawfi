@@ -10,10 +10,11 @@ import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { accessProblemCodes } from "../shared/index.ts";
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { type CurrentSession, sessionQueryKey, signIn } from "./session.ts";
+import { storeCodeFieldSchema } from "./store-code-field.ts";
 
 /** Field problems are message keys under `login.`; the server checks everything else. */
 const signInFormSchema = z.object({
-  storeCode: z.string().trim().min(1, "required"),
+  storeCode: storeCodeFieldSchema,
   login: z.string().trim().min(1, "required"),
   password: z.string().min(1, "required"),
 });

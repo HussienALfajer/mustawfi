@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StoreProfileView } from "../../shared/index.ts";
+import { type StoreProfileView, storeProfileInputSchema } from "../../shared/index.ts";
 import { ORGANIZATION_NAMESPACE, organizationMessages } from "../messages.ts";
 import { bytesToBase64 } from "./queries.ts";
 import type { DecodedImage, LogoCodec } from "./reduce-logo.ts";
@@ -72,6 +72,22 @@ describe("store profile form schema", () => {
         name: "متجر",
         phones: [phone("XX", "0944123456"), phone("SY", ""), phone("SY", "")],
       }).success,
+    ).toBe(false);
+  });
+
+  it("refuses the same number twice, however written, on the phone that repeats it", () => {
+    const result = storeProfileFormSchema.safeParse({
+      name: "متجر",
+      phones: [phone("SY", "0944 123 456"), phone("SY", ""), phone("LB", "+963944123456")],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toMatchObject([
+      { path: ["phones", 2, "number"], message: "phoneRepeated" },
+    ]);
+    // The server refuses it too, if a client sends it.
+    expect(
+      storeProfileInputSchema.safeParse({ name: "متجر", phones: ["0944123456", "+963944123456"] })
+        .success,
     ).toBe(false);
   });
 });

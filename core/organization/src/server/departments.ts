@@ -101,7 +101,10 @@ export async function addDepartment(
   return after;
 }
 
-/** Renames an active department, audited with before and after and published, in `tx`. */
+/**
+ * Renames an active department, audited with before and after and published, in `tx`; the same
+ * name again is neither audited nor published.
+ */
 export async function changeDepartmentName(
   tx: TenantTransaction,
   actor: Actor,
@@ -109,6 +112,7 @@ export async function changeDepartmentName(
   dependencies: OrganizationDependencies,
 ): Promise<DepartmentView> {
   const changed = await renameDepartment(tx, change);
+  if (changed.after.name === changed.before.name) return changed.after;
   await publishDepartment(tx, actor, "renamed", changed, dependencies);
   return changed.after;
 }

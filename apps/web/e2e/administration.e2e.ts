@@ -52,6 +52,13 @@ test("keyboard only: edit the store profile and add a department", async ({ page
   const added = page.getByRole("complementary", { name: "الصيانة" });
   await expect(added).toBeVisible();
   await expect(toasts(page)).toContainText("أُضيف القسم «الصيانة»");
+  // The toast shares the end corner with the panel, but never covers its footer's Save.
+  const toastBox = await toasts(page).getByRole("listitem").first().boundingBox();
+  const saveBox = await added.getByRole("button", { name: /حفظ/ }).boundingBox();
+  expect(toastBox !== null && saveBox !== null).toBe(true);
+  if (toastBox !== null && saveBox !== null) {
+    expect(toastBox.y + toastBox.height).toBeLessThanOrEqual(saveBox.y);
+  }
   await expect(page).toHaveURL(/selected=/);
   const row = table.getByRole("row").filter({ hasText: "الصيانة" });
   await expect(row).toHaveAttribute("aria-selected", "true");
