@@ -63,8 +63,15 @@ describe("department filters", () => {
   });
 });
 
-/** A fake API: the departments list, and each write answered from `answers`. */
-function fakeApi(departments: DepartmentView[], answers: Record<string, () => Response> = {}) {
+/**
+ * A fake API: the departments list with the department limit, `allowed` of the license, and
+ * each write answered from `answers`.
+ */
+function fakeApi(
+  departments: DepartmentView[],
+  answers: Record<string, () => Response> = {},
+  allowed = 4,
+) {
   const calls: { method: string; url: string; body: unknown }[] = [];
   vi.stubGlobal("fetch", (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -76,7 +83,10 @@ function fakeApi(departments: DepartmentView[], answers: Record<string, () => Re
     const answer = answers[`${method} ${url}`];
     if (answer !== undefined) return Promise.resolve(answer());
     return Promise.resolve(
-      Response.json({ items: departments.map((item) => ({ lastChange: null, ...item })) }),
+      Response.json({
+        items: departments.map((item) => ({ lastChange: null, ...item })),
+        limit: { used: departments.filter((item) => item.archivedAt === null).length, allowed },
+      }),
     );
   });
   return calls;
@@ -203,6 +213,28 @@ describe("DepartmentsScreen", () => {
     expect(within(again).getByText("+963 945 739 573")).toHaveAttribute("dir", "ltr");
     expect(within(again).getByRole("button", { name: /رقم واتساب الدعم/ })).toBeInTheDocument();
     expect(within(again).getByLabelText(/اسم القسم/)).toHaveValue("الإكسسوارات");
+  });
+
+  it("says the department limit as used of allowed, and a reached one before anything is typed (QA slice 26)", async () => {
+    fakeApi([STORE, REPAIRS, OLD], {}, 2);
+    renderScreen();
+    const add = await screen.findByRole("button", { name: /قسم جديد/ });
+    expect(await screen.findByText("الأقسام النشطة: 2 من 2 في باقتك")).toBeInTheDocument();
+    expect(add).toHaveAccessibleDescription("الأقسام النشطة: 2 من 2 في باقتك");
+    await userEvent.click(add);
+    const panel = await screen.findByRole("complementary", { name: "قسم جديد" });
+    expect(panel).toHaveTextContent(/وصلت إلى حد الأقسام في باقتك/);
+    expect(within(panel).getByText("+963 945 739 573")).toBeInTheDocument();
+    // Two active departments already: the note about the second one is not said.
+    expect(panel).not.toHaveTextContent(/عند إضافة قسم ثانٍ/);
+    cleanup();
+
+    fakeApi([STORE, OLD], {}, 4);
+    renderScreen({ selected: "new" });
+    const first = await screen.findByRole("complementary", { name: "قسم جديد" });
+    expect(await screen.findByText("الأقسام النشطة: 1 من 4 في باقتك")).toBeInTheDocument();
+    expect(first).not.toHaveTextContent(/حد الأقسام/);
+    expect(first).toHaveTextContent(/عند إضافة قسم ثانٍ تظهر أعمدة الأقسام/);
   });
 
   it("says the store is read-only when the license stops a rename, and keeps what was typed", async () => {

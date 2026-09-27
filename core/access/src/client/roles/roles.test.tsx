@@ -216,7 +216,12 @@ describe("RolesScreen", () => {
     await userEvent.clear(limit);
     await userEvent.type(limit, "-3");
     await userEvent.keyboard("{Control>}s{/Control}");
-    expect(limit).toHaveAccessibleDescription(/رقمًا موجبًا/);
+    expect(limit).toHaveAccessibleDescription(/اكتب نسبة من 0 إلى 100/);
+    // A percent beyond 100 is refused as well, by the limit's kind (QA slice 26).
+    await userEvent.clear(limit);
+    await userEvent.type(limit, "120");
+    await userEvent.keyboard("{Control>}s{/Control}");
+    expect(limit).toHaveAccessibleDescription(/اكتب نسبة من 0 إلى 100/);
     expect(calls.filter((call) => call.method === "PUT")).toEqual([]);
     await userEvent.clear(limit);
     await userEvent.type(limit, "7.5");
@@ -284,8 +289,19 @@ describe("RolesScreen", () => {
     expect(within(panel).getByRole("button", { name: "نسخ الدور" })).toBeInTheDocument();
   });
 
-  it("archives after one confirmation, and says why when active users hold the role", async () => {
-    fakeApi([OWNER, CASHIER], {
+  it("says why a role active users hold is not archived, before any confirmation (QA slice 26)", async () => {
+    const calls = fakeApi([OWNER, CASHIER]);
+    renderScreen({ selected: CASHIER.id });
+    const panel = await screen.findByRole("complementary", { name: "كاشير القسم" });
+    await userEvent.click(within(panel).getByRole("button", { name: /أرشفة الدور/ }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(/يحمل هذا الدور مستخدمون/);
+    expect(calls.filter((call) => call.url.endsWith("/archive"))).toEqual([]);
+  });
+
+  it("archives a role no active user holds after one confirmation, and says a race's refusal", async () => {
+    const idle = { ...CASHIER, activeUsers: 0 };
+    fakeApi([OWNER, idle], {
       [`POST /api/v1/access/roles/${CASHIER.id}/archive`]: problem(409, "access.role.inUse"),
     });
     renderScreen({ selected: CASHIER.id });
@@ -297,7 +313,7 @@ describe("RolesScreen", () => {
   });
 
   it("says the store is read-only when the license stops an archive", async () => {
-    fakeApi([OWNER, CASHIER], {
+    fakeApi([OWNER, { ...CASHIER, activeUsers: 0 }], {
       [`POST /api/v1/access/roles/${CASHIER.id}/archive`]: problem(403, "tenancy.license.readOnly"),
     });
     renderScreen({ selected: CASHIER.id });

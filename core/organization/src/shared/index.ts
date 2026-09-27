@@ -3,6 +3,7 @@ import {
   departmentNameSchema,
   departmentSchema,
   LICENSE_STATES,
+  licenseLimitUseSchema,
   tenantNameSchema,
 } from "@mustawfi/core-tenancy/shared";
 import { phoneNumberSchema } from "@mustawfi/kernel";
@@ -139,6 +140,19 @@ export const departmentListItemSchema = departmentSchema.extend({
 });
 
 export type DepartmentListItem = z.infer<typeof departmentListItemSchema>;
+
+/**
+ * `GET /api/v1/organization/departments`: every department with its last change, and — for
+ * those who may add departments — the department limit as used of allowed, so a reached limit
+ * is said before they try (`core-foundation` slice 26). Every session reads the list; the
+ * license's figures are not every role's to see.
+ */
+export const departmentListSchema = z.object({
+  items: z.array(departmentListItemSchema),
+  limit: licenseLimitUseSchema.optional(),
+});
+
+export type DepartmentList = z.infer<typeof departmentListSchema>;
 
 /** The refusals of `core.organization`; clients map each code to an Arabic message. */
 export const organizationProblemCodes = {

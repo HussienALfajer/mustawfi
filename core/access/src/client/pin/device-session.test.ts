@@ -21,7 +21,7 @@ import { CompactSign, exportJWK, generateKeyPair } from "jose";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccessPart } from "../../shared/index.ts";
 import { accessBundlePart } from "../bundle-part.ts";
-import { accessLocalMigrations } from "../device.ts";
+import { accessLocalMigrations, deviceStoreCodeLocalMigrations } from "../device.ts";
 import {
   fetchSignedIn,
   lockDevice,
@@ -177,6 +177,7 @@ beforeEach(async () => {
   db = openNodeLocalDb(":memory:");
   await migrateLocalDb(db, [
     ...accessLocalMigrations,
+    ...deviceStoreCodeLocalMigrations,
     ...configLocalMigrations,
     ...pinLocalMigrations,
   ]);

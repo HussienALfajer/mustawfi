@@ -58,6 +58,8 @@ export {
   licenseKeyIdSchema,
   type LicenseLimits,
   licenseLimitsSchema,
+  type LicenseLimitUse,
+  licenseLimitUseSchema,
   type LicensePublicKeys,
   licensePublicKeysSchema,
   type LicenseRefusal,

@@ -11,6 +11,19 @@ export const salesMessages = {
     invoices: { view: "عرض الفواتير" },
     invoice: { create: "البيع وإنشاء الفواتير" },
   },
+  /**
+   * The audit log's names for this module's records (`auditEntity`), the fields of their
+   * before and after snapshots (`auditField`), and coded values of those fields
+   * (`auditValue`), so the log reads in words (`core-foundation` QA slice 26).
+   */
+  auditEntity: {
+    invoice: "فاتورة بيع",
+  },
+  auditField: {
+    number: "الرقم",
+    total: "الإجمالي",
+    flags: "علامات المراجعة",
+  },
   /** Labels of this module's audit actions: `sales.invoice.created` → `audit.invoice.created`. */
   audit: {
     invoice: { created: "تسجيل فاتورة بيع" },

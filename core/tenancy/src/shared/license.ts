@@ -46,6 +46,17 @@ export const licenseLimitsSchema = z.strictObject({
 
 export type LicenseLimits = z.infer<typeof licenseLimitsSchema>;
 
+/**
+ * How much of one license limit is used, of how much the license allows (rule 4). A downgrade
+ * can leave more used than allowed; it deactivates nothing.
+ */
+export const licenseLimitUseSchema = z.object({
+  used: z.int().min(0),
+  allowed: z.int().min(0),
+});
+
+export type LicenseLimitUse = z.infer<typeof licenseLimitUseSchema>;
+
 /** A module id (`core.tenancy`, `serials`), as entitlements list them. */
 const moduleIdSchema = z.string().regex(/^[a-z][a-zA-Z0-9-]*(\.[a-z][a-zA-Z0-9-]*)?$/);
 

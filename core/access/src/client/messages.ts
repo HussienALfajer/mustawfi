@@ -21,6 +21,118 @@ export const accessMessages = {
     roles: { manage: "إدارة الأدوار والصلاحيات" },
     devices: { manage: "إدارة الأجهزة" },
   },
+  /**
+   * The audit log's names for this module's records (`auditEntity`), the fields of their
+   * before and after snapshots (`auditField`), and coded values of those fields
+   * (`auditValue`), so the log reads in words (`core-foundation` QA slice 26).
+   */
+  auditEntity: {
+    user: "مستخدم",
+    role: "دور",
+    device: "جهاز",
+    session: "جلسة",
+    registrationCode: "رمز تسجيل جهاز",
+    override: "موافقة مشرف",
+  },
+  auditField: {
+    name: "الاسم",
+    login: "اسم الدخول",
+    roleId: "الدور",
+    departmentScope: "نطاق الأقسام",
+    departments: "الأقسام",
+    status: "الحالة",
+    hasPin: "له رمز سري",
+    hasPassword: "له كلمة مرور",
+    twoFactor: "التحقق بخطوتين",
+    type: "النوع",
+    platform: "المنصة",
+    prefix: "البادئة",
+    registrationCodeId: "رمز التسجيل",
+    sessionsRevoked: "الجلسات المنتهية",
+    method: "طريقة الدخول",
+    scope: "نطاق التقييد",
+    secondFactor: "الخطوة الثانية",
+    until: "حتى",
+    departmentId: "القسم",
+    permission: "الصلاحية",
+    limit: "الحد",
+    value: "القيمة",
+    requestedBy: "طلبها",
+    failures: "المحاولات الخاطئة",
+    lockedAt: "وقت القفل",
+    expiresAt: "ينتهي في",
+    issuedBy: "أصدره",
+    resetCodeId: "رمز الاستعادة",
+    staff: "موظف الدعم",
+    archivedAt: "وقت الأرشفة",
+    isOwner: "دور المالك",
+    limits: "الحدود",
+    permissions: "الصلاحيات",
+    template: "القالب",
+    deviceId: "الجهاز",
+    reason: "السبب",
+    userId: "المستخدم",
+    clearedBy: "ألغاه",
+    recoveryCodeId: "رمز الاسترداد",
+    recoveryCodes: "رموز الاسترداد",
+    remaining: "المتبقي",
+  },
+  auditValue: {
+    status: {
+      active: "نشط",
+      deactivated: "موقوف",
+      revoked: "مُزال",
+    },
+    departmentScope: {
+      all: "كل الأقسام",
+      listed: "أقسام محددة",
+    },
+    type: {
+      mainPos: "جهاز بيع رئيسي",
+      companion: "جهاز مساعد",
+    },
+    platform: {
+      windows: "تطبيق Windows",
+      browser: "متصفح",
+    },
+    method: {
+      password: "كلمة المرور",
+      pin: "الرمز السري",
+    },
+    scope: {
+      login: "اسم الدخول",
+      address: "عنوان الشبكة",
+      pin: "الرمز السري على هذا الجهاز",
+    },
+    secondFactor: {
+      totp: "رمز من التطبيق",
+      recoveryCode: "رمز استرداد",
+      invalid: "رمز غير صحيح",
+    },
+    template: {
+      owner: "المالك",
+      accountant: "محاسب",
+      sectionCashier: "كاشير قسم",
+      repairTechnician: "فني صيانة",
+      topUpOperator: "موظف تحويل رصيد",
+    },
+    hasPin: {
+      true: "نعم",
+      false: "لا",
+    },
+    hasPassword: {
+      true: "نعم",
+      false: "لا",
+    },
+    twoFactor: {
+      true: "نعم",
+      false: "لا",
+    },
+    isOwner: {
+      true: "نعم",
+      false: "لا",
+    },
+  },
   /** Labels of this module's audit actions: `access.role.created` → `audit.role.created`. */
   audit: {
     role: {
@@ -97,6 +209,7 @@ export const accessMessages = {
     title: "تسجيل الدخول",
     storeCode: "رمز المتجر",
     storeCodeHelp: "ستة أحرف وأرقام، تجده عند صاحب المتجر",
+    storeCodeKnown: "رمز المتجر الذي سُجّل فيه هذا الجهاز",
     storeCodeShape: "رمز المتجر ستة أحرف لاتينية وأرقام، ليس فيها O ولا I ولا 0 ولا 1، مثل K7M3QX",
     login: "اسم الدخول",
     password: "كلمة المرور",
@@ -115,6 +228,12 @@ export const accessMessages = {
       "ترخيص المتجر موقوف، فلا يدخل إلا المالكون حتى يُجدَّد. اطلب من صاحب المتجر تجديد الترخيص",
     refused: "رُفض الطلب. أعد تحميل الصفحة ثم حاول مجددًا",
     passwordWasReset: "عُيّنت كلمة المرور الجديدة. ادخل بها الآن",
+    sessionEnded: {
+      ended:
+        "انتهت جلستك، فادخل من جديد. تنتهي الجلسة بمرور سبعة أيام، أو بتغيير كلمة مرورك من جهاز آخر، أو بإيقاف حسابك، أو بإزالة الجهاز الذي فتحتها عليه",
+      currentSecret:
+        "انتهت جلستك بعد خمس محاولات خاطئة للرمز السري أو كلمة المرور الحالية في «حسابي»، فادخل من جديد",
+    },
     forgot: "نسيت كلمة المرور؟ ادخل برمز من الدعم الفني",
     secondFactor: {
       title: "التحقق بخطوتين",
@@ -222,7 +341,7 @@ export const accessMessages = {
     removed: {
       title: "أُزيل هذا الجهاز من المتجر",
       body: "أبطل صاحب المتجر هذا الجهاز. أُرسلت مبيعاته كلها إلى الخادم أولًا، ثم مُسحت بيانات المتجر منه.",
-      next: "لاستخدامه مع المتجر من جديد، يسجّله صاحب المتجر برمز تسجيل جديد.",
+      next: "لاستخدامه مع المتجر من جديد: يُصدر صاحب المتجر رمز تسجيل جديدًا من «الأجهزة»، ثم يُكتب الرمز في «تسجيل الجهاز» بعد الدخول هنا بكلمة المرور.",
       action: "متابعة",
     },
   },

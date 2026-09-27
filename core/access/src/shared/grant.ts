@@ -1,4 +1,5 @@
 import type { PermissionCatalogue, RoleTemplate } from "@mustawfi/core-config/shared";
+import { Decimal } from "@mustawfi/kernel";
 
 /** An editable role as stored: its own rows, and the template grants it has received. */
 export interface StoredRole {
@@ -52,6 +53,44 @@ export function roleHoldings(catalogue: PermissionCatalogue, role: StoredRole): 
     permissions: [...permissions].sort(),
     limits: Object.fromEntries([...limits].sort(([a], [b]) => (a < b ? -1 : 1))),
   };
+}
+
+/** Someone granting roles: an owner grants anything; others what they hold. */
+export interface Grantor {
+  readonly isOwner: boolean;
+  /** Ignored for an owner. */
+  readonly permissions: readonly string[];
+  /** By limit id; a missing one is zero. Ignored for an owner. */
+  readonly limits: Readonly<Record<string, string>>;
+}
+
+const NO_HOLDINGS: RoleHoldings = { permissions: [], limits: {} };
+
+/**
+ * What `holdings` adds to `before` beyond what `grantor` holds — permissions they do not hold
+ * and limit values above their own — as sorted ids; empty when they may grant it
+ * (`core-foundation` slice 6 decision). The server refuses a grant that is not empty
+ * (`checkGrantable`); the users screen reads it to leave out what a manager may not set
+ * (QA slice 26).
+ */
+export function beyondGrant(
+  grantor: Grantor,
+  holdings: RoleHoldings,
+  before: RoleHoldings = NO_HOLDINGS,
+): string[] {
+  if (grantor.isOwner) return [];
+  const held = new Set(grantor.permissions);
+  const permissions = holdings.permissions.filter(
+    (permission) => !before.permissions.includes(permission) && !held.has(permission),
+  );
+  const limits = Object.entries(holdings.limits)
+    .filter(([limit, value]) => {
+      const prior = before.limits[limit];
+      if (prior !== undefined && !Decimal.of(value).greaterThan(Decimal.of(prior))) return false;
+      return Decimal.of(value).greaterThan(Decimal.of(grantor.limits[limit] ?? "0"));
+    })
+    .map(([limit]) => limit);
+  return [...permissions, ...limits];
 }
 
 /** Every grant `catalogue`'s modules make to `template`: what an edit records as offered. */

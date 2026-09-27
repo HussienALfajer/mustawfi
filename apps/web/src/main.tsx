@@ -6,7 +6,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./styles.css";
-import { localSession } from "@mustawfi/core-access/client";
+import { localSession, sessionEndNotice, sessionQueryKey } from "@mustawfi/core-access/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { ApiProblem, ClientRuntimeProvider, configureApi } from "@mustawfi/core-config/client";
@@ -59,7 +59,8 @@ let localDb: LocalDb | undefined;
  * whose user is signed in without one — an offline PIN sign-in, or a session that expired — the
  * user enters their PIN again to open one (`core-foundation` rule 25), then returns. Anywhere
  * else the session expired or was revoked elsewhere: drop every cached query (the cached session
- * included) and go back to sign-in.
+ * included) and go back to sign-in, which says the session ended when the user was signed in —
+ * and why, after a change proved with a wrong current secret (`core-foundation` QA slice 26).
  */
 function onApiError(error: Error): void {
   if (!(error instanceof ApiProblem) || error.code !== accessProblemCodes.sessionRequired) return;
@@ -78,8 +79,9 @@ function onApiError(error: Error): void {
       }
       return;
     }
+    const ended = sessionEndNotice(error, queryClient.getQueryData(sessionQueryKey) != null);
     queryClient.clear();
-    void app.navigate({ to: "/login" });
+    void app.navigate({ to: "/login", search: ended === undefined ? {} : { ended } });
   });
 }
 

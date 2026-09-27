@@ -80,6 +80,8 @@ export interface DepartmentPanelProps {
   readonly onRestored: (department: DepartmentView) => void;
   /** The last line's link to the record's history, for readers of the audit log. */
   readonly auditLink?: AuditLink | undefined;
+  /** The license's department limit is reached: a new panel says so before anything is typed. */
+  readonly limitReached?: boolean | undefined;
 }
 
 /**
@@ -96,6 +98,7 @@ export function DepartmentPanel({
   onSaved,
   onRestored,
   auditLink,
+  limitReached = false,
 }: DepartmentPanelProps) {
   const { t } = useTranslation(ORGANIZATION_NAMESPACE);
   const queryClient = useQueryClient();
@@ -276,7 +279,7 @@ export function DepartmentPanel({
             </div>
           )}
         </div>
-        {department === null ? (
+        {department === null && departments.filter((d) => d.archivedAt === null).length === 1 ? (
           <p className="rounded-sm bg-sunken px-3 py-2 text-sm text-text-secondary">
             {t("departments.panel.firstExtraNote")}
           </p>
@@ -290,6 +293,13 @@ export function DepartmentPanel({
           <p className="rounded-sm bg-sunken px-3 py-2 text-sm text-text-secondary">
             {t("departments.panel.archivedNote")}
           </p>
+        ) : null}
+        {failure === undefined && department === null && limitReached ? (
+          // Said before anything is typed; the server still refuses a new one (rule 4).
+          <div className="flex flex-col gap-2">
+            <p className="text-text">{t("departments.problem.limit")}</p>
+            <SupportContact whatsapp={VERTEX_SUPPORT_WHATSAPP} />
+          </div>
         ) : null}
         {failure === undefined ? null : (
           <div className="flex flex-col gap-2">

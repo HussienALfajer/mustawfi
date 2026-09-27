@@ -146,9 +146,12 @@ export async function signInAgainOnDevice(
   await tabTo(page, page.getByRole("link", { name: "الدخول بكلمة المرور" }));
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/login$/);
-  await expect(page.getByLabel("رمز المتجر")).toBeFocused();
-  await page.keyboard.type(storeCode);
-  await page.keyboard.press("Tab");
+  // The device knows its store's code: shown, not asked for, and sign-in starts at the login
+  // (`core-foundation` QA slice 26).
+  const code = page.getByLabel("رمز المتجر");
+  await expect(code).toHaveValue(storeCode);
+  await expect(code).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("اسم الدخول")).toBeFocused();
   await page.keyboard.type(login);
   await page.keyboard.press("Tab");
   await page.keyboard.type(password);

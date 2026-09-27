@@ -24,7 +24,7 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | قالب دور | Role template | `roleTemplate` (`owner`, `accountant`, `sectionCashier`, `repairTechnician`, `topUpOperator`) |
 | حد صلاحية | Permission limit (percent, amount, or count) | `limit` |
 | إجراء (صلاحية) | Action permission | `permission` |
-| ملف المتجر | Store profile | `storeProfile` |
+| بيانات المتجر | Store profile | `storeProfile` |
 | الرقم الضريبي | Tax number | `taxNumber` |
 | رقم السجل التجاري | Commercial register number | `commercialRegister` |
 | رمز نوع المستند | Document code (three letters, e.g. `INV`) | `docCode` |

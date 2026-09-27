@@ -95,7 +95,10 @@ test("returns to sign-in when the session ends elsewhere", async ({ page }) => {
   await page.keyboard.press("Tab");
   await page.keyboard.type("5");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/login$/);
+  // Sign-in says the session ended while the user was signed in (QA slice 26).
+  await expect(page).toHaveURL(/\/login\?ended=ended$/);
+  await expect(page.getByRole("status")).toContainText("انتهت جلستك، فادخل من جديد");
+  await expectAccessible(page);
 });
 
 test("touch density gives every control a 48 px target", async ({ page }) => {

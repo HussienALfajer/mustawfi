@@ -96,6 +96,22 @@ export async function buildServer<Context>(
     maxAge: 600,
   });
 
+  // Every route that takes a body, a query, or parameters can answer 400 `core.request.invalid`
+  // (the error handler); its OpenAPI says so beside the refusals it names (QA slice 26).
+  app.addHook("onRoute", (route) => {
+    const schema = route.schema;
+    const response = schema?.response as Record<string, unknown> | undefined;
+    if (schema === undefined || response === undefined || "400" in response) return;
+    if (
+      schema.body === undefined &&
+      schema.querystring === undefined &&
+      schema.params === undefined
+    ) {
+      return;
+    }
+    route.schema = { ...schema, response: { ...response, 400: problemDetailsSchema } };
+  });
+
   await app.register(swagger, {
     openapi: {
       openapi: "3.1.0",

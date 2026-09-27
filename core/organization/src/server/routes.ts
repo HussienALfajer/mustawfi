@@ -6,7 +6,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
-  departmentListItemSchema,
+  departmentListSchema,
   departmentRenameSchema,
   departmentSchema,
   licenseSummarySchema,
@@ -104,15 +104,16 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       schema: {
         tags,
         response: {
-          200: z.object({ items: z.array(departmentListItemSchema) }),
+          200: departmentListSchema,
           401: problemDetailsSchema,
         },
       },
     },
     async (request) => {
       const session = sessionOf(request);
-      const items = await asActor(session, (tx) => listDepartmentItems(tx));
-      return { items };
+      const list = await asActor(session, (tx) => listDepartmentItems(tx));
+      // The limit only for those who add departments (the list is every session's).
+      return session.grant.can("organization.departments.manage") ? list : { items: list.items };
     },
   );
 

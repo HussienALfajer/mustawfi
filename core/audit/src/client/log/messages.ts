@@ -32,6 +32,21 @@ export const auditLogMessages = {
   offline: "سجل التدقيق يحتاج اتصالًا بالخادم، وهذا الجهاز غير متصل الآن.",
   denied: "لا يسمح لك دورك بقراءة سجل التدقيق.",
   retry: "أعد المحاولة",
+  /** An entry the URL names that does not open. */
+  selected: {
+    notFound: "لا يوجد في سجل هذا المتجر إدخال بهذا الرابط.",
+    failed: "تعذّر فتح الإدخال الذي يسمّيه الرابط. تحقّق من الاتصال ثم أعد التحميل.",
+    dismiss: "إخفاء",
+  },
+  /** How snapshot values read when their module has no words for them. */
+  value: {
+    yes: "نعم",
+    no: "لا",
+    image: "صورة {type} ({kilobytes} ك.ب)",
+    separator: "، ",
+    named: "{name} ({code})",
+    pair: "{field}: {value}",
+  },
   panel: {
     close: "إغلاق",
     occurredAt: "وقت الحدث",
@@ -43,12 +58,17 @@ export const auditLogMessages = {
     user: "المستخدم",
     device: "الجهاز",
     entity: "السجل المعني",
+    entityNamed: "{type} «{name}»",
     reason: "السبب",
     values: "القيم قبل التغيير وبعده",
     field: "الحقل",
     before: "قبل",
     after: "بعد",
     noValues: "لا قيم مسجلة لهذا الإجراء",
+    nothingChanged: "لم تتغير أي قيمة",
+    unchanged:
+      "{count, plural, one {حقل لم يتغير} two {حقلان لم يتغيرا} few {# حقول لم تتغير} many {# حقلًا لم يتغير} other {# حقل لم يتغير}}",
+    unchangedTable: "الحقول التي لم تتغير",
     empty: "—",
   },
 } as const;

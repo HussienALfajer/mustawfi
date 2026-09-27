@@ -185,6 +185,36 @@ describe("sign-in with two-factor authentication (core-foundation rule 26)", () 
     expect(await screen.findByText("محاولات فاشلة كثيرة. حاول مجددًا بعد 15 دقيقة")).toBeVisible();
   });
 
+  it("shows the store code a registered device knows instead of asking for it (QA slice 26)", async () => {
+    const calls = fakeApi({
+      "POST /api/v1/access/login": () => problem(401, accessProblemCodes.loginFailed),
+    });
+    renderWith(<LoginScreen onSignedIn={vi.fn()} knownStoreCode="K7M3Q9" />);
+    const code = screen.getByLabelText("رمز المتجر");
+    expect(code).toHaveValue("K7M3Q9");
+    expect(code).toHaveAttribute("readonly");
+    expect(code).toHaveAccessibleDescription("رمز المتجر الذي سُجّل فيه هذا الجهاز");
+    expect(screen.getByLabelText("اسم الدخول")).toHaveFocus();
+    await userEvent.keyboard("owner{Tab}a long enough password{Enter}");
+    await screen.findByRole("alert");
+    expect(calls[0]?.body).toMatchObject({ storeCode: "K7M3Q9", login: "owner" });
+  });
+
+  it("says a session ended while its user was signed in, and why when the app knows (QA slice 26)", async () => {
+    fakeApi({ "POST /api/v1/access/login": () => problem(401, accessProblemCodes.loginFailed) });
+    renderWith(<LoginScreen onSignedIn={vi.fn()} sessionEnded="ended" />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^انتهت جلستك، فادخل من جديد/);
+    // Until the first try, whose own answer then stands alone.
+    await userEvent.type(screen.getByLabelText("رمز المتجر"), "K7M3Q9");
+    await userEvent.type(screen.getByLabelText("اسم الدخول"), "owner");
+    await userEvent.type(screen.getByLabelText("كلمة المرور"), "a long enough password{Enter}");
+    await screen.findByRole("alert");
+    expect(screen.queryByText(/انتهت جلستك/)).toBeNull();
+    cleanup();
+    renderWith(<LoginScreen onSignedIn={vi.fn()} sessionEnded="currentSecret" />);
+    expect(screen.getByRole("status")).toHaveTextContent(/بعد خمس محاولات خاطئة/);
+  });
+
   it("offers the recovery link and says when the password was just reset", () => {
     renderWith(
       <LoginScreen
@@ -220,6 +250,21 @@ describe("recovery with a support reset code (rule 27)", () => {
     }
     await userEvent.click(screen.getByRole("button", { name: "تعيين كلمة المرور" }));
   }
+
+  it("submits from the confirmation with Enter while the optional PIN is empty (QA slice 26)", async () => {
+    const calls = fakeApi({
+      "POST /api/v1/access/password-reset": () => new Response(null, { status: 204 }),
+    });
+    const onReset = renderRecovery();
+    await userEvent.type(screen.getByLabelText("رمز المتجر"), "K7M3Q9{Enter}");
+    expect(screen.getByLabelText("اسم الدخول")).toHaveFocus();
+    await userEvent.keyboard("owner{Enter}ABCDE-FGHJK{Enter}a brand new password{Enter}");
+    await userEvent.keyboard("a brand new password{Enter}");
+    await vi.waitFor(() => {
+      expect(onReset).toHaveBeenCalledOnce();
+    });
+    expect(calls).toHaveLength(1);
+  });
 
   it("checks the new password on the page before sending anything", async () => {
     const calls = fakeApi({});
@@ -286,6 +331,37 @@ describe("«My account» (flow 11)", () => {
     });
     expect(within(pin).getByLabelText("الرمز السري الجديد")).toHaveValue("");
     expect(screen.getByRole("form", { name: "كلمة المرور" })).toBeVisible();
+  });
+
+  it("names the current secret that was wrong: the PIN, or the password (QA slice 26)", async () => {
+    fakeApi({
+      "GET /api/v1/access/me": () => Response.json(account({ hasPin: true })),
+      "PUT /api/v1/access/me/pin": () => problem(403, accessProblemCodes.currentSecretWrong),
+      "PUT /api/v1/access/me/password": () => problem(403, accessProblemCodes.currentSecretWrong),
+    });
+    renderWith(<AccountScreen />);
+    const pin = await screen.findByRole("form", { name: "الرمز السري" });
+    await userEvent.type(within(pin).getByLabelText("الرمز السري الحالي"), "1470");
+    await userEvent.type(within(pin).getByLabelText("الرمز السري الجديد"), "2580");
+    await userEvent.type(within(pin).getByLabelText("أعد كتابة الرمز الجديد"), "2580");
+    await userEvent.keyboard("{Control>}s{/Control}");
+    expect(await within(pin).findByRole("alert")).toHaveTextContent(
+      /^الرمز السري الحالي غير صحيح. خمس محاولات خاطئة تُنهي الجلسة/,
+    );
+    const password = screen.getByRole("form", { name: "كلمة المرور" });
+    await userEvent.type(within(password).getByLabelText("كلمة المرور الحالية"), "wrong one");
+    await userEvent.type(
+      within(password).getByLabelText("كلمة المرور الجديدة"),
+      "a brand new password",
+    );
+    await userEvent.type(
+      within(password).getByLabelText("أعد كتابة كلمة المرور الجديدة"),
+      "a brand new password",
+    );
+    await userEvent.keyboard("{Control>}s{/Control}");
+    expect(await within(password).findByRole("alert")).toHaveTextContent(
+      /^كلمة المرور الحالية غير صحيحة./,
+    );
   });
 
   it("refuses a PIN that breaks the rules before sending it", async () => {

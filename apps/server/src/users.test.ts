@@ -322,8 +322,24 @@ describe("adding users (flow 8)", () => {
       { storeCode: store.tenant.storeCode, license: jws },
       { ...dependencies, licenseKeys: await testLicenseKeys() },
     );
-    const users = (await call(store.owner, "GET", "/users")).json<{ items: UserView[] }>().items;
-    expect(users.filter((u) => u.status === "active")).toHaveLength(4);
+    const list = (await call(store.owner, "GET", "/users")).json<{
+      items: UserView[];
+      limit: { used: number; allowed: number };
+    }>();
+    expect(list.items.filter((u) => u.status === "active")).toHaveLength(4);
+    // The list says the limit as used of allowed, over it after the downgrade (QA slice 26).
+    expect(list.limit).toEqual({ used: 4, allowed: 2 });
+    // A role that may only view users reads the list without the license's figures.
+    await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "viewer", permissions: ["access.users.view"] },
+      dependencies,
+    );
+    const viewer = await signInAs(server, store.tenant, "viewer");
+    const viewed = (await call(viewer, "GET", "/users")).json<{ items: UserView[] }>();
+    expect(viewed.items.length).toBeGreaterThan(0);
+    expect(viewed).not.toHaveProperty("limit");
     expectProblem(
       await postUser(store.owner, { name: "x", roleId }),
       409,
@@ -697,14 +713,13 @@ describe("PINs and passwords", () => {
       );
     }
     expect(await sessionStatus(store.owner)).toBe(200);
-    expectProblem(
-      await call(store.owner, "PUT", "/me/pin", {
-        currentPassword: "wrong password 5",
-        pin: "2580",
-      }),
-      401,
-      accessProblemCodes.sessionRequired,
-    );
+    const fifth = await call(store.owner, "PUT", "/me/pin", {
+      currentPassword: "wrong password 5",
+      pin: "2580",
+    });
+    expectProblem(fifth, 401, accessProblemCodes.sessionRequired);
+    // It says why, so sign-in can say it (QA slice 26).
+    expect(fifth.json()).toMatchObject({ detail: "currentSecretFailures" });
     expect(await sessionStatus(store.owner)).toBe(401);
     // Only that session: the user signs in again, and another session of theirs stays.
     expect(await sessionStatus(other)).toBe(200);
@@ -1034,6 +1049,39 @@ describe("permissions declared after a tenant exists (slice 6 decision)", () => 
   const holds = (access: UserAccess) => ({
     permissions: access.access.permissions,
     limits: access.access.limits,
+  });
+
+  it("refuses a limit value that is no value of its kind: a percent above 100 (QA slice 26)", async () => {
+    const store = await newStore();
+    const cashier = await roleNamed(store, "كاشير القسم");
+    const edit = (value: string) =>
+      tenants.withTenant({ tenantId: store.tenant.tenantId, userId: store.tenant.ownerId }, (tx) =>
+        editRole(
+          tx,
+          {
+            tenantId: store.tenant.tenantId,
+            branchId: store.tenant.branchId,
+            userId: store.tenant.ownerId,
+            at: clock.now(),
+            isOwner: true,
+            permissions: [],
+            limits: {},
+          },
+          {
+            id: cashier.id,
+            name: cashier.name,
+            permissions: cashier.permissions,
+            limits: { "repairs.discount.maxPercent": value },
+          },
+          later,
+          dependencies,
+        ),
+      );
+    await expect(edit("120")).rejects.toMatchObject({
+      code: accessProblemCodes.roleInvalid,
+      status: 422,
+    });
+    await expect(edit("12.5")).resolves.toBeDefined();
   });
 
   it("reaches roles seeded from the template, not copies, and a removal stays removed", async () => {

@@ -5,17 +5,14 @@ import { recordChange } from "@mustawfi/core-sync/server";
 import {
   archiveDepartment,
   createDepartment,
+  departmentLimitUse,
   listDepartments,
   type TenantTransaction,
   renameDepartment,
   restoreDepartment,
 } from "@mustawfi/core-tenancy/server";
 import type { IdGenerator } from "@mustawfi/kernel";
-import {
-  DEPARTMENT_ENTITY,
-  type DepartmentListItem,
-  type DepartmentView,
-} from "../shared/index.ts";
+import { DEPARTMENT_ENTITY, type DepartmentList, type DepartmentView } from "../shared/index.ts";
 
 /** Who changes the organization, where, and when: what every audit entry and change carries. */
 export interface Actor {
@@ -151,8 +148,11 @@ export async function reinstateDepartment(
   return changed.after;
 }
 
-/** The tenant's departments, archived ones included, each with its last change. */
-export async function listDepartmentItems(tx: TenantTransaction): Promise<DepartmentListItem[]> {
+/**
+ * The tenant's departments, archived ones included, each with its last change, and the
+ * department limit as used of allowed.
+ */
+export async function listDepartmentItems(tx: TenantTransaction): Promise<DepartmentList> {
   const items = await listDepartments(tx);
   const changes = await namedLastChanges(
     tx,
@@ -160,5 +160,8 @@ export async function listDepartmentItems(tx: TenantTransaction): Promise<Depart
     items.map((item) => item.id),
     DEPARTMENT_CHANGES,
   );
-  return items.map((item) => ({ ...item, lastChange: changes.get(item.id) ?? null }));
+  return {
+    items: items.map((item) => ({ ...item, lastChange: changes.get(item.id) ?? null })),
+    limit: await departmentLimitUse(tx),
+  };
 }

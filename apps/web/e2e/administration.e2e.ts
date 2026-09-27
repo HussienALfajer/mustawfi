@@ -104,8 +104,8 @@ test("keyboard only: read the license and plan, and go to where a limit is manag
   for (const limit of [
     "المستخدمون النشطون",
     "الأقسام النشطة",
-    "الأجهزة الرئيسية (كاشير)",
-    "الأجهزة المساعدة (موبايل)",
+    "أجهزة البيع الرئيسية",
+    "الأجهزة المساعدة",
   ]) {
     await expect(limits.getByRole("row").filter({ hasText: limit })).toContainText(/\d+ من \d+/);
   }

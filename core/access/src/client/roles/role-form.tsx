@@ -1,6 +1,6 @@
 import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
-import { limitValueSchema, nameKey } from "@mustawfi/core-config/shared";
+import { limitValueFitsKind, nameKey } from "@mustawfi/core-config/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import {
   Badge,
@@ -166,6 +166,9 @@ export function RolePanel({
   const [limitErrors, setLimitErrors] = useState<ReadonlySet<string>>(new Set());
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
+  // Archiving a role active users hold is refused before its confirmation, as the server
+  // would refuse it (`access.role.inUse`); the panel already shows how many hold it.
+  const [inUseSaid, setInUseSaid] = useState(false);
   const archived = role !== null && role.archivedAt !== null;
   const readOnly = !canManage || archived || role?.isOwner === true;
 
@@ -215,6 +218,7 @@ export function RolePanel({
     save.reset();
     archive.reset();
     restore.reset();
+    setInUseSaid(false);
     const name = roleNameSchema.safeParse(draft.name);
     setNameError(
       name.success
@@ -227,10 +231,11 @@ export function RolePanel({
     );
     const limits: Record<string, string> = {};
     const badLimits = new Set<string>();
+    const kinds = new Map(catalogue.limits.map((limit) => [limit.id, limit.kind]));
     for (const [id, value] of Object.entries(draft.limits)) {
       const trimmed = value.trim();
       if (trimmed === "") continue;
-      if (limitValueSchema.safeParse(trimmed).success) limits[id] = trimmed;
+      if (limitValueFitsKind(kinds.get(id) ?? "amount", trimmed)) limits[id] = trimmed;
       else badLimits.add(id);
     }
     setLimitErrors(badLimits);
@@ -246,10 +251,11 @@ export function RolePanel({
     if (!readOnly) submit();
   });
 
-  const failure = [save.error, archive.error, restore.error]
-    .filter((error) => error !== null)
-    .map((error) => roleProblem(error))
-    .find((problem) => !NAME_PROBLEMS.has(problem));
+  const failure =
+    [save.error, archive.error, restore.error]
+      .filter((error) => error !== null)
+      .map((error) => roleProblem(error))
+      .find((problem) => !NAME_PROBLEMS.has(problem)) ?? (inUseSaid ? "inUse" : undefined);
   // An archived role with the name typed for a new one: restoring it is offered instead.
   const archivedMatch =
     role === null && canManage && nameKey(draft.name) !== ""
@@ -309,7 +315,10 @@ export function RolePanel({
                 variant="danger"
                 className="ms-auto"
                 onPress={() => {
-                  setConfirming(true);
+                  save.reset();
+                  archive.reset();
+                  if (role.activeUsers > 0) setInUseSaid(true);
+                  else setConfirming(true);
                 }}
               >
                 {t("roles.panel.archive")}
@@ -519,7 +528,9 @@ function MatrixModule({
             description={t("roles.panel.limitHelp", {
               kind: t(`roles.panel.limitKind.${limit.kind}`),
             })}
-            errorMessage={limitErrors.has(limit.id) ? t("roles.problem.limitInvalid") : undefined}
+            errorMessage={
+              limitErrors.has(limit.id) ? t(`roles.problem.limitInvalid.${limit.kind}`) : undefined
+            }
             value={draft.limits[limit.id] ?? ""}
             onChange={(value) => {
               onChange({ ...draft, limits: { ...draft.limits, [limit.id]: value } });

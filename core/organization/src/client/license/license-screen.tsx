@@ -118,7 +118,7 @@ function LicenseSummaryView({
                   {t("license.limits.usage")}
                 </th>
                 <th scope="col" className="py-2">
-                  <span className="sr-only">{t("license.plan.state")}</span>
+                  <span className="sr-only">{t("license.limits.state")}</span>
                 </th>
                 <th scope="col" className="py-2">
                   <span className="sr-only">{t("license.limits.manage")}</span>

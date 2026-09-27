@@ -203,6 +203,14 @@ test("the store profile: phones with a country code, a reduced logo, and the liv
   expect((await logoAreas(image)).black).toBeGreaterThan(0.95);
   await page.keyboard.press("Control+S");
   await expect(toasts(page)).toContainText("حُفظت بيانات المتجر");
+  // The earlier save's toast may still show: the reload below waits for this save itself
+  // (a flake found in QA slice 23).
+  await expect
+    .poll(async () => {
+      const profile = await page.request.get("/api/v1/organization/profile");
+      return ((await profile.json()) as { logoPrint: string }).logoPrint;
+    })
+    .toBe("dither");
   await attachScreens(page, testInfo, "store-profile-receipt");
 
   // On a narrow screen the preview moves below the form.

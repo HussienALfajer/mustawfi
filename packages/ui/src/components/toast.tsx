@@ -71,10 +71,12 @@ export function ToastProvider({ children }: { readonly children: ReactNode }) {
     <ToastContext value={api}>
       {children}
       {/* Above the height of a side panel's or settings form's footer (a control plus its padding):
-          the side panel sits in the same end corner, and its Save must stay in reach. */}
+          the side panel sits in the same end corner, and its Save must stay in reach. The region
+          sits at the root, so it clears the tallest control, touch density's 48 px, whatever
+          the density of the footer below it (QA slice 26). */}
       <section
         aria-label={t("toast.region")}
-        className="pointer-events-none fixed end-4 bottom-[calc(var(--mf-control-height)_+_3rem)] z-[60] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col"
+        className="pointer-events-none fixed end-4 bottom-[calc(48px_+_3rem)] z-[60] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col"
       >
         <ol aria-live="polite" aria-relevant="additions" className="flex flex-col gap-2">
           {toasts.map((toast) => (

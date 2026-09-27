@@ -6,7 +6,7 @@ import {
   lockTenant,
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
-import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
+import { type LicenseLimitUse, tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { IdGenerator } from "@mustawfi/kernel";
 import { and, asc, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
@@ -15,7 +15,7 @@ import {
   loginSchema,
   type RoleAccess,
   type SessionEndReason,
-  type UserListItem,
+  type UserList,
   userNameSchema,
   type UserStatus,
   type UserView,
@@ -263,8 +263,11 @@ const USER_CHANGES = [
   "access.twoFactor.cleared",
 ];
 
-/** `listUsers` with each user's last change, for the users screen. */
-export async function listUserItems(tx: TenantTransaction): Promise<UserListItem[]> {
+/**
+ * `listUsers` with each user's last change, and the user limit as used of allowed, for the
+ * users screen.
+ */
+export async function listUserItems(tx: TenantTransaction): Promise<UserList> {
   const items = await listUsers(tx);
   const changes = await namedLastChanges(
     tx,
@@ -272,7 +275,10 @@ export async function listUserItems(tx: TenantTransaction): Promise<UserListItem
     items.map((item) => item.id),
     USER_CHANGES,
   );
-  return items.map((item) => ({ ...item, lastChange: changes.get(item.id) ?? null }));
+  return {
+    items: items.map((item) => ({ ...item, lastChange: changes.get(item.id) ?? null })),
+    limit: await userLimitUse(tx),
+  };
 }
 
 async function viewOf(tx: TenantTransaction, userId: string): Promise<UserView> {
@@ -377,15 +383,20 @@ export async function activeUserCount(tx: TenantTransaction): Promise<number> {
   return row?.active ?? 0;
 }
 
+/** The user limit as used (active users, owners included) of allowed (rule 4). */
+async function userLimitUse(tx: TenantTransaction): Promise<LicenseLimitUse> {
+  const license = await currentLicense(tx);
+  if (license === undefined) throw new Error("the tenant has no license");
+  return { used: await activeUserCount(tx), allowed: license.claims.limits.users };
+}
+
 /**
  * Refuses one more active user beyond the license's `users` limit (rule 4); run under
  * `lockTenant`. Deactivated users do not count, and a lower limit deactivates nobody.
  */
 async function checkUserLimit(tx: TenantTransaction): Promise<void> {
-  const license = await currentLicense(tx);
-  if (license === undefined) throw new Error("the tenant has no license");
-  const allowed = license.claims.limits.users;
-  if ((await activeUserCount(tx)) >= allowed) {
+  const { used, allowed } = await userLimitUse(tx);
+  if (used >= allowed) {
     throw new ProblemError(tenancyProblemCodes.userLimit, 409, {
       title: "The license's user limit is reached",
       detail: `the license allows ${String(allowed)} active users`,

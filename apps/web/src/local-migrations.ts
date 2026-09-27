@@ -1,6 +1,7 @@
 import {
   accessLocalMigrations,
   deviceCredentialLocalMigrations,
+  deviceStoreCodeLocalMigrations,
   pinLocalMigrations,
 } from "@mustawfi/core-access/client";
 import { configLocalMigrations } from "@mustawfi/core-config/client";
@@ -31,4 +32,5 @@ export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   ...salesOverrideLocalMigrations,
   ...deviceCredentialLocalMigrations,
   ...storeLogoLocalMigrations,
+  ...deviceStoreCodeLocalMigrations,
 ];

@@ -1,11 +1,6 @@
 import { apiRequest } from "@mustawfi/core-config/client";
 import { queryOptions } from "@tanstack/react-query";
-import { z } from "zod";
-import {
-  departmentListItemSchema,
-  departmentSchema,
-  type DepartmentView,
-} from "../../shared/index.ts";
+import { departmentListSchema, departmentSchema, type DepartmentView } from "../../shared/index.ts";
 
 const BASE = "/api/v1/organization/departments";
 
@@ -16,15 +11,14 @@ export const departmentsQueryKey = ["organization", "departments"] as const;
  * change (online).
  */
 export function departmentsQueryOptions() {
+  return queryOptions({ ...departmentListQueryOptions(), select: (list) => list.items });
+}
+
+/** The departments list as the server answers it, with the department limit as used of allowed. */
+export function departmentListQueryOptions() {
   return queryOptions({
     queryKey: departmentsQueryKey,
-    queryFn: async ({ signal }) =>
-      (
-        await apiRequest(BASE, {
-          schema: z.object({ items: z.array(departmentListItemSchema) }),
-          signal,
-        })
-      ).items,
+    queryFn: ({ signal }) => apiRequest(BASE, { schema: departmentListSchema, signal }),
   });
 }
 

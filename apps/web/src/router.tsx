@@ -199,12 +199,17 @@ function LoginPage() {
   const db = useLocalDb();
   const { clock } = useClientRuntime();
   const queryClient = useQueryClient();
-  const { reset } = loginRoute.useSearch();
+  const { reset, ended } = loginRoute.useSearch();
+  // A registered device knows its store's code (QA slice 26); the guard has loaded it.
+  const device = useQuery(localDeviceQueryOptions(db)).data;
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-page p-4">
       <ProductMark />
       <LoginScreen
+        key={device?.storeCode ?? ""}
         passwordWasReset={reset === true}
+        knownStoreCode={device?.storeCode ?? undefined}
+        sessionEnded={ended}
         recoveryLink={(label) => (
           <Link to="/recover" className={TEXT_LINK}>
             {label}
@@ -299,9 +304,14 @@ const pinRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  // `reset` marks the return from a support reset (`core-foundation` rule 27).
-  validateSearch: z.object({ reset: z.boolean().optional().catch(undefined) }),
+  // `reset` marks the return from a support reset (`core-foundation` rule 27); `ended`, a
+  // session that ended while the user was signed in (QA slice 26).
+  validateSearch: z.object({
+    reset: z.boolean().optional().catch(undefined),
+    ended: z.enum(["ended", "currentSecret"]).optional().catch(undefined),
+  }),
   beforeLoad: signedOutOnly,
+  loader: ({ context }) => context.queryClient.ensureQueryData(localDeviceQueryOptions(context.db)),
   component: LoginPage,
 });
 

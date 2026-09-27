@@ -48,6 +48,7 @@ export const repairsModule = defineModule({
 - The module registry validates dependencies at startup; a module can't be disabled while an enabled module depends on it.
 - Boundaries are enforced by tooling: package `exports`, dependency-cruiser rules, and a manifest check (ADR-0015).
 - Every module's tables exist for every tenant; disabling a module hides it, it never drops data.
+- Errors are RFC 9457 problem details with a stable code (ADR-0014). Statuses: 400 `core.request.invalid` for a request its route's schema refuses (shape, format, bounds), documented on every route that takes input; 401 and 403 for access; 404 for a record the tenant does not have; 409 for a conflict with the current state (a taken name, a reached limit); 422 for a well-formed request a business rule refuses.
 
 ## 3. Tenancy (ADR-0002, ADR-0004)
 

@@ -44,12 +44,15 @@ export class ApiProblem extends Error {
   readonly status: number;
   /** The answer's `Retry-After` in seconds, when it gave one (a throttled sign-in's). */
   readonly retryAfterSeconds: number | undefined;
+  /** The answer's `detail`, when it gave one: what a code alone does not say. */
+  readonly detail: string | undefined;
 
-  constructor(code: string, status: number, retryAfterSeconds?: number) {
+  constructor(code: string, status: number, retryAfterSeconds?: number, detail?: string) {
     super(`${String(status)} ${code}`);
     this.code = code;
     this.status = status;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.detail = detail;
   }
 }
 
@@ -255,6 +258,7 @@ async function refuse(response: Response): Promise<never> {
     problem.success ? problem.data.code : hostProblemCodes.internal,
     response.status,
     retryAfterOf(response),
+    problem.success ? problem.data.detail : undefined,
   );
 }
 

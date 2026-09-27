@@ -10,7 +10,7 @@ import {
   ROLE_TEMPLATES,
 } from "@mustawfi/core-config/shared";
 import { lastChangeSchema } from "@mustawfi/core-audit/shared";
-import { licenseStandingSchema } from "@mustawfi/core-tenancy/shared";
+import { licenseLimitUseSchema, licenseStandingSchema } from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
 import type { RoleAccess } from "./grant.ts";
 import { pinSchema } from "./pin.ts";
@@ -18,6 +18,8 @@ import { pinSchema } from "./pin.ts";
 export {
   accessGrant,
   type AccessGrant,
+  beyondGrant,
+  type Grantor,
   type LimitValue,
   type RoleAccess,
   type RoleHoldings,
@@ -88,10 +90,7 @@ export function deviceLimitOf(type: DeviceType): "mainPosDevices" | "companionDe
 }
 
 /** How many of a device limit are used, of how many the license allows (rule 4). */
-export const deviceLimitUseSchema = z.object({
-  used: z.int().min(0),
-  allowed: z.int().min(0),
-});
+export const deviceLimitUseSchema = licenseLimitUseSchema;
 
 export type DeviceLimitUse = z.infer<typeof deviceLimitUseSchema>;
 
@@ -114,6 +113,12 @@ export const SESSION_END_REASONS = [
 ] as const;
 
 export type SessionEndReason = (typeof SESSION_END_REASONS)[number];
+
+/**
+ * The `detail` of the 401 that ends a session at the fifth wrong current PIN or password in
+ * «حسابي» (QA slice 24), so sign-in says why (QA slice 26).
+ */
+export const CURRENT_SECRET_FAILURES = "currentSecretFailures" satisfies SessionEndReason;
 
 /** What a client may give as the reason it ends its own session (`POST /logout`). */
 export const signOutReasonSchema = z.enum(["signedOut", "switchedUser", "locked", "idle"]);
@@ -545,6 +550,19 @@ export const userListItemSchema = userViewSchema.extend({
 });
 
 export type UserListItem = z.infer<typeof userListItemSchema>;
+
+/**
+ * `GET /api/v1/access/users`: every user with their last change, and — for those who may add
+ * users — the user limit as used (active users, owners included) of allowed, so a reached limit
+ * is said before they try (`core-foundation` slice 26). A role that may only view users is not
+ * told the license's figures.
+ */
+export const userListSchema = z.object({
+  items: z.array(userListItemSchema),
+  limit: licenseLimitUseSchema.optional(),
+});
+
+export type UserList = z.infer<typeof userListSchema>;
 
 /** A role as the roles list carries it: with its last change. */
 export const roleListItemSchema = roleViewSchema.extend({

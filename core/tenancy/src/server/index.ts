@@ -19,6 +19,7 @@ export {
   createDepartment,
   defaultDepartment,
   type DepartmentChange,
+  departmentLimitUse,
   activeDepartments,
   lockTenant,
   knownDepartments,

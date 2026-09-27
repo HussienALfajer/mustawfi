@@ -2,7 +2,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ACCESS_DEVICE_AUDIT_ACTIONS, SESSION_END_REASONS } from "@mustawfi/core-access/shared";
-import { auditLabelKey, auditVariantLabelKey } from "@mustawfi/core-audit/client";
+import {
+  auditEntityLabelKey,
+  auditFieldLabelKey,
+  auditLabelKey,
+  auditVariantLabelKey,
+} from "@mustawfi/core-audit/client";
 import { TENANCY_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-tenancy/shared";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -76,6 +81,126 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "tenancy.license.suspendedReached", device: true },
   { action: "tenancy.tenant.created" },
 ];
+
+/**
+ * The record types audit entries name, and the fields their before and after snapshots carry,
+ * by writing module: the audit log names each in words (`core-foundation` QA slice 26). Taken
+ * from the writers and from the manual test environment's log; a new field of a writer belongs
+ * here with its label.
+ */
+const ENTITY_TYPES = [
+  "access.device",
+  "access.override",
+  "access.registrationCode",
+  "access.role",
+  "access.session",
+  "access.user",
+  "inventory.product",
+  "organization.department",
+  "organization.storeProfile",
+  "sales.invoice",
+  "tenancy.license",
+  "tenancy.tenant",
+];
+
+const SNAPSHOT_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  access: [
+    "name",
+    "login",
+    "roleId",
+    "departmentScope",
+    "departments",
+    "status",
+    "hasPin",
+    "hasPassword",
+    "twoFactor",
+    "type",
+    "platform",
+    "prefix",
+    "registrationCodeId",
+    "sessionsRevoked",
+    "method",
+    "scope",
+    "secondFactor",
+    "until",
+    "departmentId",
+    "permission",
+    "requestedBy",
+    "failures",
+    "lockedAt",
+    "expiresAt",
+    "issuedBy",
+    "resetCodeId",
+    "staff",
+    "archivedAt",
+    "isOwner",
+    "limits",
+    "permissions",
+    "template",
+    "deviceId",
+    "reason",
+    "userId",
+    "clearedBy",
+    "recoveryCodeId",
+    "recoveryCodes",
+    "remaining",
+  ],
+  organization: [
+    "id",
+    "name",
+    "isDefault",
+    "sortOrder",
+    "archivedAt",
+    "usersInScope",
+    "address",
+    "phones",
+    "unreadablePhones",
+    "taxNumber",
+    "commercialRegister",
+    "logo",
+    "logoPrint",
+    "updatedAt",
+    "docCode",
+    "first",
+    "last",
+    "count",
+    "number",
+  ],
+  tenancy: [
+    "name",
+    "storeCode",
+    "baseCurrency",
+    "defaultBranchId",
+    "defaultDepartmentId",
+    "tenant",
+    "kid",
+    "plan",
+    "issuedAt",
+    "notBefore",
+    "expiresAt",
+    "graceDays",
+    "readOnlyDays",
+    "maxOfflineDays",
+    "limits",
+    "users",
+    "departments",
+    "mainPosDevices",
+    "companionDevices",
+    "entitlements",
+    "state",
+    "businessDate",
+    "licenseIssuedAt",
+    "lastServerContact",
+    "localTime",
+    "highWaterMark",
+    "serverTime",
+  ],
+  inventory: ["name", "barcode", "price"],
+  sales: ["number", "total", "flags"],
+  ledger: ["accounts"],
+};
+
+const arabic = (text: unknown) => typeof text === "string" && /[؀-ۿ]/.test(text);
 
 /** The device events the server accepts, from the modules' own declarations. */
 const DEVICE_AUDIT_ACTIONS = new Set([
@@ -332,6 +457,27 @@ describe("the audit catalogue", () => {
     // An entry without a reason, or with one that is not a code, reads as the action.
     expect(auditVariantLabelKey("access.session.revoked", {})).toBeUndefined();
     expect(auditVariantLabelKey("access.device.revoked", { reason: "سُرق" })).toBeUndefined();
+  });
+
+  it("names every record type and snapshot field in Arabic in its module (QA slice 26)", () => {
+    const types = ENTITY_TYPES.map(auditEntityLabelKey).filter(
+      (label) => !arabic(moduleMessage(label.ns, label.key)),
+    );
+    expect(types).toEqual([]);
+    const fields = Object.entries(SNAPSHOT_FIELDS).flatMap(([ns, names]) =>
+      names
+        .map((field) => auditFieldLabelKey(`${ns}.x.y`, field))
+        .filter((label) => !arabic(moduleMessage(label.ns, label.key))),
+    );
+    expect(fields).toEqual([]);
+    expect(auditFieldLabelKey("organization.profile.changed", "logoPrint", "dither")).toEqual({
+      ns: "organization",
+      key: "auditValue.logoPrint.dither",
+    });
+    expect(auditEntityLabelKey("organization.storeProfile")).toEqual({
+      ns: "organization",
+      key: "auditEntity.storeProfile",
+    });
   });
 
   it("maps an action to its module's namespace and key", () => {

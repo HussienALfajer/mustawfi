@@ -255,6 +255,17 @@ describe("module registry", () => {
           }),
         ).toThrow(TypeError);
       }
+      // A grant that is no value of its limit's kind (QA slice 26).
+      expect(() =>
+        module("inventory", [], {
+          limits: [{ id: "inventory.max", kind: "count", grants: { accountant: "2.5" } }],
+        }),
+      ).toThrow(new TypeError('limit inventory.max grants accountant "2.5", not a count'));
+      expect(() =>
+        module("inventory", [], {
+          limits: [{ id: "inventory.max", kind: "percent", grants: { accountant: "120" } }],
+        }),
+      ).toThrow(TypeError);
     });
   });
 });

@@ -97,7 +97,10 @@ export function enterMovesToNextField(event: ReactKeyboardEvent<HTMLFormElement>
 /**
  * A short form's `onKeyDown` when it has several fields (a sign-in step, a reset code with a
  * new password): `Enter` moves to the next field and submits from the last one, even when the
- * form's button sits outside it. A one-field form needs nothing: the browser's `Enter` submits.
+ * form's button sits outside it. Optional fields at the end (inside `[data-enter-optional]`,
+ * such as the recovery's new PIN) are left out while empty: `Enter` in the last field before
+ * them submits, and a Tab reaches them (`core-foundation` QA slice 26). A one-field form needs
+ * nothing: the browser's `Enter` submits.
  */
 export function enterMovesThenSubmits(event: ReactKeyboardEvent<HTMLFormElement>): void {
   if (!isPlainEnter(event)) return;
@@ -105,10 +108,15 @@ export function enterMovesThenSubmits(event: ReactKeyboardEvent<HTMLFormElement>
   if (!(target instanceof HTMLInputElement) || !isTypingTarget(target)) return;
   const form = event.currentTarget;
   const fields = typingFields(form);
-  const next = fields[fields.indexOf(target) + 1];
+  const later = fields.slice(fields.indexOf(target) + 1);
+  const pending = later.some(
+    (field) =>
+      field.closest("[data-enter-optional]") === null ||
+      (field instanceof HTMLInputElement && field.value !== ""),
+  );
   event.preventDefault();
-  if (next === undefined) form.requestSubmit();
-  else next.focus();
+  if (!pending) form.requestSubmit();
+  else later[0]?.focus();
 }
 
 /**

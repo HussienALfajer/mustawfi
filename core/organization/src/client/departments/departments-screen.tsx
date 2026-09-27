@@ -10,14 +10,14 @@ import {
 } from "@mustawfi/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import type { DepartmentView } from "../../shared/index.ts";
 import { ORGANIZATION_NAMESPACE } from "../messages.ts";
 import { DepartmentPanel } from "./department-form.tsx";
 import { DepartmentsTable } from "./departments-table.tsx";
-import { departmentsQueryOptions } from "./queries.ts";
+import { departmentListQueryOptions, departmentsQueryOptions } from "./queries.ts";
 
 /** What the departments list shows, kept in the URL so a filtered list can be reopened. */
 export const departmentFiltersSchema = z.object({
@@ -59,6 +59,9 @@ export interface DepartmentsScreenProps {
 export function DepartmentsScreen({ filters, onFiltersChange, auditLink }: DepartmentsScreenProps) {
   const { t } = useTranslation(ORGANIZATION_NAMESPACE);
   const departments = useQuery(departmentsQueryOptions());
+  // The same answer as the list: the department limit as used of allowed (rule 4).
+  const limit = useQuery(departmentListQueryOptions()).data?.limit;
+  const limitId = useId();
   const tableRef = useRef<HTMLTableElement>(null);
   // A department added in the open panel keeps that panel (and its notice) once it has an id.
   const [added, setAdded] = useState<string | undefined>();
@@ -112,10 +115,16 @@ export function DepartmentsScreen({ filters, onFiltersChange, auditLink }: Depar
               {t("departments.count", { count: visible.length })}
             </span>
           )}
-          <div className="ms-auto" data-density="comfortable">
+          <div className="ms-auto flex items-center gap-3" data-density="comfortable">
+            {limit === undefined ? null : (
+              <span id={limitId} className="text-sm whitespace-nowrap text-text-secondary">
+                {t("departments.limitUse", limit)}
+              </span>
+            )}
             <Button
               ref={newButtonRef}
               aria-keyshortcuts="N"
+              {...(limit === undefined ? {} : { "aria-describedby": limitId })}
               onPress={() => {
                 select("new");
               }}
@@ -166,6 +175,7 @@ export function DepartmentsScreen({ filters, onFiltersChange, auditLink }: Depar
           department={selected}
           departments={departments.data ?? []}
           auditLink={auditLink}
+          limitReached={limit !== undefined && limit.used >= limit.allowed}
           onClose={closePanel}
           onRestored={(restored) => {
             setAdded(undefined);
