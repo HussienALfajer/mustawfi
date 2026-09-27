@@ -334,30 +334,29 @@ async function lockedUser(
   return { user, role };
 }
 
-/** A user who is an owner is managed by owners only (rule 14). */
-function checkManages(manager: Manager, target: { readonly role: RoleRow }): void {
-  if (target.role.isOwner && !manager.isOwner) throw ownersOnly();
-}
-
 /**
- * A non-owner sets the PIN, password, or login of a user whose role holds nothing beyond their
- * own: with it they could sign in as that user and act with more than they hold (QA slice 24,
- * user decision, as for the roles they grant). 403 `access.user.broaderRole` names what is out
- * of reach.
+ * Who manages whom (rule 14 and the permissions table): an owner is managed by owners only
+ * (403 `access.user.ownersOnly`), and a non-owner manages only a user whose role holds nothing
+ * beyond their own — no edit, role change, deactivation, reactivation, PIN, password, or login of
+ * a user above them (403 `access.user.broaderRole`, naming what is out of reach). Setting a PIN
+ * or a password of such a user would let them sign in with more than they hold (QA slice 24);
+ * deactivating or demoting them would let them act on someone above them (user decision after
+ * QA slice 26). Their own account passes: their role is within itself.
  */
-async function checkSignsInAsNoMore(
+async function checkManages(
   tx: TenantTransaction,
   manager: Manager,
   target: { readonly role: RoleRow },
   catalogue: PermissionCatalogue,
 ): Promise<void> {
+  if (target.role.isOwner && !manager.isOwner) throw ownersOnly();
   if (manager.isOwner) return;
   try {
     checkGrantable(manager, await holdingsOf(tx, target.role, catalogue));
   } catch (error) {
     if (!(error instanceof ProblemError)) throw error;
     throw new ProblemError(accessProblemCodes.broaderRole, 403, {
-      title: "The user's role holds more than yours: an owner sets their PIN, password, or login",
+      title: "The user's role holds more than yours: an owner manages them",
       ...(error.detail === undefined ? {} : { detail: error.detail }),
     });
   }
@@ -522,8 +521,8 @@ export interface ChangeUser {
  * (rule 14); taking it from the last active owner is refused (409 `access.user.lastOwner`).
  * Moving a user to the owner role gives them every department. A non-owner gives only a role
  * within what they hold (403 `access.role.beyondOwnGrant`) and does not change their own role
- * or scope (403 `access.user.ownAccessChange`), nor another's login when that user's role holds
- * more than theirs (403 `access.user.broaderRole`).
+ * or scope (403 `access.user.ownAccessChange`), nor anything of a user whose role holds more
+ * than theirs (403 `access.user.broaderRole`).
  */
 export async function changeUser(
   tx: TenantTransaction,
@@ -535,7 +534,7 @@ export async function changeUser(
 ): Promise<UserView> {
   await lockTenant(tx);
   const target = await lockedUser(tx, id);
-  checkManages(manager, target);
+  await checkManages(tx, manager, target, catalogue);
   const before = await viewOf(tx, id);
 
   let role = target.role;
@@ -571,11 +570,9 @@ export async function changeUser(
   }
 
   const login = change.login === undefined ? target.user.login : change.login;
+  // A new login goes with a role within the manager's: the user's (checked above) or the one
+  // given here (`checkGrantable`).
   if (login === null && target.user.passwordHash !== null) throw loginRequired();
-  if (login !== target.user.login && id !== manager.userId) {
-    // The role the user has after this change: the one they would sign in with.
-    await checkSignsInAsNoMore(tx, manager, { role }, catalogue);
-  }
   const name = change.name ?? target.user.name;
   try {
     await tx
@@ -641,11 +638,12 @@ export async function deactivateUser(
   manager: Manager,
   id: string,
   reason: string,
+  catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
   await lockTenant(tx);
   const target = await lockedUser(tx, id);
-  checkManages(manager, target);
+  await checkManages(tx, manager, target, catalogue);
   if (target.user.status !== "active") {
     throw new ProblemError(accessProblemCodes.userDeactivated, 409, {
       title: "The user is already deactivated",
@@ -678,11 +676,12 @@ export async function reactivateUser(
   tx: TenantTransaction,
   manager: Manager,
   id: string,
+  catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
   await lockTenant(tx);
   const target = await lockedUser(tx, id);
-  checkManages(manager, target);
+  await checkManages(tx, manager, target, catalogue);
   if (target.user.status === "active") {
     throw new ProblemError(accessProblemCodes.userActive, 409, {
       title: "The user is already active",
@@ -756,8 +755,7 @@ export async function setUserPin(
   if (id === manager.userId) throw useOwnAccount();
   const pinVerifier = await hashPin(pin);
   const target = await lockedUser(tx, id);
-  checkManages(manager, target);
-  await checkSignsInAsNoMore(tx, manager, target, catalogue);
+  await checkManages(tx, manager, target, catalogue);
   await tx.update(users).set({ pinVerifier, pinChangedAt: manager.at }).where(eq(users.id, id));
   await auditAs(tx, manager, dependencies, {
     action: "access.user.pinSet",
@@ -785,8 +783,7 @@ export async function setUserPassword(
   if (id === manager.userId) throw useOwnAccount();
   const passwordHash = await hashPassword(password);
   const target = await lockedUser(tx, id);
-  checkManages(manager, target);
-  await checkSignsInAsNoMore(tx, manager, target, catalogue);
+  await checkManages(tx, manager, target, catalogue);
   if (target.user.login === null) throw loginRequired();
   await tx.update(users).set({ passwordHash }).where(eq(users.id, id));
   await auditAs(tx, manager, dependencies, {

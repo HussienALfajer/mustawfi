@@ -214,19 +214,23 @@ export function UserPanel({
   const isNew = user === null;
   const deactivated = user?.status === "deactivated";
   const isSelf = user?.id === viewer.id;
-  // Owners are managed by owners only (rule 14); a deactivated user is reactivated first.
-  const editable =
-    viewer.canManage && !deactivated && (user?.role.isOwner !== true || viewer.isOwner);
-  const accessEditable = editable && (!isSelf || viewer.isOwner);
-  // Who may reactivate this deactivated user: a manager, and an owner for an owner (rule 14).
-  const reactivatable =
-    deactivated && viewer.canManage && (user?.role.isOwner !== true || viewer.isOwner);
-  const role = roles.find((candidate) => candidate.id === draft.roleId);
-  const ownerRole = role?.isOwner === true;
-  // What a role holds beyond the viewer's own: they may not give it (slice 6), nor set the
-  // PIN, password, or login of a user who holds it (QA slice 24) — the server refuses both.
+  // What a role holds beyond the viewer's own: they may not give it (slice 6), nor manage a
+  // user who holds it (QA slices 24 and 26) — the server refuses both.
   const beyondViewer = (candidate: RoleView | undefined) =>
     candidate !== undefined && !candidate.isOwner && beyondGrant(viewer, candidate).length > 0;
+  // Another user whose role holds more than the viewer's: an owner manages them.
+  const broaderNow =
+    user !== null && !isSelf && beyondViewer(roles.find((r) => r.id === user.role.id));
+  // Owners are managed by owners only (rule 14); a user whose role holds more than the viewer's
+  // by an owner too (user decision after QA slice 26).
+  const manages =
+    viewer.canManage && (user?.role.isOwner !== true || viewer.isOwner) && !broaderNow;
+  // A deactivated user is reactivated first.
+  const editable = manages && !deactivated;
+  const accessEditable = editable && (!isSelf || viewer.isOwner);
+  const reactivatable = deactivated && manages;
+  const role = roles.find((candidate) => candidate.id === draft.roleId);
+  const ownerRole = role?.isOwner === true;
   const roleOptions = roles
     .filter(
       (candidate) =>
@@ -237,10 +241,6 @@ export function UserPanel({
     )
     .map((candidate) => ({ id: candidate.id, label: candidate.name }));
   const activeDepartments = departments.filter((department) => department.archivedAt === null);
-  // Another user whose role (after this change, for the login) holds more than the viewer's.
-  const broaderNow =
-    user !== null && !isSelf && beyondViewer(roles.find((r) => r.id === user.role.id));
-  const loginEditable = editable && (user === null || isSelf || !beyondViewer(role));
 
   const roleIsOwner = (roleId: string | null) =>
     roles.find((candidate) => candidate.id === roleId)?.isOwner === true;
@@ -360,7 +360,7 @@ export function UserPanel({
       closeLabel={t("users.panel.close")}
       onClose={onClose}
       footer={
-        !viewer.canManage || (user?.role.isOwner === true && !viewer.isOwner) ? undefined : (
+        !manages ? undefined : (
           <>
             {deactivated ? null : (
               <Button aria-keyshortcuts="Control+S" isPending={save.isPending} onPress={submit}>
@@ -443,7 +443,7 @@ export function UserPanel({
             onChange={(login) => {
               change({ login });
             }}
-            isReadOnly={!loginEditable}
+            isReadOnly={!editable}
             dir="ltr"
             autoComplete="off"
           />
@@ -503,7 +503,7 @@ export function UserPanel({
         {user?.role.isOwner === true ? <Note>{t("users.panel.ownerNote")}</Note> : null}
         {deactivated ? <Note>{t("users.panel.deactivatedNote")}</Note> : null}
         {!viewer.canManage ? <Note>{t("users.panel.readOnlyNote")}</Note> : null}
-        {editable && broaderNow ? <Note>{t("users.panel.broaderNote")}</Note> : null}
+        {viewer.canManage && broaderNow ? <Note>{t("users.panel.broaderNote")}</Note> : null}
         {failure === undefined && limitReached && (isNew || (deactivated && reactivatable)) ? (
           // Said before anything is tried; the server still refuses (rule 4).
           <div className="flex flex-col gap-2">
@@ -521,7 +521,12 @@ export function UserPanel({
           </div>
         )}
       </form>
-      {user !== null && editable && !isSelf ? (
+      {/* A broader user's 2FA state still shows; only what an owner sets is left out. */}
+      {user !== null &&
+      !isSelf &&
+      !deactivated &&
+      viewer.canManage &&
+      (user.role.isOwner !== true || viewer.isOwner) ? (
         <SecretsSection
           user={user}
           viewerIsOwner={viewer.isOwner}

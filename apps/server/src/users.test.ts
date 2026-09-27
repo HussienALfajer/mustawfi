@@ -408,6 +408,7 @@ describe("owners (rule 14)", () => {
           },
           target,
           "race",
+          serverPermissions(),
           dependencies,
         ),
       );
@@ -429,7 +430,6 @@ describe("owners (rule 14)", () => {
   it("lets only owners grant the owner role or manage an owner", async () => {
     const store = await newStore();
     const ownerRole = await roleNamed(store, "المالك");
-    const accountant = await roleNamed(store, "المحاسب");
     await createStaffUser(
       tenants,
       store.tenant,
@@ -444,7 +444,14 @@ describe("owners (rule 14)", () => {
       403,
       accessProblemCodes.ownersOnly,
     );
-    const clerk = await addUser(store, { roleId: accountant.id });
+    // A clerk whose role is within the manager's: theirs to manage (QA slice 26).
+    const clerkRole = (
+      await call(store.owner, "POST", "/roles", {
+        name: "كاتب",
+        permissions: ["access.users.view"],
+      })
+    ).json<RoleView>();
+    const clerk = await addUser(store, { roleId: clerkRole.id });
     expectProblem(
       await call(manager, "PATCH", `/users/${clerk.id}`, { roleId: ownerRole.id }),
       403,
@@ -1258,7 +1265,7 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
     );
   });
 
-  it("sets the PIN, password, or login only of users whose role is within the manager's (QA slice 24)", async () => {
+  it("manages only users whose role is within the manager's: PIN, password, login (QA slice 24), and every other change (QA slice 26)", async () => {
     const { store, deputy } = await withManager();
     // The accountant's role holds `audit.view` and more, which the deputy lacks: with a PIN or a
     // password of their choosing the deputy could sign in as the accountant.
@@ -1309,9 +1316,31 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
       (await call(deputy, "PUT", `/users/${worker.id}/password`, { password: "a long password" }))
         .statusCode,
     ).toBe(200);
+    // Nor anything else of a broader user: an edit, a narrower role, a deactivation, a
+    // reactivation (user decision after QA slice 26).
+    for (const refused of [
+      call(deputy, "PATCH", `/users/${broader.id}`, { name: "المحاسبة سلمى" }),
+      call(deputy, "PATCH", `/users/${broader.id}`, { roleId: small.id }),
+      call(deputy, "POST", `/users/${broader.id}/deactivate`, { reason: "من هو أدنى" }),
+    ]) {
+      expectProblem(await refused, 403, accessProblemCodes.broaderRole);
+    }
     expect(
-      (await call(deputy, "PATCH", `/users/${broader.id}`, { name: "المحاسبة سلمى" })).statusCode,
+      (await call(store.owner, "POST", `/users/${pinless.id}/deactivate`, { reason: "غادر" }))
+        .statusCode,
     ).toBe(200);
+    expectProblem(
+      await call(deputy, "POST", `/users/${pinless.id}/reactivate`),
+      403,
+      accessProblemCodes.broaderRole,
+    );
+    expect((await storedUser(broader.id)).status).toBe("active");
+    // A user within the deputy's role they deactivate and reactivate.
+    expect(
+      (await call(deputy, "POST", `/users/${worker.id}/deactivate`, { reason: "إجازة" }))
+        .statusCode,
+    ).toBe(200);
+    expect((await call(deputy, "POST", `/users/${worker.id}/reactivate`)).statusCode).toBe(200);
     // An owner sets anyone's.
     expect(
       (await call(store.owner, "PUT", `/users/${broader.id}/pin`, { pin: "2580" })).statusCode,

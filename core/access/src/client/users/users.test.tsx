@@ -499,17 +499,27 @@ describe("UsersScreen", () => {
     expect(room).not.toHaveTextContent(/حد المستخدمين/);
   });
 
-  it("gives a non-owner manager no way to set what the server would refuse them (QA slice 26)", async () => {
+  it("gives a non-owner manager no way to change a user whose role holds more (QA slice 26)", async () => {
     // The manager's role holds no `sales.invoice.create`, which the cashier's role holds.
-    fakeApi([SAMER, RANA, OMAR]);
+    fakeApi([SAMER, { ...RANA, twoFactorEnabled: true }, OMAR]);
     renderScreen({ initial: { selected: RANA.id }, isOwner: false });
     const broader = await screen.findByRole("complementary", { name: "رنا" });
-    expect(broader).toHaveTextContent(/دور هذا المستخدم فيه صلاحيات ليست لديك/);
+    expect(broader).toHaveTextContent(/دور هذا المستخدم فيه صلاحيات ليست لديك، فيديره المالك/);
     expect(within(broader).queryByLabelText(/رمز سري جديد/)).toBeNull();
     expect(within(broader).queryByLabelText(/كلمة مرور جديدة/)).toBeNull();
-    expect(within(broader).getByLabelText(/اسم الدخول/)).toHaveAttribute("readonly");
-    // Their name and deactivation stay theirs to manage.
-    expect(within(broader).getByLabelText(/^الاسم/)).not.toHaveAttribute("readonly");
+    for (const field of [/اسم الدخول/, /^الاسم/]) {
+      expect(within(broader).getByLabelText(field)).toHaveAttribute("readonly");
+    }
+    // No save, deactivation, or other action: an owner manages them. Their 2FA state still shows.
+    expect(within(broader).queryByRole("button", { name: /حفظ|إيقاف المستخدم/ })).toBeNull();
+    expect(within(broader).getByText("التحقق بخطوتين مفعّل")).toBeVisible();
+    cleanup();
+
+    // Nor reactivate one.
+    fakeApi([SAMER, { ...RANA, status: "deactivated" }, OMAR]);
+    renderScreen({ initial: { status: "all", selected: RANA.id }, isOwner: false });
+    const off = await screen.findByRole("complementary", { name: "رنا" });
+    expect(within(off).queryByRole("button", { name: "إعادة التفعيل" })).toBeNull();
     cleanup();
 
     fakeApi([SAMER, RANA, OMAR]);
