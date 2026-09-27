@@ -8,7 +8,7 @@ paths:
 
 # Sync and offline rules
 
-Sources: ADR-0005 (offline first), ADR-0019 (local database), ADR-0020 (sync protocol and posting), ADR-0026 (sync simulation harness), ADR-0030 (revoked devices), non-negotiables 4, 7, 8.
+Sources: ADR-0005 (offline first), ADR-0018 (money ranges on devices), ADR-0019 (local database), ADR-0020 (sync protocol and posting), ADR-0026 (sync simulation harness), ADR-0030 (revoked devices), non-negotiables 4, 7, 8.
 
 - A sale never waits for the network. The document, its number increment, and its outbox entry commit in **one local transaction**.
 - Local durability: WAL with `synchronous = FULL`. Local amounts are scaled `INTEGER`s converted only in the local-db repository layer through kernel helpers.
@@ -16,6 +16,8 @@ Sources: ADR-0005 (offline first), ADR-0019 (local database), ADR-0020 (sync pro
 - Push is idempotent: `core_sync.received_ops` keyed by `opId`; a repeat returns the stored result (`duplicate`). Each operation is processed in its own transaction, in `deviceSeq` order; a gap stops processing and asks the device to resend.
 - The server never refuses a completed sale for a business rule (negative stock, credit limit, price below cost, arithmetic mismatch): accept it as recorded and flag it. Reject only what cannot be recorded (unknown device, malformed payload, unsupported version); a revoked device's pushes are accepted and flagged `deviceRevoked` (ADR-0030), and a rejected operation stays visible on the device — nothing is dropped silently.
 - Pull: `core_sync.changes` numbered by a per-tenant counter updated inside the writing transaction, so commit order equals sequence order. Pages carry full rows, tombstones for archived records; the device applies a page and saves the cursor in one local transaction.
+- The change log and stored bundles keep each row in the shape it was written in, and a new device pulls from the start: a field added to a pulled entity or a bundle part is optional or has a default, with a test on the earlier shape (QA slice 23).
+- A value that reaches a device fits its 64-bit scaled integer (ADR-0018 amendment): at most 12 digits before the point at ×10⁶, 14 at ×10⁴, bounded in the request schema and a database `CHECK`.
 - Document numbers are `{prefix}-{docCode}-{seq:6}`; the prefix is unique per tenant and never reused.
 - Operations carry device time; the server records its receipt time. Keep payload handlers for older `payloadVersion`s while devices still emit them.
 - Changes here need cases in the sync simulation harness: drops, duplicates, reordering, convergence with no lost or duplicate documents and a balanced ledger.

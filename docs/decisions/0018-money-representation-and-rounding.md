@@ -51,3 +51,10 @@ A currency's minor units live in `core.currency` data, not in code.
 - **Four decimals in the ledger** — statements shown at two decimals would not add up in front of the accountant.
 - **Banker's rounding (half-even)** — less statistical bias, but looks wrong to merchants (2.5 → 2) and generates support calls.
 - **Absorbing cash rounding into discounts** — mixes automatic rounding with manual discounts in reports and permission limits.
+
+## Amendments
+
+- 2026-09-27 (`core-foundation` QA slice 23, accepted by the user on 2026-09-27, who delegated the decision): **ranges that reach a device.** SQLite keeps each value as a signed 64-bit integer at the scale of the table above, which holds less than the PostgreSQL column: below about 9.2 × 10¹² at ×10⁶ (prices, costs, rates), below about 9.2 × 10¹⁴ at ×10⁴ (amounts, quantities, percentages). One value beyond that in a pulled row fails its page on every device, and every pull after it (found in QA: an ISBN scanned into a product's price).
+  - Every value that flows to devices (pulled rows, bundle parts) or is created on one is bounded where it is accepted — the request schema and a database `CHECK` — to whole digits before the point: **at most 12 at ×10⁶** (below 10¹²) and **at most 14 at ×10⁴** (below 10¹⁴). The PostgreSQL types stay as above; values only the server holds (ledger totals, reports) keep the column's range.
+  - Local sums stay exact: a sum that would leave the 64-bit range is an error on the device, never a wrapped value, and is a defect to fix at its source.
+  - First case: product prices (`PRICE_INTEGER_DIGITS` in `inventory/shared`, check `products_price_fits_devices`).
