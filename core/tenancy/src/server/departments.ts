@@ -201,7 +201,8 @@ export interface DepartmentChange {
 
 /**
  * Renames an active department, the default included, to a name no other department of the
- * tenant has, archived ones included. The caller audits and publishes.
+ * tenant has, archived ones included. The caller audits and publishes; the same name again
+ * changes nothing (`after` is `before`).
  */
 export async function renameDepartment(
   tx: TenantTransaction,
@@ -209,6 +210,7 @@ export async function renameDepartment(
 ): Promise<DepartmentChange> {
   const name = departmentNameSchema.parse(change.name);
   const before = await existing(tx, change.id);
+  if (before.name === name) return { before: toView(before), after: toView(before) };
   await checkNameFree(tx, name, change.id);
   try {
     const [row] = await tx

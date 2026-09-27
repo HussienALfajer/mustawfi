@@ -592,8 +592,9 @@ export async function changeUser(
 
 /**
  * Deactivates a user (flow 8) with the reason typed, audited `access.user.deactivated`; their
- * sessions end with it. Refused for the last active owner (409 `access.user.lastOwner`) and for
- * a user already deactivated (409 `access.user.deactivated`).
+ * sessions end with it. Refused for the last active owner (409 `access.user.lastOwner`), for
+ * one's own account (409 `access.user.selfDeactivation`: another manager does it), and for a
+ * user already deactivated (409 `access.user.deactivated`).
  */
 export async function deactivateUser(
   tx: TenantTransaction,
@@ -611,6 +612,11 @@ export async function deactivateUser(
     });
   }
   if (target.role.isOwner) await checkAnotherOwner(tx, id);
+  if (id === manager.userId) {
+    throw new ProblemError(accessProblemCodes.selfDeactivation, 409, {
+      title: "A user cannot deactivate their own account",
+    });
+  }
   await setStatus(tx, id, "deactivated");
   await auditAs(tx, manager, dependencies, {
     action: "access.user.deactivated",

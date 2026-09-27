@@ -15,6 +15,7 @@ import { DatePicker, DateRangePicker, type DateRangeValue, presetRange } from ".
 import { LocaleProvider } from "./locale-provider.tsx";
 import { UI_NAMESPACE, uiMessages } from "./messages.ts";
 import { PasswordField } from "./password-field.tsx";
+import { TextInput } from "./text-input.tsx";
 import { TOAST_DURATION_MS, ToastProvider, useToast } from "./toast.tsx";
 
 const i18n = createI18n({ [UI_NAMESPACE]: uiMessages });
@@ -177,6 +178,64 @@ describe("PasswordField", () => {
     wrap(<PasswordField label="كلمة المرور" errorMessage="هذا الحقل مطلوب" value="" />);
     expect(screen.getByLabelText("كلمة المرور")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByText("هذا الحقل مطلوب")).toBeInTheDocument();
+  });
+});
+
+describe("digits typed on an Arabic keyboard", () => {
+  function Typed(props: {
+    readonly field: "password" | "text";
+    readonly inputMode?: "numeric" | "decimal";
+    readonly autoComplete?: string;
+  }) {
+    const [value, setValue] = useState("");
+    const common = {
+      label: "الحقل",
+      value,
+      onChange: setValue,
+      ...(props.autoComplete === undefined ? {} : { autoComplete: props.autoComplete }),
+    };
+    const mode = props.inputMode;
+    return (
+      <>
+        {props.field === "password" ? (
+          <PasswordField {...common} {...(mode === "numeric" ? { inputMode: mode } : {})} />
+        ) : (
+          <TextInput {...common} {...(mode === undefined ? {} : { inputMode: mode })} />
+        )}
+        <output data-testid="value">{value}</output>
+      </>
+    );
+  }
+
+  it("become Western in a PIN, which is only digits", async () => {
+    wrap(<Typed field="password" inputMode="numeric" />);
+    await userEvent.type(screen.getByLabelText("الحقل"), "٢٥۸٠");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^2580$/);
+  });
+
+  it("become Western in a one-time code and in a digits-only text field", async () => {
+    wrap(<Typed field="text" autoComplete="one-time-code" />);
+    await userEvent.type(screen.getByLabelText("الحقل"), "٤٨٢٧١٥");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^482715$/);
+    cleanup();
+    wrap(<Typed field="text" inputMode="numeric" />);
+    await userEvent.type(screen.getByLabelText("الحقل"), "٩٠");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^90$/);
+    cleanup();
+    // A role's limit value.
+    wrap(<Typed field="text" inputMode="decimal" />);
+    await userEvent.type(screen.getByLabelText("الحقل"), "٥٠٠.٥");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^500.5$/);
+  });
+
+  it("stay as typed in a password or a name, where they may be meant", async () => {
+    wrap(<Typed field="password" />);
+    await userEvent.type(screen.getByLabelText("الحقل"), "سر٢٥");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^سر٢٥$/);
+    cleanup();
+    wrap(<Typed field="text" />);
+    await userEvent.type(screen.getByLabelText("الحقل"), "فرع ٢");
+    expect(screen.getByTestId("value")).toHaveTextContent(/^فرع ٢$/);
   });
 });
 

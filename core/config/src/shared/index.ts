@@ -1,6 +1,6 @@
 export { documentCodeSchema } from "./document-code.ts";
 export { DEVICE_CREDENTIAL_HEADER } from "./http.ts";
-export { collapseSpaces, nameKey, recordNameSchema } from "./names.ts";
+export { collapseSpaces, isVisibleName, nameKey, recordNameSchema } from "./names.ts";
 export {
   type DeclaredLimit,
   type DeclaredPermission,

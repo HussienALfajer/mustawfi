@@ -9,7 +9,7 @@ import {
 } from "react-aria-components";
 import { useTranslation } from "react-i18next";
 import { cx, FOCUS_RING_INSET } from "./cx.ts";
-import { FieldHelp, FieldLabel } from "./field.tsx";
+import { FieldHelp, FieldLabel, westernDigitsOnChange } from "./field.tsx";
 import { ICON_BUTTON } from "./interaction.ts";
 import { UI_NAMESPACE } from "./messages.ts";
 
@@ -21,7 +21,10 @@ export interface PasswordFieldProps extends Omit<
   readonly description?: string | undefined;
   /** Shown, and the field marked invalid, whenever it is set. */
   readonly errorMessage?: string | undefined;
-  /** `numeric` for a PIN: the phone and tablet keyboards show digits. */
+  /**
+   * `numeric` for a PIN: the phone and tablet keyboards show digits, and Arabic-Indic digits
+   * typed on an Arabic keyboard become Western ones (as in a one-time code).
+   */
   readonly inputMode?: "text" | "numeric";
   readonly maxLength?: number;
   readonly inputRef?: Ref<HTMLInputElement>;
@@ -50,9 +53,12 @@ export function PasswordField({
   // typed there is not shown by a toggle left on.
   if (revealed && props.value === "") setRevealed(false);
   const invalid = errorMessage !== undefined || props.isInvalid === true;
+  const onChange = westernDigitsOnChange(props.onChange, inputMode, props.autoComplete);
+  const onChangeProp = onChange === undefined ? {} : { onChange };
   return (
     <TextField
       {...props}
+      {...onChangeProp}
       type={revealed ? "text" : "password"}
       validationBehavior="aria"
       isInvalid={invalid}

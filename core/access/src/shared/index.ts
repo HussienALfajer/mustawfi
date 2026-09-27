@@ -1,6 +1,7 @@
 import {
   type DeclaredLimit,
   type DeclaredPermission,
+  isVisibleName,
   limitIdSchema,
   limitValueSchema,
   type PermissionCatalogue,
@@ -52,7 +53,12 @@ export const loginSchema = z
 /** Length only: no composition rules, and a ceiling so hashing stays bounded. */
 export const passwordSchema = z.string().min(10).max(256);
 
-export const userNameSchema = z.string().trim().min(1).max(200);
+export const userNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine(isVisibleName, "a name needs a visible character");
 
 /**
  * A role's name: stored with its spaces collapsed, and unique among all of the tenant's roles,
@@ -639,6 +645,8 @@ export const accessProblemCodes = {
   ownAccessChange: "access.user.ownAccessChange",
   /** One's own PIN or password is changed from one's account, proved by the current one. */
   useOwnAccount: "access.user.useOwnAccount",
+  /** No one deactivates their own account; another manager does (QA slice 22). */
+  selfDeactivation: "access.user.selfDeactivation",
 } as const;
 
 /** A permission catalogue as the API and the bundle carry it: ids, modules, scope, kinds. */
