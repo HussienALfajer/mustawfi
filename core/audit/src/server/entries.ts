@@ -77,11 +77,37 @@ export async function listAuditEntries(
     .limit(limit + 1);
   const page = rows.slice(0, limit);
 
+  const named = await namer(tx, directory);
+  return {
+    items: page.map(named),
+    next: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
+  };
+}
+
+/**
+ * One entry of the tenant's log, named like a page's, or `undefined` when the tenant has no such
+ * entry: the log's side panel opens an entry the loaded pages do not hold (a reload or a link
+ * after «تحميل المزيد», QA slice 25).
+ */
+export async function auditEntry(
+  tx: TenantTransaction,
+  id: string,
+  directory: AuditDirectory,
+): Promise<AuditEntryView | undefined> {
+  const [row] = await tx.select().from(entries).where(eq(entries.id, id));
+  return row === undefined ? undefined : (await namer(tx, directory))(row);
+}
+
+/** Turns rows into entries with their users and devices named, as the reader's directory has them. */
+async function namer(
+  tx: TenantTransaction,
+  directory: AuditDirectory,
+): Promise<(row: typeof entries.$inferSelect) => AuditEntryView> {
   const users = await directory.users(tx);
   const devices = await directory.devices(tx);
   const userById = new Map(users.map((user) => [user.id, user]));
   const deviceById = new Map(devices.map((device) => [device.id, device]));
-  const items = page.map((row): AuditEntryView => ({
+  return (row) => ({
     id: row.id,
     occurredAt: row.createdAt.toISOString(),
     recordedAt: row.recordedAt.toISOString(),
@@ -102,8 +128,7 @@ export async function listAuditEntries(
     before: asValues(row.before),
     after: asValues(row.after),
     reason: row.reason,
-  }));
-  return { items, next: rows.length > limit ? (page.at(-1)?.id ?? null) : null };
+  });
 }
 
 function asValues(value: unknown): Record<string, unknown> | null {

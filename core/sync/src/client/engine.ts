@@ -295,8 +295,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     holdDeviceCredential(undefined);
     // Only the report below still needs it, and it has it.
     await forgetDeviceCredential().catch(() => undefined);
-    // The Windows app's token goes; a browser's cookie is the server's to end: a session bound to
-    // this device was revoked with it, and the owner's own one stays for registering again.
+    // The Windows app's token goes; a browser's cookie is the server's to end: every session
+    // bound to this device, the one that registered it included, was revoked with it.
     if (sessionTransport() === "bearer") forgetSession();
     // The rows are gone; these make the files forget them too. Best effort: the wipe stands.
     await compactLocalDb(db).catch(() => undefined);

@@ -69,6 +69,7 @@ import {
   crossOriginRefused,
   deviceCredentialOf,
   isSameOrigin,
+  presentedSessionToken,
   revokeSession,
   type Session,
   SESSION_LIFETIME_MS,
@@ -358,8 +359,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       const { storeCode, registrationCode, type, platform, name } = request.body;
       const tenantId = await context.tenants.resolveStoreCode(storeCode);
       if (tenantId === undefined) throw registrationFailed();
+      // The session that registers the device is bound to it (rule 22).
+      const sessionToken = presentedSessionToken(request);
       const registered = await context.tenants.withTenant({ tenantId }, (tx) =>
-        registerDevice(tx, { tenantId, registrationCode, type, platform, name }, context),
+        registerDevice(
+          tx,
+          { tenantId, registrationCode, type, platform, name, sessionToken },
+          context,
+        ),
       );
       return reply.status(201).send(registered);
     },

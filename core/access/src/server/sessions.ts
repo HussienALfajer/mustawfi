@@ -262,6 +262,49 @@ export function bearerToken(authorization: string | undefined): string | undefin
 }
 
 /**
+ * The session token a request carries, for a route that does not need one: its bearer or,
+ * failing that, its session cookie — only from our own pages for a change (the CSRF check of
+ * `requireSession`); a cross-origin cookie is ignored rather than refused.
+ */
+export function presentedSessionToken(request: SessionRequest): string | undefined {
+  const bearer = bearerToken(request.headers.authorization);
+  if (bearer !== undefined) return bearer;
+  const cookie = cookieToken(request.headers.cookie);
+  return cookie !== undefined && (SAFE_METHODS.has(request.method) || isSameOrigin(request))
+    ? cookie
+    : undefined;
+}
+
+/**
+ * Binds the session of `token` to a device just registered, in `tx`, a `withTenant`
+ * transaction for the device's tenant, when it is a live, unbound session of that tenant; any
+ * other token binds nothing. A bound session then goes only with the device's credential and
+ * ends with its revoke (rule 22), and is never bound again (`sessions_keep_device`).
+ */
+export async function bindSessionToDevice(
+  tx: TenantTransaction,
+  token: string,
+  device: { readonly tenantId: string; readonly deviceId: string },
+  now: Date,
+): Promise<boolean> {
+  const bearer = readBearer("session", token);
+  if (bearer === undefined || bearer.tenantId !== device.tenantId) return false;
+  const bound = await tx
+    .update(sessions)
+    .set({ deviceId: device.deviceId })
+    .where(
+      and(
+        eq(sessions.tokenHash, bearer.hash),
+        isNull(sessions.deviceId),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, now),
+      ),
+    )
+    .returning({ id: sessions.id });
+  return bound.length > 0;
+}
+
+/**
  * The session of a request's `Authorization: Bearer` header or, failing that, its session
  * cookie; otherwise a 401 `access.session.required` — the same refusal whatever was wrong with
  * it, a session opened on a device without that device's credential in `Mustawfi-Device`

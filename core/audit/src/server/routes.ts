@@ -1,11 +1,18 @@
-import type { RouteConfig } from "@mustawfi/core-config/server";
+import { ProblemError, type RouteConfig } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import { auditFacetsSchema, auditPageSchema, auditQuerySchema } from "../shared/index.ts";
+import { z } from "zod";
+import {
+  auditEntryViewSchema,
+  auditFacetsSchema,
+  auditPageSchema,
+  auditProblemCodes,
+  auditQuerySchema,
+} from "../shared/index.ts";
 import type { AuditContext } from "./dependencies.ts";
-import { auditActions, listAuditEntries } from "./entries.ts";
+import { auditActions, auditEntry, listAuditEntries } from "./entries.ts";
 
 const tags = ["audit"];
 
@@ -45,6 +52,28 @@ export function auditRoutes(scope: FastifyInstance, context: AuditContext): void
     },
     (request) =>
       asReader(request, (tx) => listAuditEntries(tx, request.query, context.auditDirectory)),
+  );
+
+  app.get(
+    "/entries/:id",
+    {
+      config: view,
+      schema: {
+        tags,
+        params: z.object({ id: z.uuid() }),
+        response: { 200: auditEntryViewSchema, 404: problemDetailsSchema, ...refusals },
+      },
+    },
+    (request) =>
+      asReader(request, async (tx) => {
+        const entry = await auditEntry(tx, request.params.id, context.auditDirectory);
+        if (entry === undefined) {
+          throw new ProblemError(auditProblemCodes.entryNotFound, 404, {
+            title: "The audit log has no such entry",
+          });
+        }
+        return entry;
+      }),
   );
 
   app.get(

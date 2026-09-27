@@ -27,7 +27,10 @@ afterAll(() => {
   for (const dir of temporaryDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-/** The released sets: each module's migrations without the tags this slice added. */
+/**
+ * The released sets: each module's migrations up to the first tag this slice added — a release
+ * holds a prefix of every journal, so migrations added after this slice go too.
+ */
 function releasedSets(added: readonly string[]): MigrationSet[] {
   return migrationSets.map((set) => {
     const dir = mkdtempSync(join(tmpdir(), "mustawfi-released-"));
@@ -37,7 +40,8 @@ function releasedSets(added: readonly string[]): MigrationSet[] {
     const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
       entries: { tag: string }[];
     };
-    journal.entries = journal.entries.filter((entry) => !added.includes(entry.tag));
+    const first = journal.entries.findIndex((entry) => added.includes(entry.tag));
+    if (first !== -1) journal.entries = journal.entries.slice(0, first);
     writeFileSync(journalPath, JSON.stringify(journal));
     return { moduleId: set.moduleId, dir };
   });

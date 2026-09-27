@@ -162,9 +162,14 @@ describe("who reads the audit log (rule 35)", () => {
     expect(facets.statusCode).toBe(200);
   });
 
-  it("anyone else gets 403 on the entries and the facets", async () => {
+  it("anyone else gets 403 on the entries, one entry, and the facets", async () => {
     const { token } = await staff(store, "cashier1", ["access.users.view", "sales.invoices.view"]);
-    for (const url of ["/api/v1/audit/entries", "/api/v1/audit/facets"]) {
+    const { items } = await page(store.token, { limit: "1" });
+    for (const url of [
+      "/api/v1/audit/entries",
+      `/api/v1/audit/entries/${items[0]?.id ?? ""}`,
+      "/api/v1/audit/facets",
+    ]) {
       const response = await server.inject({ method: "GET", url, headers: bearer(token) });
       expect(response.statusCode).toBe(403);
       expect(problemDetailsSchema.parse(response.json()).code).toBe(
@@ -393,6 +398,53 @@ describe("keyset pages", () => {
     expect(AUDIT_PAGE_DEFAULT).toBe(50);
     const { items } = await page(store.token);
     expect(items.length).toBeLessThanOrEqual(AUDIT_PAGE_DEFAULT);
+  });
+});
+
+describe("one entry (QA slice 25)", () => {
+  it("reads an entry by its id, named as a page names it, and 404 for none of the store's", async () => {
+    const a = await newStore("متجر المدخل");
+    const b = await newStore("متجر غيره");
+    const till = await registerDevice(a, "الصندوق");
+    const id = await record(a, {
+      occurredAt: new Date("2026-09-24T21:00:00.000Z"),
+      userId: a.tenant.ownerId,
+      deviceId: till.deviceId,
+      action: "access.pin.failed",
+      receivedAt: new Date("2026-09-25T06:00:00.000Z"),
+      entity: { type: "access.user", id: a.tenant.ownerId },
+      after: { failures: 1 },
+    });
+    const one = await server.inject({
+      method: "GET",
+      url: `/api/v1/audit/entries/${id}`,
+      headers: bearer(a.token),
+    });
+    expect(one.statusCode).toBe(200);
+    const listed = (await page(a.token, { device: till.deviceId })).items.find(
+      (entry) => entry.id === id,
+    );
+    expect(listed).toBeDefined();
+    expect(one.json<AuditEntryView>()).toEqual(listed);
+
+    for (const [token, entry] of [
+      [b.token, id],
+      [a.token, newId()],
+    ] as const) {
+      const missing = await server.inject({
+        method: "GET",
+        url: `/api/v1/audit/entries/${entry}`,
+        headers: bearer(token),
+      });
+      expect(missing.statusCode).toBe(404);
+      expect(problemDetailsSchema.parse(missing.json()).code).toBe("audit.entry.notFound");
+    }
+    const malformed = await server.inject({
+      method: "GET",
+      url: "/api/v1/audit/entries/not-an-id",
+      headers: bearer(a.token),
+    });
+    expect(malformed.statusCode).toBe(400);
   });
 });
 

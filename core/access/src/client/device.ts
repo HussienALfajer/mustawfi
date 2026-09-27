@@ -314,6 +314,9 @@ export async function registerThisDevice(
     body: input,
     schema: registeredDeviceSchema,
   });
+  // The session that registered the device is now bound to it (rule 22): every request made
+  // with it from here on carries the credential.
+  holdDeviceCredential(registered.credential);
   // Kept at once: the code is used up and the credential is shown only in this answer.
   const device: LocalDevice = {
     deviceId: registered.deviceId,
@@ -346,7 +349,6 @@ export async function registerThisDevice(
         registeredAt: device.registeredAt,
       });
   });
-  holdDeviceCredential(registered.credential);
   return device;
 }
 

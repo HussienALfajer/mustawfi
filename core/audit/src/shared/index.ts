@@ -84,6 +84,12 @@ export const auditPageSchema = z.object({
 
 export type AuditPage = z.infer<typeof auditPageSchema>;
 
+/** The refusals of `core.audit`; clients map each code to an Arabic message. */
+export const auditProblemCodes = {
+  /** The store's log has no entry with that id. */
+  entryNotFound: "audit.entry.notFound",
+} as const;
+
 /**
  * `GET /api/v1/audit/facets`: what the filters offer — every user and device of the store,
  * deactivated and revoked ones included, and the actions the log holds.
