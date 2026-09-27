@@ -1,5 +1,5 @@
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
-import { Button, ConfirmDialog, SidePanel, TextArea } from "@mustawfi/ui";
+import { Button, ConfirmDialog, CopyButton, SidePanel, TextArea, useToast } from "@mustawfi/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -67,18 +67,28 @@ export function NewDevicePanel({ onClose }: { readonly onClose: () => void }) {
           {issued === undefined ? null : (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-md bg-sunken p-4">
               <Fact label={t("devices.issue.storeCode")}>
-                <bdi dir="ltr" data-testid="store-code" className="font-mono text-lg font-semibold">
-                  {issued.storeCode}
-                </bdi>
+                <span className="flex flex-wrap items-center gap-2">
+                  <bdi
+                    dir="ltr"
+                    data-testid="store-code"
+                    className="font-mono text-lg font-semibold"
+                  >
+                    {issued.storeCode}
+                  </bdi>
+                  <CopyButton value={issued.storeCode} label={t("devices.issue.storeCode")} />
+                </span>
               </Fact>
               <Fact label={t("devices.issue.code")}>
-                <bdi
-                  dir="ltr"
-                  data-testid="registration-code"
-                  className="font-mono text-lg font-semibold"
-                >
-                  {issued.code}
-                </bdi>
+                <span className="flex flex-wrap items-center gap-2">
+                  <bdi
+                    dir="ltr"
+                    data-testid="registration-code"
+                    className="font-mono text-lg font-semibold"
+                  >
+                    {issued.code}
+                  </bdi>
+                  <CopyButton value={issued.code} label={t("devices.issue.code")} />
+                </span>
               </Fact>
             </dl>
           )}
@@ -114,13 +124,13 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState(false);
-  const [notice, setNotice] = useState<string | undefined>();
+  const toast = useToast();
   const revoke = useMutation({
     mutationFn: (why: string) => revokeDevice(device.id, why),
     onSuccess: async (revoked) => {
       setConfirming(false);
       setReason("");
-      setNotice(t("devices.panel.revoked", { name: revoked.name }));
+      toast.show(t("devices.panel.revoked", { name: revoked.name }));
       onRevoked?.(revoked);
       await queryClient.invalidateQueries({ queryKey: devicesQueryKey });
       // The button that opened the dialog is gone; focus stays in the panel.
@@ -142,7 +152,6 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
             variant="danger"
             className="ms-auto"
             onPress={() => {
-              setNotice(undefined);
               revoke.reset();
               setReasonError(false);
               setConfirming(true);
@@ -188,9 +197,6 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
             {t(`devices.problem.${problemKey(revoke.error)}`)}
           </p>
         ) : null}
-        <p role="status" className="min-h-5 text-text-positive">
-          {notice}
-        </p>
       </div>
       <ConfirmDialog
         isOpen={confirming}

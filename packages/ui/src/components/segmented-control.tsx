@@ -1,5 +1,6 @@
 import { ToggleButton, ToggleButtonGroup } from "react-aria-components";
-import { cx, FOCUS_RING } from "./cx.ts";
+import { cx } from "./cx.ts";
+import { SEGMENT_STATES } from "./interaction.ts";
 
 export interface SegmentedOption<K extends string> {
   readonly id: K;
@@ -43,11 +44,7 @@ export function SegmentedControl<K extends string>({
         <ToggleButton
           key={option.id}
           id={option.id}
-          className={cx(
-            "h-[26px] cursor-default px-2.5 text-sm text-text data-[hovered]:bg-sunken data-[selected]:bg-selected data-[selected]:font-semibold data-[selected]:text-text-accent",
-            FOCUS_RING,
-            "data-[focus-visible]:-outline-offset-2",
-          )}
+          className={cx("h-[26px] px-2.5 text-sm text-text", SEGMENT_STATES)}
         >
           {option.label}
         </ToggleButton>

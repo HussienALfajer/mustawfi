@@ -10,6 +10,7 @@ import {
 } from "react-aria-components";
 import { cx } from "./cx.ts";
 import { FieldHelp, FieldLabel, INPUT_CLASS } from "./field.tsx";
+import { ITEM_STATES, PRESSABLE } from "./interaction.ts";
 
 export interface SelectOption<K extends string> {
   readonly id: K;
@@ -68,7 +69,8 @@ export function Select<K extends string>({
       <AriaButton
         className={cx(
           INPUT_CLASS,
-          "flex cursor-default items-center gap-2 text-start data-[disabled]:opacity-60",
+          "flex items-center gap-2 text-start data-[disabled]:opacity-60 data-[hovered]:bg-state-hover-bg",
+          PRESSABLE,
         )}
       >
         <SelectValue className="flex-1 truncate data-[placeholder]:text-text-secondary" />
@@ -81,7 +83,7 @@ export function Select<K extends string>({
             <ListBoxItem
               id={option.id}
               textValue={option.label}
-              className="cursor-default rounded-sm px-pad-inline py-1.5 text-density outline-none data-[focused]:bg-sunken data-[selected]:bg-selected data-[selected]:font-semibold data-[selected]:text-text-accent"
+              className={cx("rounded-sm px-pad-inline py-1.5 text-density", ITEM_STATES)}
             >
               {option.label}
             </ListBoxItem>

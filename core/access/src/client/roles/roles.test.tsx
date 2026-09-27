@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -164,11 +164,13 @@ function renderScreen(
   queryClient.setQueryData(sessionQueryKey, session(permissions));
   return render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <div dir="rtl">
-          <Screen initial={initial} />
-        </div>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <div dir="rtl">
+            <Screen initial={initial} />
+          </div>
+        </QueryClientProvider>
+      </ToastProvider>
     </I18nextProvider>,
   );
 }
@@ -216,7 +218,9 @@ describe("RolesScreen", () => {
     await userEvent.type(limit, "7.5");
     await userEvent.keyboard("{Control>}s{/Control}");
     await waitFor(() => {
-      expect(within(panel).getByRole("status")).toHaveTextContent("حُفظ الدور «كاشير القسم»");
+      expect(
+        within(screen.getByRole("region", { name: uiMessages.toast.region })).getByRole("list"),
+      ).toHaveTextContent("حُفظ الدور «كاشير القسم»");
     });
     expect(calls).toContainEqual({
       method: "PUT",
@@ -247,8 +251,11 @@ describe("RolesScreen", () => {
     const draft = await screen.findByRole("complementary", { name: "نسخة من «كاشير القسم»" });
     expect(within(draft).getByLabelText(/اسم الدور/)).toHaveValue("كاشير القسم (نسخة)");
     await userEvent.click(within(draft).getByRole("button", { name: /إنشاء/ }));
-    const saved = await screen.findByRole("complementary", { name: "كاشير القسم (نسخة)" });
-    expect(within(saved).getByRole("status")).toHaveTextContent("أُنشئ الدور");
+    // The panel moved to the new role.
+    expect(await screen.findByRole("complementary", { name: "كاشير القسم (نسخة)" })).toBeVisible();
+    expect(
+      within(screen.getByRole("region", { name: uiMessages.toast.region })).getByRole("list"),
+    ).toHaveTextContent("أُنشئ الدور");
     expect(calls).toContainEqual({
       method: "POST",
       url: "/api/v1/access/roles",

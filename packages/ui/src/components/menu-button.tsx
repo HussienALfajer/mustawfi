@@ -1,7 +1,8 @@
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button as AriaButton, Menu, MenuItem, MenuTrigger, Popover } from "react-aria-components";
-import { cx } from "./cx.ts";
+import { cx, FOCUS_RING } from "./cx.ts";
+import { ITEM_STATES, PRESSABLE } from "./interaction.ts";
 
 export interface MenuAction<K extends string> {
   readonly id: K;
@@ -37,7 +38,9 @@ export function MenuButton<K extends string>({
     <MenuTrigger>
       <AriaButton
         className={cx(
-          "flex min-h-control cursor-default items-center gap-2 rounded-sm px-2 text-start text-text outline-none data-[hovered]:bg-sunken data-[pressed]:bg-sunken data-[focus-visible]:outline-2 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-focus-ring",
+          "flex min-h-control items-center gap-2 rounded-sm px-2 text-start text-text data-[hovered]:bg-state-hover-bg data-[pressed]:bg-state-pressed-bg",
+          PRESSABLE,
+          FOCUS_RING,
           className,
         )}
       >
@@ -61,10 +64,8 @@ export function MenuButton<K extends string>({
               id={action.id}
               textValue={action.label}
               className={cx(
-                "relative flex cursor-default items-center gap-2 rounded-sm px-pad-inline py-1.5 text-density outline-none",
-                // The item with focus: the navigation's current-page look, with its accent bar.
-                "data-[focused]:bg-selected data-[focused]:font-semibold data-[focused]:text-text-accent",
-                "data-[focused]:before:absolute data-[focused]:before:inset-y-1 data-[focused]:before:start-0 data-[focused]:before:w-[3px] data-[focused]:before:rounded-sm data-[focused]:before:bg-accent",
+                "flex items-center gap-2 rounded-sm px-pad-inline py-1.5 text-density",
+                ITEM_STATES,
               )}
             >
               {action.icon === undefined ? null : (

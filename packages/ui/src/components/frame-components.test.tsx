@@ -11,13 +11,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { type ReactNode, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Badge } from "./badge.tsx";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { DataTable } from "./data-table.tsx";
-import { enterMovesToNextField } from "./keyboard.ts";
+import { enterMovesThenSubmits, enterMovesToNextField, saveShortcutSubmits } from "./keyboard.ts";
 import { MenuButton } from "./menu-button.tsx";
 import { UI_NAMESPACE, uiMessages } from "./messages.ts";
 import { SearchField } from "./search-field.tsx";
@@ -140,6 +140,16 @@ describe("SidePanel", () => {
 });
 
 describe("SearchField", () => {
+  it("keeps its shortcut badge at the end side, away from the icon at the start", () => {
+    const { container } = wrap(<SearchField label="ابحث" value="" onChange={() => undefined} />);
+    const badge = container.querySelector("kbd");
+    // A `dir` on the badge would resolve its `end-*` placement left to right, onto the icon
+    // (the overlap found in the first manual pass); only its label reads left to right.
+    expect(badge).not.toHaveAttribute("dir");
+    expect(badge?.className).toContain("end-1.5");
+    expect(badge?.querySelector("bdi")).toHaveAttribute("dir", "ltr");
+  });
+
   it("takes focus on / unless the user is typing in another field", async () => {
     function Screen() {
       const [value, setValue] = useState("");
@@ -305,29 +315,57 @@ describe("ConfirmDialog", () => {
   });
 });
 
-describe("enterMovesToNextField", () => {
-  it("moves Enter to the next field, and submits from the last one with Save outside the form", async () => {
-    const onSubmit = vi.fn((event: Event) => {
-      event.preventDefault();
-    });
-    wrap(
+describe("form keys", () => {
+  function Form({
+    onKeyDown,
+  }: {
+    readonly onKeyDown: (event: KeyboardEvent<HTMLFormElement>) => void;
+  }) {
+    return (
       <form
-        onKeyDown={enterMovesToNextField}
+        onKeyDown={onKeyDown}
         onSubmit={(event) => {
-          onSubmit(event.nativeEvent);
+          event.preventDefault();
+          submitted();
         }}
       >
         <input aria-label="الأول" />
         <textarea aria-label="العنوان" />
         <input aria-label="الأخير" />
-      </form>,
+      </form>
     );
+  }
+  const submitted = vi.fn();
+  afterEach(() => {
+    submitted.mockReset();
+  });
+
+  it("moves Enter to the next field and never saves a settings form, even from the last field", async () => {
+    wrap(<Form onKeyDown={enterMovesToNextField} />);
     await userEvent.click(screen.getByLabelText("الأول"));
     await userEvent.keyboard("{Enter}");
     expect(screen.getByLabelText("العنوان")).toHaveFocus();
     await userEvent.click(screen.getByLabelText("الأخير"));
     await userEvent.keyboard("{Enter}");
-    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(submitted).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("الأخير")).toHaveFocus();
+  });
+
+  it("submits a short form from its last field", async () => {
+    wrap(<Form onKeyDown={enterMovesThenSubmits} />);
+    await userEvent.click(screen.getByLabelText("الأول"));
+    await userEvent.keyboard("{Enter}");
+    expect(submitted).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByLabelText("الأخير"));
+    await userEvent.keyboard("{Enter}");
+    expect(submitted).toHaveBeenCalledOnce();
+  });
+
+  it("saves with Ctrl+S from inside the form", async () => {
+    wrap(<Form onKeyDown={saveShortcutSubmits} />);
+    await userEvent.click(screen.getByLabelText("الأول"));
+    await userEvent.keyboard("{Control>}s{/Control}");
+    expect(submitted).toHaveBeenCalledOnce();
   });
 });
 

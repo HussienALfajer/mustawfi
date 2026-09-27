@@ -2,7 +2,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
-import { Badge, Button, ConfirmDialog, Kbd, SidePanel, TextInput, useShortcut } from "@mustawfi/ui";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  Kbd,
+  SidePanel,
+  TextInput,
+  useShortcut,
+  useToast,
+} from "@mustawfi/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -58,7 +67,7 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
   const { t } = useTranslation(ORGANIZATION_NAMESPACE);
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
-  const [notice, setNotice] = useState<string | undefined>();
+  const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const archived = department !== null && department.archivedAt !== null;
   const form = useForm<DepartmentForm>({
@@ -71,7 +80,7 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
         ? createDepartment(values.name)
         : renameDepartment(department.id, values.name),
     onSuccess: async (saved) => {
-      setNotice(
+      toast.show(
         t(department === null ? "departments.panel.added" : "departments.panel.saved", {
           name: saved.name,
         }),
@@ -90,7 +99,7 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
     mutationFn: (id: string) => archiveDepartment(id),
     onSuccess: async (saved) => {
       setConfirming(false);
-      setNotice(t("departments.archive.done", { name: saved.name }));
+      toast.show(t("departments.archive.done", { name: saved.name }));
       await queryClient.invalidateQueries({ queryKey: departmentsQueryKey });
       onSaved(saved);
     },
@@ -153,7 +162,6 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
         ref={formRef}
         noValidate
         onSubmit={(event) => {
-          setNotice(undefined);
           save.reset();
           archive.reset();
           void form.handleSubmit((values) => {
@@ -165,7 +173,7 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
         {department === null ? null : (
           <div className="flex gap-2">
             {archived ? (
-              <Badge tone="neutral">{t("departments.state.archived")}</Badge>
+              <Badge tone="archived">{t("departments.state.archived")}</Badge>
             ) : (
               <Badge tone="positive">{t("departments.state.active")}</Badge>
             )}
@@ -211,9 +219,6 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
             {t(`departments.problem.${failure}`)}
           </p>
         )}
-        <p role="status" className="text-text-positive min-h-5">
-          {notice}
-        </p>
       </form>
       {department === null ? null : (
         <ConfirmDialog
@@ -224,7 +229,6 @@ export function DepartmentPanel({ department, onClose, onSaved }: DepartmentPane
           cancelLabel={t("departments.archive.cancel")}
           isPending={archive.isPending}
           onConfirm={() => {
-            setNotice(undefined);
             save.reset();
             archive.mutate(department.id);
           }}

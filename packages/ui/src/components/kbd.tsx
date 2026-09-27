@@ -24,13 +24,14 @@ export function Kbd({
   return (
     <kbd
       aria-hidden="true"
-      dir="ltr"
       className={cx(
-        "rounded-sm border border-current px-1 font-mono text-xs font-normal [unicode-bidi:isolate]",
+        "rounded-sm border border-current px-1 font-mono text-xs font-normal",
         className,
       )}
     >
-      {shortcutLabel(shortcut)}
+      {/* Only the label reads left to right: on the badge itself, `dir` would turn its logical
+          placement (`end-*`, `ms-auto`) to the wrong side of a right-to-left screen. */}
+      <bdi dir="ltr">{shortcutLabel(shortcut)}</bdi>
     </kbd>
   );
 }

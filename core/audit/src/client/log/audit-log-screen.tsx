@@ -4,10 +4,10 @@ import {
   Button,
   type DataColumn,
   DataTable,
+  DateRangePicker,
   focusDataTableRow,
   Select,
   SidePanel,
-  TextInput,
 } from "@mustawfi/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { type ReactNode, type Ref, useRef } from "react";
@@ -210,7 +210,6 @@ function AuditLogFilterBar({
     ),
   ];
   const pick = (value: string) => (value === ALL ? undefined : value);
-  const date = (value: string) => (value === "" ? undefined : value);
   return (
     <div className="flex flex-wrap items-end gap-2">
       <Select
@@ -243,25 +242,22 @@ function AuditLogFilterBar({
           onFiltersChange({ ...filters, device: pick(device), selected: undefined });
         }}
       />
-      <TextInput
-        className="w-40"
-        type="date"
-        dir="ltr"
-        label={t("log.filter.from")}
-        value={filters.from ?? ""}
-        onChange={(from) => {
-          onFiltersChange({ ...filters, from: date(from), selected: undefined });
-        }}
-      />
-      <TextInput
-        className="w-40"
-        type="date"
-        dir="ltr"
-        label={t("log.filter.to")}
-        value={filters.to ?? ""}
+      <DateRangePicker
+        labelHidden
+        label={t("log.filter.dates")}
+        value={
+          filters.from === undefined || filters.to === undefined
+            ? null
+            : { start: filters.from, end: filters.to }
+        }
         errorMessage={rangeReversed ? t("log.filter.rangeReversed") : undefined}
-        onChange={(to) => {
-          onFiltersChange({ ...filters, to: date(to), selected: undefined });
+        onChange={(range) => {
+          onFiltersChange({
+            ...filters,
+            from: range?.start,
+            to: range?.end,
+            selected: undefined,
+          });
         }}
       />
       {canClear ? (

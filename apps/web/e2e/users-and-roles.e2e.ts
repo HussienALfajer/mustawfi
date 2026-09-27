@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { attachScreens, signIn, signOut, tabTo } from "./steps.ts";
+import { attachScreens, signIn, signOut, tabTo, toasts } from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 /** Presses a key until `target` has focus: the arrow keys in a list or a table. */
@@ -26,9 +26,8 @@ test("keyboard only: a section cashier scoped to a new department, and a copied 
   await expect(page.getByLabel("اسم القسم (مطلوب)")).toBeFocused();
   await page.keyboard.type("تحويل الرصيد");
   await page.keyboard.press("Control+S");
-  await expect(
-    page.getByRole("complementary", { name: "تحويل الرصيد" }).getByRole("status"),
-  ).toHaveText("أُضيف القسم «تحويل الرصيد»");
+  await expect(page.getByRole("complementary", { name: "تحويل الرصيد" })).toBeVisible();
+  await expect(toasts(page)).toContainText("أُضيف القسم «تحويل الرصيد»");
   await page.keyboard.press("Escape");
 
   // Users: the owner is listed; N opens a new user beside the list.
@@ -74,7 +73,8 @@ test("keyboard only: a section cashier scoped to a new department, and a copied 
   await page.keyboard.press("Control+S");
 
   const added = page.getByRole("complementary", { name: "ليلى" });
-  await expect(added.getByRole("status")).toHaveText("أُضيف المستخدم «ليلى»");
+  await expect(added).toBeVisible();
+  await expect(toasts(page)).toContainText("أُضيف المستخدم «ليلى»");
   const row = table.getByRole("row").filter({ hasText: "ليلى" });
   await expect(row).toContainText("كاشير القسم");
   await expect(row).toContainText("تحويل الرصيد");
@@ -108,7 +108,8 @@ test("keyboard only: a section cashier scoped to a new department, and a copied 
   await page.keyboard.press("Space");
   await page.keyboard.press("Control+S");
   const saved = page.getByRole("complementary", { name: "كاشير القسم (نسخة)" });
-  await expect(saved.getByRole("status")).toHaveText("أُنشئ الدور «كاشير القسم (نسخة)»");
+  await expect(saved).toBeVisible();
+  await expect(toasts(page)).toContainText("أُنشئ الدور «كاشير القسم (نسخة)»");
   await expect(saved.getByRole("checkbox", { name: "عرض الفواتير" })).toBeChecked();
   await attachScreens(page, testInfo, "roles");
 

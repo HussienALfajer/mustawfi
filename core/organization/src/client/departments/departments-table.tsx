@@ -38,7 +38,7 @@ export function DepartmentsTable({
         row.archivedAt === null ? (
           <Badge tone="positive">{t("departments.state.active")}</Badge>
         ) : (
-          <Badge tone="neutral">{t("departments.state.archived")}</Badge>
+          <Badge tone="archived">{t("departments.state.archived")}</Badge>
         ),
     },
   ];

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -145,11 +145,13 @@ function renderScreen({
   queryClient.setQueryData(sessionQueryKey, session(permissions));
   return render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <div dir="rtl">
-          <Screen initial={initial} currentDeviceId={currentDeviceId} />
-        </div>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <div dir="rtl">
+            <Screen initial={initial} currentDeviceId={currentDeviceId} />
+          </div>
+        </QueryClientProvider>
+      </ToastProvider>
     </I18nextProvider>,
   );
 }
@@ -217,6 +219,13 @@ describe("DevicesScreen", () => {
     expect(await within(panel).findByTestId("registration-code")).toHaveTextContent("ABCDE-FGHJK");
     expect(within(panel).getByTestId("store-code")).toHaveTextContent("K7M3Q9");
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    // Both codes are carried to the new device: each has its own copy button.
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await userEvent.click(within(panel).getByRole("button", { name: /نسخ\s+رمز التسجيل/ }));
+    expect(writeText).toHaveBeenLastCalledWith("ABCDE-FGHJK");
+    await userEvent.click(within(panel).getByRole("button", { name: /نسخ\s+رمز المتجر/ }));
+    expect(writeText).toHaveBeenLastCalledWith("K7M3Q9");
   });
 
   it("revokes a device only with a reason, then shows it revoked", async () => {
@@ -250,9 +259,11 @@ describe("DevicesScreen", () => {
 
     await userEvent.type(within(dialog).getByLabelText("سبب الإبطال"), " سُرق ");
     await userEvent.click(within(dialog).getByRole("button", { name: "إبطال الجهاز" }));
-    expect(await within(panel).findByRole("status")).toHaveTextContent(
-      "أُبطل الجهاز «الصندوق الرئيسي»",
-    );
+    expect(
+      await within(screen.getByRole("region", { name: uiMessages.toast.region })).findByRole(
+        "list",
+      ),
+    ).toHaveTextContent("أُبطل الجهاز «الصندوق الرئيسي»");
     expect(calls.filter((call) => call.method === "POST")).toEqual([
       {
         method: "POST",
@@ -297,7 +308,9 @@ describe("DeviceRemovedScreen", () => {
     const onContinue = vi.fn();
     render(
       <I18nextProvider i18n={i18n}>
-        <DeviceRemovedScreen onContinue={onContinue} />
+        <ToastProvider>
+          <DeviceRemovedScreen onContinue={onContinue} />
+        </ToastProvider>
       </I18nextProvider>,
     );
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(

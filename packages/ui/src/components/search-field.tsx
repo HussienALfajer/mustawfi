@@ -36,7 +36,7 @@ export function SearchField({
       aria-label={label}
       value={value}
       onChange={onChange}
-      className={cx("relative w-60 max-w-full", className)}
+      className={cx("relative h-7 w-60 max-w-full", className)}
     >
       <Search
         aria-hidden="true"

@@ -3,6 +3,7 @@
 - Agreed with the user on 2026-09-25 (`core-foundation` spec session). Builds on ADR-0023 (client stack), ADR-0024 (visual direction), and `design-system.md` (tokens, contrast, densities, patterns to avoid).
 - The rules below are decided. The frame and the list-with-side-panel pattern were approved by the user on a preview on 2026-09-25 and built in `core-foundation` slice 3; their measures below come from that preview. The notice pattern was approved by the user on 2026-09-26 on the screenshots of «device removed» (`core-foundation` slice 9): a centred card on the page background, an icon, the title as the page's `h1`, the reason, what to do next, and one primary action that has focus. The summary pattern was approved by the user on 2026-09-26 on the screenshots of «License and plan» (`core-foundation` slice 12): titled sections on the page background at a readable width, facts as label and value pairs, the state as a word with its colour and a sentence on what it means, and a table of figures (end-aligned, tabular) whose rows link to the screen where each is managed. The touch panel pattern was approved on 2026-09-26 on the screenshots of the PIN screen (`core-foundation` slice 15; the user left the decision to the agent's judgement): a centred card at `touch` density, name tiles (name, role under it, a locked state in words), then a PIN pad whose field takes the keyboard's digits and whose 48 px digit buttons leave the focus in the field, the refusal in an alert under the pad, and the one way out (back, or password sign-in).
 - Decided on 2026-09-26 (`core-foundation` slice 10; the user left the choice to the agent's professional judgement): security settings save section by section, machine-read codes stay dark on light, and the user menu is built as the frame says. Each is recorded below.
+- Decided by the user on 2026-09-27 after their first manual pass (`core-foundation` slices 19–26), and approved on the gallery preview of slice 19: the interaction states (`design-system.md`), `Enter`, discard, toasts, the archived badge, and the shared controls for secrets, codes, and dates. Each is recorded below.
 - Like `design-system.md`, this document changes only by recorded decision (an ADR or a unit spec's deviation note).
 
 ## Who the screens are for
@@ -33,7 +34,8 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 
 **Keyboard**
 - Every journey works without a mouse; Playwright journeys are keyboard-only.
-- `Enter` moves to the next field (and submits on the last), `Esc` closes the side panel or dialog, `/` focuses the list's search, arrow keys move in tables, `Ctrl+S` saves a form or panel, `N` opens a new record in a list (when no field has focus), `Ctrl+B` collapses the side navigation. Shortcuts are shown next to their buttons (`Kbd`, fed with the button's own `aria-keyshortcuts`).
+- `Enter` submits only short forms: sign-in and its steps, a PIN, and one-field panels (a department's name, a new PIN in a user's panel). In settings forms and long forms (the store profile, a user's or a role's panel, My account's sections) it moves to the next field and never saves, not even from the last one: `Ctrl+S` or the Save button saves (`enterMovesToNextField`; `enterMovesThenSubmits` for a short form of several fields; `saveShortcutSubmits` for a screen of forms that each save on their own).
+- `Esc` closes the side panel or dialog, `/` focuses the list's search, arrow keys move in tables, `Ctrl+S` saves a form or panel, `N` opens a new record in a list (when no field has focus), `Ctrl+B` collapses the side navigation. Shortcuts are shown next to their buttons (`Kbd`, fed with the button's own `aria-keyshortcuts`).
 - Focus never gets lost: closing a panel returns focus to its row (or to «New» for a new record); saving keeps the row selected.
 
 **Tables**
@@ -47,12 +49,17 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 - `comfortable` density; labels above fields, never placeholders as labels; required fields marked in words.
 - Validation uses the same Zod schema as the server (the module's `shared` entry), shown inline in Arabic on leaving a field and on save; the browser's own messages never appear.
 - A failed save keeps everything typed and says what to fix, on the screen, not only in a toast.
+- **Discard** («تراجع عن التغييرات») appears only while the form has unsaved changes, beside «تغييرات غير محفوظة»; with nothing to discard there is no button.
+- **After saving in a side panel** the panel stays on the record — after a create it moves to the new record — and a success toast confirms. Failures stay on screen, in the panel.
+- **Secrets** — passwords, PINs, reset codes — use `PasswordField`: hidden by default, a toggle shows what was typed, left to right; a PIN brings the digit keyboard.
+- **Codes the user carries elsewhere** — a registration code, the store code, a 2FA key, recovery codes — have a `CopyButton` beside them («نسخ» → «نُسخ»); the value stays on screen to copy by hand when the clipboard refuses.
+- **Dates** use `DatePicker` and `DateRangePicker`: typed as `dd/mm/yyyy` with Western digits, left to right, or picked on an Arabic right-to-left calendar, with presets («اليوم» … «الشهر الماضي») on the store's calendar (Asia/Damascus). The browser's own date input never appears.
 
 **Refusals and states**
 - What the user's role never allows is not shown. What is blocked by state — a license limit, read-only, a locked period — stays visible and explains itself when used («وصلت إلى حد 3 مستخدمين في باقتك»).
-- Status is written as a word with its colour («نشط», «موقوف», «مُبطَل»), never colour alone.
+- Status is written as a word with its colour («نشط», «موقوف», «مُبطَل»), never colour alone. **Archived** is a solid neutral grey badge with an archive icon (`Badge tone="archived"`), never red: red stays for errors, danger, and negative amounts.
 - Routine actions have no confirmation. Destructive or security actions (revoke a device, deactivate a user, archive a department) confirm once and ask for a reason, which goes to the audit log.
-- Important failures (sync, print, posting, save) stay on screen until resolved; toasts are for success only.
+- Important failures (sync, print, posting, save) stay on screen until resolved. **Toasts** (`useToast`, one `ToastProvider` at the app's root) confirm a success, inform, or warn about something already done — never the only report of a failure, so there is no error toast. They sit at the screen's end corner in a polite live region, close by themselves after 5–8 seconds unless the pointer or the focus is on them, and have a close button.
 - Every details panel ends with «last changed by … on …», linked to the audit log for users who may read it.
 - Loading never blocks the screen on the network and always says whether the app is offline.
 - Codes read by a machine (QR codes, barcodes) keep dark modules on a light box in every theme (`data-theme="light"` on the box): scanners and authenticator apps read dark on light. The same value is shown beside it as text for typing by hand.

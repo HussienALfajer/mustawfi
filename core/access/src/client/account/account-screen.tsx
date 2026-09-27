@@ -1,9 +1,18 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
 import { hostProblemCodes } from "@mustawfi/core-config/shared";
-import { Button, enterMovesToNextField, FormSection, TextInput } from "@mustawfi/ui";
+import {
+  Button,
+  CopyButton,
+  enterMovesToNextField,
+  FormSection,
+  PasswordField,
+  saveShortcutSubmits,
+  TextInput,
+  useToast,
+} from "@mustawfi/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { type Control, Controller, type FieldValues, type Path, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
@@ -77,13 +86,16 @@ type NewSecretForm = z.infer<typeof pinFormSchema>;
 
 const EMPTY_SECRET: NewSecretForm = { current: "", next: "", confirm: "" };
 
-/** A text field bound to a form field, with its problem (a message key under `account.problem.`). */
+/**
+ * A field bound to a form field, with its problem (a message key under `account.problem.`). A
+ * secret — a password or a PIN — is hidden, with a toggle to show it; a code is plain text.
+ */
 function Field<T extends FieldValues>({
   control,
   name,
   label,
   description,
-  secret = true,
+  secret = "password",
   autoComplete,
   autoFocus,
 }: {
@@ -91,7 +103,7 @@ function Field<T extends FieldValues>({
   readonly name: Path<T>;
   readonly label: string;
   readonly description?: string;
-  readonly secret?: boolean;
+  readonly secret?: "password" | "pin" | false;
   readonly autoComplete: string;
   readonly autoFocus?: boolean;
 }) {
@@ -100,45 +112,54 @@ function Field<T extends FieldValues>({
     <Controller
       control={control}
       name={name}
-      render={({ field, fieldState }) => (
-        <TextInput
-          label={label}
-          {...(description === undefined ? {} : { description })}
-          errorMessage={
+      render={({ field, fieldState }) => {
+        const common = {
+          label,
+          ...(description === undefined ? {} : { description }),
+          errorMessage:
             fieldState.error?.message === undefined
               ? undefined
-              : t(`account.problem.${fieldState.error.message}`)
-          }
-          value={field.value}
-          onChange={field.onChange}
-          onBlur={field.onBlur}
-          inputRef={field.ref}
-          name={field.name}
-          {...(secret ? { type: "password" } : {})}
-          dir="ltr"
-          spellCheck="false"
-          autoComplete={autoComplete}
-          {...(autoFocus === true ? { autoFocus } : {})}
-        />
-      )}
+              : t(`account.problem.${fieldState.error.message}`),
+          value: field.value,
+          onChange: field.onChange,
+          onBlur: field.onBlur,
+          inputRef: field.ref,
+          name: field.name,
+          autoComplete,
+          ...(autoFocus === true ? { autoFocus } : {}),
+        };
+        return secret === false ? (
+          <TextInput {...common} dir="ltr" spellCheck="false" />
+        ) : (
+          <PasswordField
+            {...common}
+            {...(secret === "pin" ? { inputMode: "numeric" as const, maxLength: 6 } : {})}
+          />
+        );
+      }}
     />
   );
 }
 
-/** What a section reports after its action: success as status, failure as an alert. */
-function Outcome({ done, error }: { readonly done: string | undefined; readonly error: unknown }) {
+/**
+ * A security section's keys (`screen-patterns.md`): `Enter` moves between its fields and never
+ * saves; `Ctrl+S` inside the section, or its button, saves that section only.
+ */
+function sectionKeys(event: KeyboardEvent<HTMLFormElement>): void {
+  saveShortcutSubmits(event);
+  enterMovesToNextField(event);
+}
+
+/**
+ * What a section reports when its action fails, on the screen until the next try; success is
+ * a toast (`screen-patterns.md`).
+ */
+function Failure({ error }: { readonly error: unknown }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
-  return (
-    <>
-      {error === null || error === undefined ? null : (
-        <p role="alert" className="text-text-negative">
-          {t(`account.problem.${refusalKey(error)}`)}
-        </p>
-      )}
-      <p role="status" className="min-h-5 text-text-positive">
-        {done}
-      </p>
-    </>
+  return error === null || error === undefined ? null : (
+    <p role="alert" className="text-text-negative">
+      {t(`account.problem.${refusalKey(error)}`)}
+    </p>
   );
 }
 
@@ -149,7 +170,7 @@ function Outcome({ done, error }: { readonly done: string | undefined; readonly 
 function PinSection({ account }: { readonly account: AccountView }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const queryClient = useQueryClient();
-  const [done, setDone] = useState<string | undefined>();
+  const toast = useToast();
   const form = useForm<NewSecretForm>({
     resolver: zodResolver(pinFormSchema),
     defaultValues: EMPTY_SECRET,
@@ -160,7 +181,7 @@ function PinSection({ account }: { readonly account: AccountView }) {
       changeOwnPin(byPin ? { currentPin: current } : { currentPassword: current }, next),
     onSuccess: async () => {
       form.reset(EMPTY_SECRET);
-      setDone(t("account.pin.changed"));
+      toast.show(t("account.pin.changed"));
       await queryClient.invalidateQueries({ queryKey: accountQueryKey });
     },
   });
@@ -169,9 +190,8 @@ function PinSection({ account }: { readonly account: AccountView }) {
       <form
         noValidate
         aria-label={t("account.pin.title")}
-        onKeyDown={enterMovesToNextField}
+        onKeyDown={sectionKeys}
         onSubmit={(event) => {
-          setDone(undefined);
           void form.handleSubmit((values) => {
             change.mutate(values);
           })(event);
@@ -183,6 +203,7 @@ function PinSection({ account }: { readonly account: AccountView }) {
             control={form.control}
             name="current"
             label={t(byPin ? "account.pin.current" : "account.pin.currentPassword")}
+            secret={byPin ? "pin" : "password"}
             autoComplete={byPin ? "off" : "current-password"}
           />
           <Field
@@ -190,12 +211,14 @@ function PinSection({ account }: { readonly account: AccountView }) {
             name="next"
             label={t("account.pin.next")}
             description={t("account.pin.nextHelp")}
+            secret="pin"
             autoComplete="off"
           />
           <Field
             control={form.control}
             name="confirm"
             label={t("account.pin.confirm")}
+            secret="pin"
             autoComplete="off"
           />
         </div>
@@ -204,7 +227,7 @@ function PinSection({ account }: { readonly account: AccountView }) {
             {t("account.pin.submit")}
           </Button>
         </div>
-        <Outcome done={done} error={change.error} />
+        <Failure error={change.error} />
       </form>
     </FormSection>
   );
@@ -217,7 +240,7 @@ function PinSection({ account }: { readonly account: AccountView }) {
 function PasswordSection({ account }: { readonly account: AccountView }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const queryClient = useQueryClient();
-  const [done, setDone] = useState<string | undefined>();
+  const toast = useToast();
   const form = useForm<NewSecretForm>({
     resolver: zodResolver(passwordFormSchema),
     defaultValues: EMPTY_SECRET,
@@ -228,7 +251,7 @@ function PasswordSection({ account }: { readonly account: AccountView }) {
       changeOwnPassword(byPassword ? { currentPassword: current } : { currentPin: current }, next),
     onSuccess: async () => {
       form.reset(EMPTY_SECRET);
-      setDone(t(byPassword ? "account.password.changed" : "account.password.set"));
+      toast.show(t(byPassword ? "account.password.changed" : "account.password.set"));
       await queryClient.invalidateQueries({ queryKey: accountQueryKey });
     },
   });
@@ -240,9 +263,8 @@ function PasswordSection({ account }: { readonly account: AccountView }) {
       <form
         noValidate
         aria-label={t("account.password.title")}
-        onKeyDown={enterMovesToNextField}
+        onKeyDown={sectionKeys}
         onSubmit={(event) => {
-          setDone(undefined);
           void form.handleSubmit((values) => {
             change.mutate(values);
           })(event);
@@ -254,6 +276,7 @@ function PasswordSection({ account }: { readonly account: AccountView }) {
             control={form.control}
             name="current"
             label={t(byPassword ? "account.password.current" : "account.password.currentPin")}
+            secret={byPassword ? "password" : "pin"}
             autoComplete={byPassword ? "current-password" : "off"}
           />
           <Field
@@ -275,7 +298,7 @@ function PasswordSection({ account }: { readonly account: AccountView }) {
             {t("account.password.submit")}
           </Button>
         </div>
-        <Outcome done={done} error={change.error} />
+        <Failure error={change.error} />
       </form>
     </FormSection>
   );
@@ -323,7 +346,7 @@ function StartTwoFactor({ onStarted }: { readonly onStarted: (e: TwoFactorEnrolm
           {t("account.twoFactor.start")}
         </Button>
       </div>
-      <Outcome done={undefined} error={start.error} />
+      <Failure error={start.error} />
     </form>
   );
 }
@@ -361,13 +384,16 @@ function ConfirmTwoFactor({
         <QrCode value={enrolment.uri} label={t("account.twoFactor.qrLabel")} />
         <div className="flex flex-col gap-1">
           <span className="text-sm text-text-secondary">{t("account.twoFactor.secret")}</span>
-          <code
-            dir="ltr"
-            aria-label={t("account.twoFactor.secret")}
-            className="font-mono text-lg tracking-wide text-text [unicode-bidi:isolate]"
-          >
-            {groupSecret(enrolment.secret)}
-          </code>
+          <span className="flex flex-wrap items-center gap-2">
+            <code
+              dir="ltr"
+              aria-label={t("account.twoFactor.secret")}
+              className="font-mono text-lg tracking-wide text-text [unicode-bidi:isolate]"
+            >
+              {groupSecret(enrolment.secret)}
+            </code>
+            <CopyButton value={enrolment.secret} label={t("account.twoFactor.secret")} />
+          </span>
         </div>
       </div>
       <div className="max-w-sm">
@@ -389,7 +415,7 @@ function ConfirmTwoFactor({
           {t("account.twoFactor.cancel")}
         </Button>
       </div>
-      <Outcome done={undefined} error={confirm.error} />
+      <Failure error={confirm.error} />
     </form>
   );
 }
@@ -426,7 +452,8 @@ function RecoveryCodes({
           </li>
         ))}
       </ul>
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <CopyButton value={codes.join("\n")} label={t("account.twoFactor.codesLabel")} />
         <Button onPress={onSaved}>{t("account.twoFactor.saved")}</Button>
       </div>
     </div>
@@ -454,7 +481,7 @@ function DisableTwoFactor({ account }: { readonly account: AccountView }) {
     <form
       noValidate
       aria-label={t("account.twoFactor.disable")}
-      onKeyDown={enterMovesToNextField}
+      onKeyDown={sectionKeys}
       onSubmit={(event) => {
         void form.handleSubmit((values) => {
           disable.mutate(values);
@@ -490,7 +517,7 @@ function DisableTwoFactor({ account }: { readonly account: AccountView }) {
           {t("account.twoFactor.disable")}
         </Button>
       </div>
-      <Outcome done={undefined} error={disable.error} />
+      <Failure error={disable.error} />
     </form>
   );
 }

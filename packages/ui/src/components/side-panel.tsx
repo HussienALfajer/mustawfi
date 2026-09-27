@@ -1,7 +1,8 @@
 import { X } from "lucide-react";
 import { type ReactNode, type Ref, useId } from "react";
 import { Button as AriaButton } from "react-aria-components";
-import { cx, FOCUS_RING } from "./cx.ts";
+import { cx } from "./cx.ts";
+import { ICON_BUTTON } from "./interaction.ts";
 
 export interface SidePanelProps {
   readonly title: ReactNode;
@@ -51,10 +52,7 @@ export function SidePanel({
           aria-label={closeLabel}
           aria-keyshortcuts="Escape"
           onPress={onClose}
-          className={cx(
-            "flex size-9 flex-none cursor-default items-center justify-center rounded-md text-text-secondary data-[hovered]:bg-sunken",
-            FOCUS_RING,
-          )}
+          className={ICON_BUTTON}
         >
           <X aria-hidden="true" size={18} strokeWidth={1.75} />
         </AriaButton>

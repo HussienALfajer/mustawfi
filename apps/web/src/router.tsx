@@ -57,6 +57,7 @@ import {
   type NavGroup,
   SIDE_NAVIGATION_WIDTH,
   SideNavigation,
+  TEXT_LINK,
   useNavigationCollapsed,
 } from "@mustawfi/ui";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -141,7 +142,7 @@ function NotFound() {
   return (
     <div className="flex flex-col gap-3 p-6">
       <p className="text-text">{t("notFound")}</p>
-      <Link to="/products" className="text-text-accent underline">
+      <Link to="/products" className={TEXT_LINK}>
         {t("home")}
       </Link>
     </div>
@@ -197,7 +198,7 @@ function LoginPage() {
       <LoginScreen
         passwordWasReset={reset === true}
         recoveryLink={(label) => (
-          <Link to="/recover" className="text-text-accent underline">
+          <Link to="/recover" className={TEXT_LINK}>
             {label}
           </Link>
         )}
@@ -240,7 +241,7 @@ function PinPage() {
         bundleVerifier={bundleVerifier()}
         reconnect={reconnect === true}
         passwordLink={(label) => (
-          <Link to="/login" className="text-text-accent underline">
+          <Link to="/login" className={TEXT_LINK}>
             {label}
           </Link>
         )}
@@ -302,7 +303,7 @@ function RecoverPage() {
       <ProductMark />
       <PasswordResetScreen
         backLink={(label) => (
-          <Link to="/login" className="text-text-accent underline">
+          <Link to="/login" className={TEXT_LINK}>
             {label}
           </Link>
         )}
@@ -585,7 +586,7 @@ function AppShell() {
     >
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:start-2 focus:top-2 focus:z-50 focus:bg-surface focus:p-2 focus:text-text-accent"
+        className="sr-only focus:not-sr-only focus:absolute focus:start-2 focus:top-2 focus:z-50 focus:bg-surface focus:p-2 focus:text-text-accent focus:outline-solid focus:outline-2 focus:outline-focus-ring"
       >
         {t("skipToContent")}
       </a>
@@ -614,7 +615,10 @@ function AppShell() {
                 {...(permissions.has("organization.license.view")
                   ? {
                       link: (content: ReactNode) => (
-                        <Link to="/admin/license" className="underline">
+                        <Link
+                          to="/admin/license"
+                          className="cursor-pointer rounded-sm underline underline-offset-4 outline-none hover:decoration-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2"
+                        >
                           {content}
                         </Link>
                       ),
@@ -740,7 +744,7 @@ function PosPage() {
         check: () => deviceLicenseRestriction(db, bundleVerifier(), clock, audit),
       }}
       registerDeviceLink={
-        <Link to="/device" className="text-text-accent underline">
+        <Link to="/device" className={TEXT_LINK}>
           {t("registerDevice")}
         </Link>
       }
@@ -934,7 +938,7 @@ function LicensePage() {
       limitLink={(limit) => {
         const screen = LIMIT_SCREENS[limit];
         return permissions.has(screen.permission) ? (
-          <Link to={screen.to} className="text-text-accent underline">
+          <Link to={screen.to} className={TEXT_LINK}>
             {t(screen.label)}
           </Link>
         ) : null;

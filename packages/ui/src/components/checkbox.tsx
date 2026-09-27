@@ -7,6 +7,7 @@ import {
 } from "react-aria-components";
 import { cx } from "./cx.ts";
 import { FieldHelp } from "./field.tsx";
+import { PRESSABLE } from "./interaction.ts";
 
 export interface CheckboxProps {
   readonly children: ReactNode;
@@ -43,7 +44,9 @@ export function Checkbox({
       {...(isReadOnly === undefined ? {} : { isReadOnly })}
       {...(isDisabled === undefined ? {} : { isDisabled })}
       className={cx(
-        "group flex min-h-control cursor-default items-start gap-2 py-1 text-density text-text data-[disabled]:opacity-60",
+        "group flex min-h-control items-start gap-2 py-1 text-density text-text data-[disabled]:opacity-60",
+        PRESSABLE,
+        "data-[readonly]:cursor-default",
         className,
       )}
     >
@@ -52,8 +55,9 @@ export function Checkbox({
           <span
             aria-hidden="true"
             className={cx(
-              "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-sm border border-field-border bg-field-bg",
-              "group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-offset-2 group-data-[focus-visible]:outline-focus-ring",
+              "mt-0.5 flex size-[18px] flex-none items-center justify-center rounded-sm border border-field-border bg-field-bg transition-colors",
+              "group-data-[hovered]:bg-state-hover-bg group-data-[pressed]:bg-state-pressed-bg group-data-[readonly]:bg-field-bg",
+              "group-data-[focus-visible]:outline-solid group-data-[focus-visible]:outline-2 group-data-[focus-visible]:outline-focus-ring group-data-[focus-visible]:outline-offset-2",
               "group-data-[selected]:border-accent group-data-[selected]:bg-accent group-data-[selected]:text-text-on-accent",
             )}
           >

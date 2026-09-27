@@ -31,7 +31,7 @@ export function RolesTable({ roles, selectedId, onSelect, tableRef }: RolesTable
         row.archivedAt === null ? (
           <Badge tone="positive">{t("roles.state.active")}</Badge>
         ) : (
-          <Badge tone="neutral">{t("roles.state.archived")}</Badge>
+          <Badge tone="archived">{t("roles.state.archived")}</Badge>
         ),
     },
   ];

@@ -16,7 +16,7 @@ import { cryptoRandom, systemClock, uuidV7Generator } from "@mustawfi/kernel";
 import { loadReceiptFonts } from "@mustawfi/printing";
 import { type LocalDb, LocalDbProvider } from "@mustawfi/local-db";
 import { SKELETON_DOCUMENT_DEFAULTS } from "@mustawfi/sales/shared";
-import { LocaleProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { LocaleProvider, ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import { GALLERY_NAMESPACE, galleryMessages } from "@mustawfi/ui/gallery";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
@@ -154,17 +154,19 @@ Promise.all([startLocalRuntime(queryClient, platform), printerTransport]).then(
       <StrictMode>
         <I18nextProvider i18n={i18n}>
           <LocaleProvider>
-            <ClientRuntimeProvider runtime={runtime}>
-              <LocalDbProvider db={db}>
-                <SyncEngineProvider engine={sync}>
-                  <PrintingProvider printing={{ fonts: receiptFonts, transport: printer }}>
-                    <QueryClientProvider client={queryClient}>
-                      <RouterProvider router={router} />
-                    </QueryClientProvider>
-                  </PrintingProvider>
-                </SyncEngineProvider>
-              </LocalDbProvider>
-            </ClientRuntimeProvider>
+            <ToastProvider>
+              <ClientRuntimeProvider runtime={runtime}>
+                <LocalDbProvider db={db}>
+                  <SyncEngineProvider engine={sync}>
+                    <PrintingProvider printing={{ fonts: receiptFonts, transport: printer }}>
+                      <QueryClientProvider client={queryClient}>
+                        <RouterProvider router={router} />
+                      </QueryClientProvider>
+                    </PrintingProvider>
+                  </SyncEngineProvider>
+                </LocalDbProvider>
+              </ClientRuntimeProvider>
+            </ToastProvider>
           </LocaleProvider>
         </I18nextProvider>
       </StrictMode>,

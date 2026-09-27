@@ -11,6 +11,7 @@ import {
   TextArea,
   TextInput,
   useShortcut,
+  useToast,
 } from "@mustawfi/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -91,7 +92,7 @@ function LogoSection({ profile }: { readonly profile: StoreProfileView }) {
   const { t } = useTranslation(ORGANIZATION_NAMESPACE);
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | undefined>();
-  const [done, setDone] = useState<string | undefined>();
+  const toast = useToast();
   const logo = useQuery({
     ...storeLogoQueryOptions(profile.logo?.sha256 ?? ""),
     enabled: profile.logo !== null,
@@ -109,7 +110,7 @@ function LogoSection({ profile }: { readonly profile: StoreProfileView }) {
     };
   }, [logo.data, profile.logo]);
   const applied = async (saved: StoreProfileView, message: string) => {
-    setDone(t(message));
+    toast.show(t(message));
     queryClient.setQueryData(storeProfileQueryKey, saved);
     await queryClient.invalidateQueries({ queryKey: storeProfileQueryKey, exact: true });
   };
@@ -129,7 +130,6 @@ function LogoSection({ profile }: { readonly profile: StoreProfileView }) {
   });
   const choose = async (files: FileList | null) => {
     setProblem(undefined);
-    setDone(undefined);
     const file = files?.[0];
     if (file === undefined) return;
     // Checked here for a quick answer; the server checks the same rules again.
@@ -174,7 +174,6 @@ function LogoSection({ profile }: { readonly profile: StoreProfileView }) {
               isPending={remove.isPending}
               onPress={() => {
                 setProblem(undefined);
-                setDone(undefined);
                 remove.mutate();
               }}
             >
@@ -189,9 +188,6 @@ function LogoSection({ profile }: { readonly profile: StoreProfileView }) {
           {t(`profile.problem.${problem}`)}
         </p>
       )}
-      <p role="status" className="text-text-positive min-h-5">
-        {done}
-      </p>
     </FormSection>
   );
 }
@@ -211,7 +207,7 @@ export function StoreProfileForm({ profile, onDirtyChange }: StoreProfileFormPro
   const { t } = useTranslation(ORGANIZATION_NAMESPACE);
   const queryClient = useQueryClient();
   const formRef = useRef<HTMLFormElement>(null);
-  const [saved, setSaved] = useState(false);
+  const toast = useToast();
   const form = useForm({
     resolver: zodResolver(storeProfileFormSchema),
     defaultValues: formValues(profile),
@@ -220,10 +216,18 @@ export function StoreProfileForm({ profile, onDirtyChange }: StoreProfileFormPro
   useEffect(() => {
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
+  // Discard leaves with the changes it discarded; focus goes back to the form's first field
+  // once the button is gone, so it is never lost.
+  const discarded = useRef(false);
+  useEffect(() => {
+    if (isDirty || !discarded.current) return;
+    discarded.current = false;
+    form.setFocus("name");
+  }, [isDirty, form]);
   const save = useMutation({
     mutationFn: saveStoreProfile,
     onSuccess: async (next) => {
-      setSaved(true);
+      toast.show(t("profile.saved"));
       form.reset(formValues(next));
       queryClient.setQueryData(storeProfileQueryKey, next);
       await queryClient.invalidateQueries({ queryKey: storeProfileQueryKey, exact: true });
@@ -245,7 +249,6 @@ export function StoreProfileForm({ profile, onDirtyChange }: StoreProfileFormPro
         noValidate
         onKeyDown={enterMovesToNextField}
         onSubmit={(event) => {
-          setSaved(false);
           void form.handleSubmit((values) => {
             save.mutate(values);
           })(event);
@@ -370,28 +373,27 @@ export function StoreProfileForm({ profile, onDirtyChange }: StoreProfileFormPro
           {t("profile.save")}
           <Kbd shortcut="Control+S" />
         </Button>
-        <Button
-          variant="secondary"
-          onPress={() => {
-            setSaved(false);
-            save.reset();
-            form.reset(formValues(profile));
-          }}
-        >
-          {t("profile.cancel")}
-        </Button>
+        {/* Discard exists only while there is something to discard, beside the reason. */}
+        {isDirty ? (
+          <Button
+            variant="secondary"
+            onPress={() => {
+              save.reset();
+              discarded.current = true;
+              form.reset(formValues(profile));
+            }}
+          >
+            {t("profile.cancel")}
+          </Button>
+        ) : null}
+        <p role="status" className="min-h-5 text-sm">
+          {isDirty ? <span className="text-text-warning">{t("profile.dirty")}</span> : null}
+        </p>
         {save.error === null ? null : (
           <p role="alert" className="text-text-negative">
             {t(`profile.problem.${refusalProblem(save.error)}`)}
           </p>
         )}
-        <p role="status" className="text-sm min-h-5">
-          {isDirty ? (
-            <span className="text-text-warning">{t("profile.dirty")}</span>
-          ) : saved ? (
-            <span className="text-text-positive">{t("profile.saved")}</span>
-          ) : null}
-        </p>
       </FormFooter>
     </div>
   );

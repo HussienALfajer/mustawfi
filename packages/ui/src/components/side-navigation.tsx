@@ -2,15 +2,14 @@ import { PanelRight } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { cx } from "./cx.ts";
+import { LINK_ITEM_STATES } from "./interaction.ts";
 import { Kbd } from "./kbd.tsx";
 import { useShortcut } from "./keyboard.ts";
 
 /** The class names a navigation link takes; the link itself comes from the app's router. */
 export const NAV_LINK_CLASS = cx(
-  "group/nav relative flex h-9 items-center gap-3 rounded-md px-2 whitespace-nowrap text-text-secondary outline-none",
-  "hover:bg-sunken hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
-  "aria-[current=page]:bg-selected aria-[current=page]:font-semibold aria-[current=page]:text-text-accent",
-  "aria-[current=page]:before:absolute aria-[current=page]:before:inset-y-1.5 aria-[current=page]:before:-start-2 aria-[current=page]:before:w-[3px] aria-[current=page]:before:rounded-sm aria-[current=page]:before:bg-accent",
+  "group/nav flex h-9 items-center gap-3 rounded-md px-2 whitespace-nowrap text-text-secondary",
+  LINK_ITEM_STATES,
 );
 
 export interface NavItem {
@@ -122,7 +121,7 @@ export function SideNavigation({
           onPress={() => {
             onCollapsedChange(!collapsed);
           }}
-          className={cx(NAV_LINK_CLASS, "w-full cursor-default")}
+          className={cx(NAV_LINK_CLASS, "w-full")}
         >
           <span aria-hidden="true" className="flex size-5 flex-none items-center">
             <PanelRight size={20} strokeWidth={1.75} />

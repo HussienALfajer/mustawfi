@@ -31,7 +31,7 @@ All custom properties are prefixed `--mf-`. Screens name **semantic** and **comp
 1. **Primitive** — the generated ramps `--mf-{ramp}-{step}` (steps 50, 100, 200 … 900, 950) plus the fixed `--mf-paper` (`#F7F7F5`) and `--mf-white` (`#FFFFFF`).
 2. **Alias** — what a ramp is for: `accent` → ink, `neutral` → graphite, `ledger` → ledger, `signature` → brass, `success` → green, `danger` → red, `warning` → amber, `info` → teal (`--mf-accent-700` …).
 3. **Semantic** — `--mf-color-*`, one value per theme (table below).
-4. **Component** — named uses of semantic tokens: `--mf-button-primary-bg`, `-bg-hover`, `-text`, `--mf-field-bg`, `--mf-field-border`, `--mf-field-text`, `--mf-row-alt-bg`, `--mf-row-selected-bg`, `--mf-total-rule`.
+4. **Component** — named uses of semantic tokens: `--mf-button-primary-bg`, `-bg-hover`, `-bg-pressed`, `-text`, `--mf-field-bg`, `--mf-field-border`, `--mf-field-text`, `--mf-row-alt-bg`, `--mf-row-selected-bg`, `--mf-total-rule`, and the interaction states `--mf-state-hover-bg`, `--mf-state-pressed-bg`, `--mf-state-selected-bg`, `--mf-state-bar-hover`, `--mf-state-bar-selected`.
 
 Switching axes, on the app root or any subtree: `data-theme` = `light` | `dark` | `system` (follows `prefers-color-scheme`), and `data-density` = `compact` | `comfortable` | `touch`. Light and comfortable are the defaults. Tailwind v4 consumes them through the generated `@theme` in `packages/ui/src/styles/theme.css` (`@mustawfi/ui/theme.css`), which clears Tailwind's own palette, fonts, sizes, radii, and shadows: screens can name only semantic and component tokens (`bg-surface`, `text-text-muted`, `border-field-border`, `h-control`, `px-pad-inline`, `gap-density-gap`, `text-density`).
 
@@ -65,15 +65,21 @@ Each step has a default OKLCH lightness (50 = 0.985 … 950 = 0.24). A ramp's an
 | `page` | paper `#F7F7F5` | graphite 950 |
 | `surface` | white | graphite 900 |
 | `sunken` | ledger 50 | graphite 950 |
-| `selected` | ink 50 | ink 900 |
-| `accent` / `accent-hover` | ink 700 / 800 | ink 400 / 300 |
+| `hover` | ink 50 | ink 900 |
+| `selected` | ink 100 | ink 800 |
+| `pressed` | ink 200 | ink 700 |
+| `accent` / `accent-hover` / `accent-pressed` | ink 700 / 800 / 900 | ink 400 / 300 / 200 |
+| `negative-pressed` (a destructive button being pressed) | red 100 | red 900 |
+| `neutral-solid` (the archived badge) | graphite 600 | graphite 300 |
 | `positive-tint`, `negative-tint`, `warning-tint`, `info-tint` | step 50 of each | step 950 of each |
 | `text` / `text-secondary` / `text-muted` | graphite 800 / 600 / 500 | graphite 50 / 200 / 300 |
 | `text-accent` | ink 700 | ink 300 |
 | `text-on-accent` | white | graphite 950 |
+| `text-on-neutral-solid` | white | graphite 950 |
 | `text-positive`, `text-negative`, `text-warning`, `text-info` | step 700 of each | step 400 of each |
 | `border-field` | graphite 400 | graphite 500 |
 | `focus-ring` | ink 700 | ink 400 |
+| `hover-bar` (decorative: the start bar of a hovered item) | ink 300 | ink 600 |
 | `divider` (decorative) | graphite 100 | graphite 800 |
 | `signature` (decorative) | brass 400 | brass 400 |
 
@@ -91,11 +97,15 @@ The pairs are the usage rules. Combinations not in the list are not allowed on s
 
 | Foreground | Allowed on |
 |---|---|
-| `text`, `text-secondary` | `page`, `surface`, `sunken`, `selected`, and every tint |
-| `text-muted` | `page`, `surface`, `sunken`, `selected` — **never on a tint** (4.39:1 on the anchored positive tint) |
-| `text-accent`, `text-positive`, `text-negative`, `text-warning`, `text-info` | `page`, `surface`, `sunken`, `selected`; each status text also on its own tint |
-| `text-on-accent` | `accent`, `accent-hover` |
-| `focus-ring`, `accent` (as a control fill) | `page`, `surface`, `sunken`, `selected` (3:1) |
+| `text`, `text-secondary` | `page`, `surface`, `sunken`, `hover`, `selected`, and every tint |
+| `text-muted` | `page`, `surface`, `sunken`, `hover` — **never on a tint** (4.39:1 on the anchored positive tint) and **never on `selected`** (4.15:1) |
+| `text-accent`, `text-negative`, `text-warning`, `text-info` | `page`, `surface`, `sunken`, `hover`, `selected`; each status text also on its own tint |
+| `text-positive` | `page`, `surface`, `sunken`, `hover`, and its own tint — **not on `selected`** (4.43:1): a selected row shows it inside a badge |
+| `text`, `text-accent` | `pressed` — a control being pressed turns secondary text to body text |
+| `text-on-accent` | `accent`, `accent-hover`, `accent-pressed` |
+| `text-negative` | `negative-pressed` |
+| `text-on-neutral-solid` | `neutral-solid` |
+| `focus-ring`, `accent` (as a control fill) | `page`, `surface`, `sunken`, `hover`, `selected`, `pressed` (3:1) |
 | `border-field` | measured against the field's own background, which is **always `surface`** (3.22:1; against paper it is 2.998:1) |
 
 **Sunken rows use ledger 50, not the `#F0EBE3` anchor.** On `#F0EBE3`, muted text reaches 4.14:1 and the field border 2.71:1, so sunken rows and panels use the family's lightest step; `#F0EBE3` stays in the ramp. Approved by the user on 2026-09-25.
@@ -126,6 +136,17 @@ Variables: `--mf-control-height`, `--mf-row-height`, `--mf-density-font-size`, `
 - Corners nearly square: `--mf-radius-sm` 2px, `--mf-radius-md` 4px.
 - Shadows only on floating layers: `--mf-shadow-floating`.
 - Motion 120–200 ms (`--mf-duration-fast`, `--mf-duration-normal`), never delaying a keystroke; both are 0 under `prefers-reduced-motion`.
+
+## Interaction states
+
+Approved by the user on the component gallery's preview on 2026-09-27 (`core-foundation` slice 19). One language for everything clickable, written once in `packages/ui/src/components/interaction.ts` and never colour alone:
+
+- **Hover** tints the item (`hover`) and shows its start-side bar at partial strength (`hover-bar`). Hover never carries information of its own (pattern 4 below).
+- **Selected** keeps the full accent bar, a stronger tint (`selected`), and semibold accent text. Horizontal options (segmented controls, tabs) carry the bar under the label instead.
+- **Pressed** darkens one step (`pressed`, `accent-pressed`, `negative-pressed`).
+- **Focus-visible** is a solid 2 px `focus-ring` with a 2 px offset (inside the element for rows, cells, and list items), distinct from hover. `FOCUS_RING` needs `outline-solid` under the same variant: Tailwind v4's `outline-none` sets the outline style to `none`, which `outline-2` keeps, so a ring without it never shows (a test in `packages/ui` checks every width has its style).
+- Clickable things show `cursor: pointer`; colours change over `--mf-duration-fast`.
+- In light, the hover tint is faint on purpose: any darker step drops muted text under 4.5:1, so the partial bar carries the hover.
 
 ## Direction and numbers
 

@@ -8,12 +8,14 @@ import {
   ConfirmDialog,
   enterMovesToNextField,
   Kbd,
+  PasswordField,
   SegmentedControl,
   Select,
   SidePanel,
   TextArea,
   TextInput,
   useShortcut,
+  useToast,
 } from "@mustawfi/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
@@ -177,7 +179,7 @@ export function UserPanel({
   const nameRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<UserDraft>(() => draftOf(user));
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [notice, setNotice] = useState<string | undefined>();
+  const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState(false);
@@ -212,7 +214,7 @@ export function UserPanel({
   };
 
   const settle = async (saved: UserView, message: string) => {
-    setNotice(t(message, { name: saved.name }));
+    toast.show(t(message, { name: saved.name }));
     await queryClient.invalidateQueries({ queryKey: usersQueryKey });
     onSaved(saved);
   };
@@ -281,7 +283,6 @@ export function UserPanel({
     },
   });
   const resetMutations = () => {
-    setNotice(undefined);
     save.reset();
     deactivate.reset();
     reactivate.reset();
@@ -409,16 +410,14 @@ export function UserPanel({
         </div>
         {isNew ? (
           <div data-field="password">
-            <TextInput
+            <PasswordField
               label={`${t("users.panel.password")} ${t("users.panel.optional")}`}
               description={t("users.panel.passwordHelp")}
               errorMessage={fieldError("password")}
-              type="password"
               value={draft.password}
               onChange={(password) => {
                 change({ password });
               }}
-              dir="ltr"
               autoComplete="new-password"
             />
           </div>
@@ -447,18 +446,16 @@ export function UserPanel({
         ) : null}
         {isNew ? (
           <div data-field="pin">
-            <TextInput
+            <PasswordField
               label={`${t("users.panel.pin")} ${t("users.panel.required")}`}
               description={t("users.panel.pinHelp")}
               errorMessage={fieldError("pin")}
-              type="password"
               inputMode="numeric"
               maxLength={6}
               value={draft.pin}
               onChange={(pin) => {
                 change({ pin });
               }}
-              dir="ltr"
               autoComplete="off"
             />
           </div>
@@ -471,9 +468,6 @@ export function UserPanel({
             {t(`users.problem.${failure}`)}
           </p>
         )}
-        <p role="status" className="min-h-5 text-text-positive">
-          {notice}
-        </p>
       </form>
       {user !== null && editable && !isSelf ? (
         <SecretsSection user={user} viewerIsOwner={viewer.isOwner} onSaved={settle} />
@@ -635,16 +629,14 @@ function SecretsSection({
           pinMutation.mutate(pin);
         }}
       >
-        <TextInput
+        <PasswordField
           className="flex-1"
           label={t("users.panel.newPin")}
           errorMessage={pinError}
-          type="password"
           inputMode="numeric"
           maxLength={6}
           value={pin}
           onChange={setPin}
-          dir="ltr"
           autoComplete="off"
         />
         <Button type="submit" variant="secondary" isPending={pinMutation.isPending}>
@@ -671,14 +663,12 @@ function SecretsSection({
           passwordMutation.mutate(password);
         }}
       >
-        <TextInput
+        <PasswordField
           className="flex-1"
           label={t("users.panel.newPassword")}
           errorMessage={passwordError}
-          type="password"
           value={password}
           onChange={setPassword}
-          dir="ltr"
           autoComplete="new-password"
         />
         <Button type="submit" variant="secondary" isPending={passwordMutation.isPending}>

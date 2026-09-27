@@ -8,7 +8,9 @@ import {
   Kbd,
   SidePanel,
   TextInput,
+  enterMovesToNextField,
   useShortcut,
+  useToast,
 } from "@mustawfi/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
@@ -133,7 +135,7 @@ export function RolePanel({
   );
   const [nameError, setNameError] = useState<string | undefined>();
   const [limitErrors, setLimitErrors] = useState<ReadonlySet<string>>(new Set());
-  const [notice, setNotice] = useState<string | undefined>();
+  const toast = useToast();
   const [confirming, setConfirming] = useState(false);
   const archived = role !== null && role.archivedAt !== null;
   const readOnly = !canManage || archived || role?.isOwner === true;
@@ -145,7 +147,9 @@ export function RolePanel({
       limits: Record<string, string>;
     }) => (role === null ? createRole(request) : updateRole(role.id, request)),
     onSuccess: async (saved) => {
-      setNotice(t(role === null ? "roles.panel.added" : "roles.panel.saved", { name: saved.name }));
+      toast.show(
+        t(role === null ? "roles.panel.added" : "roles.panel.saved", { name: saved.name }),
+      );
       setDraft(draftOf(saved));
       await queryClient.invalidateQueries({ queryKey: rolesQueryKey });
       onSaved(saved);
@@ -158,7 +162,7 @@ export function RolePanel({
     mutationFn: (id: string) => archiveRole(id),
     onSuccess: async (saved) => {
       setConfirming(false);
-      setNotice(t("roles.archive.done", { name: saved.name }));
+      toast.show(t("roles.archive.done", { name: saved.name }));
       await queryClient.invalidateQueries({ queryKey: rolesQueryKey });
       onSaved(saved);
       // The footer leaves with an archived role; focus stays in the panel.
@@ -170,7 +174,6 @@ export function RolePanel({
   });
 
   const submit = () => {
-    setNotice(undefined);
     save.reset();
     archive.reset();
     const name = roleNameSchema.safeParse(draft.name);
@@ -256,6 +259,7 @@ export function RolePanel({
       <form
         ref={formRef}
         noValidate
+        onKeyDown={enterMovesToNextField}
         onSubmit={(event) => {
           event.preventDefault();
           if (!readOnly) submit();
@@ -266,7 +270,7 @@ export function RolePanel({
           <div className="flex flex-wrap items-center gap-2">
             <RoleKindBadge role={role} />
             {archived ? (
-              <Badge tone="neutral">{t("roles.state.archived")}</Badge>
+              <Badge tone="archived">{t("roles.state.archived")}</Badge>
             ) : (
               <Badge tone="positive">{t("roles.state.active")}</Badge>
             )}
@@ -305,9 +309,6 @@ export function RolePanel({
             {t(`roles.problem.${failure}`)}
           </p>
         )}
-        <p role="status" className="min-h-5 text-text-positive">
-          {notice}
-        </p>
       </form>
       {role === null ? null : (
         <ConfirmDialog
@@ -318,7 +319,6 @@ export function RolePanel({
           cancelLabel={t("roles.archive.cancel")}
           isPending={archive.isPending}
           onConfirm={() => {
-            setNotice(undefined);
             save.reset();
             archive.mutate(role.id);
           }}
