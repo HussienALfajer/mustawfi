@@ -19,6 +19,7 @@ const RELEASED = [
   "core.access.0002_pin_sign_in",
   "sales.0002_invoice_overrides",
   "core.access.0003_device_credential_store",
+  "core.organization.0002_store_logo",
 ];
 
 describe("local migrations", () => {

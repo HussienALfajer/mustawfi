@@ -1,0 +1,1 @@
+ALTER TABLE "inventory"."products" ADD CONSTRAINT "products_price_fits_devices" CHECK ("inventory"."products"."price" < 1000000000000);

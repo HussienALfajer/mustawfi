@@ -103,7 +103,12 @@ export const storeProfileSchema = z.object({
   taxNumber: z.string().nullable(),
   commercialRegister: z.string().nullable(),
   logo: logoInfoSchema.nullable(),
-  logoPrint: z.enum(LOGO_PRINT_MODES),
+  /**
+   * Rows written before slice 21 have none: the change log devices pull and the bundles they
+   * keep hold rows in the shape they were written in, so these read as the column's default
+   * (QA slice 23: a device registered after the upgrade could not pull its first page).
+   */
+  logoPrint: z.enum(LOGO_PRINT_MODES).default("threshold"),
   updatedAt: z.iso.datetime(),
 });
 

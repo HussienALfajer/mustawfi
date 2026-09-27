@@ -6,6 +6,7 @@ import {
   DataTable,
   Money,
   MoneyInput,
+  type MoneyInputProblem,
   readMoneyInput,
   TextInput,
 } from "@mustawfi/ui";
@@ -15,7 +16,12 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { barcodeSchema, inventoryProblemCodes, type ProductView } from "../shared/index.ts";
+import {
+  barcodeSchema,
+  inventoryProblemCodes,
+  PRICE_INTEGER_DIGITS,
+  type ProductView,
+} from "../shared/index.ts";
 import { INVENTORY_NAMESPACE } from "./messages.ts";
 import {
   createProduct,
@@ -25,8 +31,11 @@ import {
   productsQueryOptions,
 } from "./products.ts";
 
-/** Unit prices keep up to six decimals, like their column (ADR-0018). */
-const PRICE_SCALE = 6;
+/**
+ * Unit prices keep up to six decimals, like their column (ADR-0018), and at most the digits a
+ * device can hold before the point (`PRICE_INTEGER_DIGITS`).
+ */
+const PRICE_BOUNDS = { scale: 6, integerDigits: PRICE_INTEGER_DIGITS };
 
 /** Field problems are message keys under `newProduct.`; price problems belong to `MoneyInput`. */
 const newProductFormSchema = z
@@ -40,9 +49,7 @@ const newProductFormSchema = z
     currency: z.string(),
   })
   .superRefine((form, context) => {
-    const { problem } = readMoneyInput(form.price, priceCurrency(form.currency), {
-      scale: PRICE_SCALE,
-    });
+    const { problem } = readMoneyInput(form.price, priceCurrency(form.currency), PRICE_BOUNDS);
     if (problem !== undefined)
       context.addIssue({ code: "custom", path: ["price"], message: problem });
   });
@@ -66,9 +73,7 @@ function NewProductSection() {
   });
   const mutation = useMutation({
     mutationFn: (values: NewProductForm) => {
-      const { money } = readMoneyInput(values.price, priceCurrency(values.currency), {
-        scale: PRICE_SCALE,
-      });
+      const { money } = readMoneyInput(values.price, priceCurrency(values.currency), PRICE_BOUNDS);
       if (money === undefined) throw new Error("the form schema let an invalid price through");
       return createProduct({
         name: values.name.trim(),
@@ -173,11 +178,9 @@ function NewProductSection() {
                   onCurrencyChange={(currency) => {
                     currencyField.onChange(currency.code);
                   }}
-                  scale={PRICE_SCALE}
-                  problem={
-                    fieldState.error?.message as
-                      "required" | "notANumber" | "tooPrecise" | "negative" | undefined
-                  }
+                  scale={PRICE_BOUNDS.scale}
+                  integerDigits={PRICE_BOUNDS.integerDigits}
+                  problem={fieldState.error?.message as MoneyInputProblem | undefined}
                 />
               )}
             />
@@ -267,11 +270,14 @@ function ProductList() {
   );
 }
 
-/** Products: add one (online) and see the list. */
-export function ProductsScreen() {
+/**
+ * Products: see the list, and add one (online) with `inventory.products.manage` — without it
+ * the form is not shown, since the server would refuse it (QA slice 23).
+ */
+export function ProductsScreen(props: { readonly canManage: boolean }) {
   return (
     <div className="flex flex-col gap-8">
-      <NewProductSection />
+      {props.canManage ? <NewProductSection /> : null}
       <ProductList />
     </div>
   );

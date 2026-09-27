@@ -9,10 +9,18 @@ export const barcodeSchema = z
   .trim()
   .regex(/^[\x21-\x7E]{1,64}$/, "a barcode is 1–64 printable characters without spaces");
 
+/**
+ * Most digits before the point of a unit price. Devices keep prices as 64-bit integers scaled by
+ * 10^6 (ADR-0018), so 12 digits (below 10^18) is what every device can hold, although the
+ * server's `numeric(20,6)` takes 14: one product priced beyond it stopped every device's pull
+ * (QA slice 23 — an ISBN scanned into the price field).
+ */
+export const PRICE_INTEGER_DIGITS = 12;
+
 /** A unit price with its currency: merchants price in USD or SYP (AGENTS.md, dollarization). */
 export const priceSchema = z.object({
   /** A unit price, `numeric(20,6)` (ADR-0018): not rounded until it becomes a line amount. */
-  amount: decimalString({ scale: 6, sign: "nonNegative" }),
+  amount: decimalString({ scale: 6, precision: 6 + PRICE_INTEGER_DIGITS, sign: "nonNegative" }),
   currency: z.string().regex(/^[A-Z]{3}$/, "a currency is an ISO 4217 code"),
 });
 

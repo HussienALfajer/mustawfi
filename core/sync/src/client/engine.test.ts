@@ -20,14 +20,16 @@ import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { type LocalDb, localOrm, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  OperationResult,
-  PullResponse,
-  PushResponse,
-  SyncChange,
-  SyncOperation,
+import {
+  type OperationResult,
+  type PullResponse,
+  PUSH_BATCH_BYTES,
+  type PushResponse,
+  type SyncChange,
+  type SyncOperation,
 } from "../shared/index.ts";
 import {
+  createApiSyncTransport,
   createSyncEngine,
   type PullApplier,
   type SyncFollowUp,
@@ -61,10 +63,15 @@ class FakeServer implements SyncTransport {
   afterPush: (() => Promise<void>) | undefined;
   wipeReports: string[] = [];
   reachableForReport = true;
+  /** The largest push body taken, in bytes, as the server's body limit (Fastify: 1 MiB). */
+  bodyLimit = Number.POSITIVE_INFINITY;
 
   push(credential: string, operations: readonly SyncOperation[]): Promise<PushResponse> {
     this.credentials.push(credential);
     if (!this.reachable) return Promise.reject(new ApiUnreachable("down"));
+    if (pushBytes(operations) > this.bodyLimit) {
+      return Promise.reject(new ApiProblem("core.request.tooLarge", 413));
+    }
     this.pushes.push([...operations]);
     const results: OperationResult[] = [];
     const revoked = this.revoked;
@@ -138,6 +145,11 @@ class FakeServer implements SyncTransport {
   }
 }
 
+/** A push body's size as sent: UTF-8 JSON. */
+function pushBytes(operations: readonly SyncOperation[]): number {
+  return new TextEncoder().encode(JSON.stringify({ operations })).length;
+}
+
 let db: LocalDb;
 let server: FakeServer;
 const applied: string[] = [];
@@ -173,7 +185,7 @@ async function registerDeviceWithSecureStore() {
   return store;
 }
 
-function enqueue(payload: Record<string, boolean> = {}) {
+function enqueue(payload: Record<string, boolean | string> = {}) {
   return db.transaction((tx) =>
     enqueueOperation(tx, {
       opId: newId(),
@@ -290,6 +302,54 @@ describe("the sync engine", () => {
       pending: 1,
     });
     expect(server.credentials).toEqual([]);
+  });
+
+  it("sends a backlog of large documents in pushes the server's body limit takes (ADR-0020, QA slice 23)", async () => {
+    await registerDevice();
+    server.bodyLimit = 1024 * 1024;
+    // After an outage: 40 sales of about 40 KB each (long invoices), 1.6 MB in all.
+    for (let sale = 0; sale < 40; sale += 1) await enqueue({ lines: "ب".repeat(20_000) });
+    const sync = engine();
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "idle", pending: 0 });
+    expect(server.pushes.flat()).toHaveLength(40);
+    expect(server.pushes.length).toBeGreaterThan(1);
+    for (const push of server.pushes) expect(pushBytes(push)).toBeLessThanOrEqual(PUSH_BATCH_BYTES);
+  });
+
+  it("sends an operation larger than a push's bound alone", async () => {
+    await registerDevice();
+    server.bodyLimit = 1024 * 1024;
+    await enqueue({ lines: "x".repeat(PUSH_BATCH_BYTES) });
+    await enqueue();
+    const sync = engine();
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "idle", pending: 0 });
+    expect(server.pushes.map((push) => push.length)).toEqual([1, 1]);
+  });
+
+  it("counts a request left unanswered as offline, and the next round runs (QA slice 23)", async () => {
+    await registerDevice();
+    await enqueue();
+    // A connection that went silent: the request never answers until it is aborted.
+    const silent: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(init.signal?.reason as Error);
+        });
+      });
+    const sync = createSyncEngine({
+      db,
+      migrations: MIGRATIONS,
+      appliers: [itemApplier],
+      clock,
+      transport: createApiSyncTransport({ fetch: silent, timeoutMs: 20 }),
+    });
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "offline", pending: 1 });
+    // The round ended: another one starts and ends too.
+    await sync.syncNow();
+    expect(sync.status()).toMatchObject({ phase: "offline", pending: 1 });
   });
 
   it("keeps sales in the outbox while the server is unreachable, and sends them later", async () => {

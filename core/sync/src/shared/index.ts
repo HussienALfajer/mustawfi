@@ -39,6 +39,14 @@ export type SyncOperation = z.infer<typeof syncOperationSchema>;
 /** The most operations one push carries. */
 export const PUSH_BATCH_LIMIT = 100;
 
+/**
+ * The most bytes of operations one push carries (ADR-0020: bounded by count and size), well under
+ * the server's body limit (Fastify's default, 1 MiB): a backlog of large documents after an
+ * outage goes in several pushes instead of being refused whole at every round (QA slice 23).
+ * An operation larger than this still goes, alone.
+ */
+export const PUSH_BATCH_BYTES = 256 * 1024;
+
 /** `POST /api/v1/sync/push`, authenticated with the device credential. */
 export const pushRequestSchema = z.object({
   operations: z.array(syncOperationSchema).min(1).max(PUSH_BATCH_LIMIT),

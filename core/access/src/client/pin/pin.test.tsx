@@ -188,66 +188,88 @@ describe("the PIN screen (flows 12–13)", () => {
     expect(screen.getByRole("link", { name: "الدخول بكلمة المرور" })).toBeInTheDocument();
   });
 
-  it("keyboard only: a name, the PIN's digits, Enter — five wrong lock the name; a supervisor unlocks with the pad", async () => {
-    const user = userEvent.setup();
-    const { onSignedIn } = renderPinScreen();
-    await screen.findByRole("list", { name: "المستخدمون على هذا الجهاز" });
-    await user.keyboard("{Enter}");
-    const field = await screen.findByLabelText("الرمز السري لـ سامر");
-    expect(field).toHaveFocus();
-
-    for (const left of ["بقيت 4 محاولات", "بقيت 3 محاولات", "بقيت محاولتان", "بقيت محاولة واحدة"]) {
-      await user.keyboard("0000{Enter}");
-      expect(await screen.findByRole("alert")).toHaveTextContent(left);
-      expect(field).toHaveValue("");
+  // A long journey (seven Argon2id checks and every step rendered): about 3 s alone, and it
+  // passed 5 s once under the full run's load (QA slices 22–23).
+  it(
+    "keyboard only: a name, the PIN's digits, Enter — five wrong lock the name; a supervisor unlocks with the pad",
+    { timeout: 20_000 },
+    async () => {
+      const user = userEvent.setup();
+      const { onSignedIn } = renderPinScreen();
+      await screen.findByRole("list", { name: "المستخدمون على هذا الجهاز" });
+      await user.keyboard("{Enter}");
+      const field = await screen.findByLabelText("الرمز السري لـ سامر");
       expect(field).toHaveFocus();
-    }
-    await user.keyboard("0000{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "أُقفل سامر على هذا الجهاز بعد خمس محاولات خاطئة.",
-    );
-    // Locked: the right PIN is not even checked.
-    await user.keyboard("2580{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent("سامر مقفل على هذا الجهاز");
-    expect(onSignedIn).not.toHaveBeenCalled();
 
-    // Back on the tiles, the name says it is locked, in words.
-    await user.keyboard("{Escape}");
-    const tiles = await screen.findByRole("list", { name: "المستخدمون على هذا الجهاز" });
-    expect(within(tiles).getByRole("button", { name: /سامر/ })).toHaveTextContent(
-      "مقفل على هذا الجهاز",
-    );
+      for (const left of [
+        "بقيت 4 محاولات",
+        "بقيت 3 محاولات",
+        "بقيت محاولتان",
+        "بقيت محاولة واحدة",
+      ]) {
+        await user.keyboard("0000{Enter}");
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          `${left} قبل قفل سامر على هذا الجهاز`,
+        );
+        expect(field).toHaveValue("");
+        expect(field).toHaveFocus();
+      }
+      await user.keyboard("0000{Enter}");
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "أُقفل سامر على هذا الجهاز بعد خمس محاولات خاطئة.",
+      );
+      // Locked: the right PIN is not even checked.
+      await user.keyboard("2580{Enter}");
+      expect(await screen.findByRole("alert")).toHaveTextContent("سامر مقفل على هذا الجهاز");
+      expect(onSignedIn).not.toHaveBeenCalled();
 
-    await user.click(within(tiles).getByRole("button", { name: /سامر/ }));
-    await user.click(await screen.findByRole("button", { name: "فتح القفل بواسطة مشرف" }));
-    const supervisors = await screen.findByRole("list", { name: "المشرفون على هذا الجهاز" });
-    // Those whose role may unlock: the accountant (access.users.unlock) and the owner.
-    expect(
-      within(supervisors)
-        .getAllByRole("button")
-        .map((b) => b.textContent),
-    ).toEqual(["ليلىالمحاسب", "هدىالمالك"]);
-    await user.click(within(supervisors).getByRole("button", { name: /ليلى/ }));
-    const pad = await screen.findByRole("group", { name: "لوحة الأرقام" });
-    for (const digit of ["7", "3", "9", "1"]) {
-      await user.click(within(pad).getByRole("button", { name: digit }));
-    }
-    expect(screen.getByLabelText("رمز المشرف ليلى")).toHaveFocus();
-    await user.click(within(pad).getByRole("button", { name: "دخول" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("فُتح قفل سامر");
+      // Back on the tiles, the name says it is locked, in words.
+      await user.keyboard("{Escape}");
+      const tiles = await screen.findByRole("list", { name: "المستخدمون على هذا الجهاز" });
+      expect(within(tiles).getByRole("button", { name: /سامر/ })).toHaveTextContent(
+        "مقفل على هذا الجهاز",
+      );
 
-    await user.keyboard("2580{Enter}");
-    await vi.waitFor(() => {
-      expect(onSignedIn).toHaveBeenCalledWith(null);
-    });
-    expect(await localSession(db)).toMatchObject({ userId: CASHIER, serverSession: false });
-    expect(audited.map((event) => [event.action, event.userId])).toEqual([
-      ...Array.from({ length: 5 }, () => ["access.pin.failed", CASHIER]),
-      ["access.pin.lockedOut", CASHIER],
-      ["access.pin.unlocked", ACCOUNTANT],
-      ["access.pin.signedIn", CASHIER],
-    ]);
-  });
+      await user.click(within(tiles).getByRole("button", { name: /سامر/ }));
+      await user.click(await screen.findByRole("button", { name: "فتح القفل بواسطة مشرف" }));
+      const supervisors = await screen.findByRole("list", { name: "المشرفون على هذا الجهاز" });
+      // Those whose role may unlock: the accountant (access.users.unlock) and the owner.
+      expect(
+        within(supervisors)
+          .getAllByRole("button")
+          .map((b) => b.textContent),
+      ).toEqual(["ليلىالمحاسب", "هدىالمالك"]);
+      await user.click(within(supervisors).getByRole("button", { name: /ليلى/ }));
+      const pad = await screen.findByRole("group", { name: "لوحة الأرقام" });
+      // A wrong one counts against the supervisor, and the refusal says so (QA slice 23).
+      await user.keyboard("0000{Enter}");
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "بقيت 4 محاولات قبل قفل ليلى على هذا الجهاز",
+      );
+      for (const digit of ["7", "3", "9", "1"]) {
+        await user.click(within(pad).getByRole("button", { name: digit }));
+      }
+      expect(screen.getByLabelText("رمز المشرف ليلى")).toHaveFocus();
+      await user.click(within(pad).getByRole("button", { name: "دخول" }));
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "فُتح قفل سامر. أدخل الرمز السري للدخول.",
+      );
+
+      // Typed on an Arabic keyboard: the pad's field reads Arabic-Indic digits (QA slice 22).
+      await user.keyboard("٢٥٨٠{Enter}");
+      await vi.waitFor(() => {
+        expect(onSignedIn).toHaveBeenCalledWith(null);
+      });
+      expect(await localSession(db)).toMatchObject({ userId: CASHIER, serverSession: false });
+      expect(audited.map((event) => [event.action, event.userId])).toEqual([
+        ...Array.from({ length: 5 }, () => ["access.pin.failed", CASHIER]),
+        ["access.pin.lockedOut", CASHIER],
+        ["access.pin.failed", ACCOUNTANT],
+        ["access.pin.unlocked", ACCOUNTANT],
+        ["access.pin.signedIn", CASHIER],
+      ]);
+    },
+  );
 
   it("asks the signed-in user alone for their PIN on a reconnect, and waits for the server (rule 25)", async () => {
     await db.run(

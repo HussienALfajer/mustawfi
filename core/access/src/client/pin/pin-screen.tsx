@@ -296,7 +296,8 @@ export function PinScreen({
   const signInProblem = (outcome: PinSignInOutcome, name: string): Problem => {
     switch (outcome.outcome) {
       case "wrongPin":
-        return { message: t("pin.wrongPin", { attemptsLeft: outcome.attemptsLeft }) };
+        // The name says whose count it is: a supervisor's wrong PIN counts against them.
+        return { message: t("pin.wrongPin", { attemptsLeft: outcome.attemptsLeft, name }) };
       case "lockedOut":
         return { message: t("pin.lockedOut", { name }), unlock: true };
       case "locked":

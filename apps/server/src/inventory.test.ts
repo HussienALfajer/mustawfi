@@ -163,6 +163,21 @@ describe("POST /api/v1/inventory/products", () => {
     });
   });
 
+  it("accepts the highest price a device holds, and the database refuses one above it", async () => {
+    const response = await create({
+      name: "بطاقة ذهبية",
+      price: { amount: "999999999999.999999", currency: "SYP" },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json<ProductView>().price.amount).toBe("999999999999.999999");
+    // Whatever writes the table: the check stands behind the request schema (QA slice 23).
+    await expect(
+      superuser.query(`UPDATE inventory.products SET price = 1000000000000 WHERE id = $1`, [
+        response.json<ProductView>().id,
+      ]),
+    ).rejects.toThrow(/products_price_fits_devices/);
+  });
+
   it("refuses a barcode another of the tenant's products has, but not another tenant's", async () => {
     const product = {
       name: "سماعة",
@@ -182,6 +197,12 @@ describe("POST /api/v1/inventory/products", () => {
     [
       "a price too large for its column",
       { name: "x", price: { amount: "100000000000000", currency: "USD" } },
+    ],
+    // A device keeps it as a 64-bit integer scaled by 10^6: beyond 12 digits it stopped every
+    // device's pull (QA slice 23).
+    [
+      "a price a device cannot hold (an ISBN scanned into the price)",
+      { name: "x", price: { amount: "9780201379624", currency: "SYP" } },
     ],
     ["a lower-case currency", { name: "x", price: { amount: "1", currency: "usd" } }],
     ["an empty name", { name: "   ", price: { amount: "1", currency: "USD" } }],

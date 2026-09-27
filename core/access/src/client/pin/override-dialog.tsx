@@ -95,7 +95,7 @@ function OverrideSteps(
           setProblem({ message: t("override.notAllowed") });
           return false;
         case "wrongPin":
-          setProblem({ message: t("pin.wrongPin", { attemptsLeft: outcome.attemptsLeft }) });
+          setProblem({ message: t("pin.wrongPin", { attemptsLeft: outcome.attemptsLeft, name }) });
           return false;
         case "lockedOut":
           setProblem({ message: t("pin.lockedOut", { name }) });
