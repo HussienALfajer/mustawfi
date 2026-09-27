@@ -254,6 +254,15 @@ describe("filters", () => {
     expect(items[1]).toMatchObject({ before: { name: "قديم" }, after: { name: "جديد" } });
   });
 
+  it("by record: one record's history, whatever wrote it (slice 20)", async () => {
+    const { items } = await page(store.token, { entity: writer.userId });
+    // The deactivation recorded above names the writer; the writer's other entries name no
+    // record, and other records' entries are left out.
+    expect(items.map((entry) => entry.action)).toEqual(["access.user.deactivated"]);
+    expect(items.every((entry) => entry.entity?.id === writer.userId)).toBe(true);
+    expect((await entries(store.token, { entity: "not-an-id" })).statusCode).toBe(400);
+  });
+
   it("by device, with its name and prefix, the device's time and the server's", async () => {
     const { items } = await page(store.token, { device: till.deviceId });
     // Its registration, audited by the server with the device, and the event it sent.

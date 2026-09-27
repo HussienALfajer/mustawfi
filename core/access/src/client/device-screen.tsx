@@ -13,14 +13,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Controller, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { accessProblemCodes, deviceNameSchema, type DeviceType } from "../shared/index.ts";
 import {
+  accessProblemCodes,
+  deviceNameSchema,
+  type DevicePlatform,
+  type DeviceType,
+} from "../shared/index.ts";
+import {
+  currentDeviceQueryOptions,
   DeviceAlreadyRegistered,
   type LocalDevice,
   localDeviceQueryKey,
   localDeviceQueryOptions,
   registerThisDevice,
 } from "./device.ts";
+import { DeviceLimitNote, useDeviceKind } from "./devices/device-kind.tsx";
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { beginDeviceSession } from "./pin/device-session.ts";
 import { sessionQueryKey, sessionQueryOptions } from "./session.ts";
@@ -53,8 +60,12 @@ function registerFailureKey(error: unknown): string {
   return "device.refused";
 }
 
-function RegisterSection(props: { readonly deviceType: DeviceType }) {
+function RegisterSection(props: {
+  readonly deviceType: DeviceType;
+  readonly devicePlatform: DevicePlatform;
+}) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
+  const kind = useDeviceKind();
   const db = useLocalDb();
   const { clock } = useClientRuntime();
   const queryClient = useQueryClient();
@@ -68,6 +79,7 @@ function RegisterSection(props: { readonly deviceType: DeviceType }) {
         db,
         {
           type: props.deviceType,
+          platform: props.devicePlatform,
           storeCode: values.storeCode.trim(),
           registrationCode: values.registrationCode.trim(),
           name: values.name.trim(),
@@ -92,6 +104,12 @@ function RegisterSection(props: { readonly deviceType: DeviceType }) {
         {t("device.register.title")}
       </h2>
       <p className="text-text-secondary">{t("device.register.help")}</p>
+      <p className="flex flex-col text-text" data-testid="device-registers-as">
+        <span>
+          {t("device.registersAs", { kind: kind(props.deviceType, props.devicePlatform) })}
+        </span>
+        <DeviceLimitNote type={props.deviceType} />
+      </p>
       <p className="text-text-secondary">{t("device.register.codeHelp")}</p>
       <form
         noValidate
@@ -176,6 +194,8 @@ function RegisterSection(props: { readonly deviceType: DeviceType }) {
 export interface DeviceScreenProps {
   /** What this client registers as: the app shell decides (ADR-0022). */
   readonly deviceType: DeviceType;
+  /** What this client runs on, recorded at registration and shown with the type. */
+  readonly devicePlatform: DevicePlatform;
   /** How this app checks configuration bundles, to show the one in use. */
   readonly bundleVerifier: BundleVerifier;
 }
@@ -223,8 +243,14 @@ function BundleState(props: { readonly device: LocalDevice; readonly verifier: B
  */
 export function DeviceScreen(props: DeviceScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
+  const kind = useDeviceKind();
   const db = useLocalDb();
   const device = useQuery(localDeviceQueryOptions(db));
+  // The server's view when it answers: a new name, and the limit as used of allowed.
+  const server = useQuery({
+    ...currentDeviceQueryOptions(db),
+    enabled: device.data !== undefined && device.data !== null,
+  }).data;
 
   return (
     <div className="flex flex-col gap-8">
@@ -236,11 +262,11 @@ export function DeviceScreen(props: DeviceScreenProps) {
       ) : device.data === undefined ? (
         <p className="text-text-secondary">{t("device.loading")}</p>
       ) : device.data === null ? (
-        <RegisterSection deviceType={props.deviceType} />
+        <RegisterSection deviceType={props.deviceType} devicePlatform={props.devicePlatform} />
       ) : (
         <dl className="grid max-w-md grid-cols-2 gap-2 rounded-md bg-surface p-4">
           <dt className="text-text-secondary">{t("device.registered.name")}</dt>
-          <dd className="text-text">{device.data.name}</dd>
+          <dd className="text-text">{server?.name ?? device.data.name}</dd>
           <dt className="text-text-secondary">{t("device.registered.prefix")}</dt>
           <dd>
             <bdi
@@ -252,8 +278,11 @@ export function DeviceScreen(props: DeviceScreenProps) {
             </bdi>
           </dd>
           <dt className="text-text-secondary">{t("device.registered.type")}</dt>
-          <dd className="text-text" data-testid="device-type">
-            {t(`device.types.${device.data.type}`)}
+          <dd className="flex flex-col text-text">
+            <span data-testid="device-type">
+              {kind(device.data.type, server?.platform ?? props.devicePlatform)}
+            </span>
+            <DeviceLimitNote type={device.data.type} use={server?.limit} />
           </dd>
           <dt className="text-text-secondary">{t("device.registered.state")}</dt>
           <dd className="text-text-positive">{t("device.registered.ready")}</dd>

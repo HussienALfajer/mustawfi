@@ -27,6 +27,7 @@ export const accessMessages = {
       created: "إنشاء دور",
       changed: "تعديل دور",
       archived: "أرشفة دور",
+      restored: "استعادة دور مؤرشف",
     },
     user: {
       created: "إنشاء مستخدم",
@@ -47,7 +48,18 @@ export const accessMessages = {
       throttled: "إيقاف محاولات الدخول مؤقتًا بعد محاولات فاشلة كثيرة",
     },
     session: {
-      revoked: "إنهاء جلسة: تسجيل خروج، أو إنهاؤها مع إيقاف المستخدم أو تغيير كلمة مروره",
+      revoked: "إنهاء جلسة",
+      /** Each reason a session ended (`after.reason`, `SESSION_END_REASONS`), labelled on its own. */
+      revokedFor: {
+        signedOut: "تسجيل خروج",
+        switchedUser: "إنهاء جلسة: تبديل المستخدم على الجهاز",
+        locked: "إنهاء جلسة: قفل الجهاز بعد خمس دقائق دون استخدام",
+        idle: "إنهاء جلسة: فتح التطبيق بعد خمس دقائق دون استخدام",
+        userDeactivated: "إنهاء جلسة: إيقاف المستخدم",
+        passwordSet: "إنهاء جلسة: تعيين المدير كلمة مرور جديدة للمستخدم",
+        supportReset: "إنهاء جلسة: تعيين كلمة مرور المالك برمز من الدعم الفني",
+        deviceRevoked: "إنهاء جلسة: إبطال الجهاز",
+      },
     },
     registrationCode: {
       issued: "إصدار رمز تسجيل جهاز",
@@ -63,6 +75,7 @@ export const accessMessages = {
     },
     device: {
       registered: "تسجيل جهاز",
+      renamed: "إعادة تسمية جهاز",
       revoked: "إبطال جهاز",
       wiped: "مسح الجهاز المُبطَل بياناته",
     },
@@ -177,9 +190,25 @@ export const accessMessages = {
       bundleRefusedNone: "رُفضت النسخة التي وصلت لأنها لم تجتز التحقق",
     },
     types: {
-      mainPos: "جهاز رئيسي (كاشير)",
+      mainPos: "جهاز بيع رئيسي",
       companion: "جهاز مساعد",
     },
+    platforms: {
+      windows: "تطبيق Windows",
+      browser: "متصفح",
+    },
+    /** A device's type in words with its platform (`useDeviceKind`). */
+    kind: "{platform} — {type}",
+    /** The license limit a device counts against (rule 4), before the numbers are known. */
+    countsAgainst: {
+      mainPosDevices: "يُحسب ضمن أجهزة البيع الرئيسية في اشتراك المتجر",
+      companionDevices: "يُحسب ضمن الأجهزة المساعدة في اشتراك المتجر",
+    },
+    countsAgainstUse: {
+      mainPosDevices: "يُحسب ضمن أجهزة البيع الرئيسية: {used} من {allowed}",
+      companionDevices: "يُحسب ضمن الأجهزة المساعدة: {used} من {allowed}",
+    },
+    registersAs: "يُسجَّل هذا الجهاز بوصفه «{kind}».",
     removed: {
       title: "أُزيل هذا الجهاز من المتجر",
       body: "أبطل صاحب المتجر هذا الجهاز. أُرسلت مبيعاته كلها إلى الخادم أولًا، ثم مُسحت بيانات المتجر منه.",

@@ -1,3 +1,4 @@
+import type { AuditLink } from "@mustawfi/core-audit/client";
 import {
   Button,
   focusDataTableRow,
@@ -48,6 +49,8 @@ export interface RolesScreenProps {
   readonly filters: RoleFilters;
   /** Replaces the filters (in the URL); unchanged keys are passed through. */
   readonly onFiltersChange: (next: RoleFilters) => void;
+  /** Links a panel's last line to the record's history; only for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
@@ -55,7 +58,7 @@ export interface RolesScreenProps {
  * from templates, and custom copies. Viewing needs `access.users.view`; changing,
  * `access.roles.manage`.
  */
-export function RolesScreen({ filters, onFiltersChange }: RolesScreenProps) {
+export function RolesScreen({ filters, onFiltersChange, auditLink }: RolesScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const roles = useQuery(rolesQueryOptions());
   const catalogue = useQuery(catalogueQueryOptions());
@@ -175,12 +178,23 @@ export function RolesScreen({ filters, onFiltersChange }: RolesScreenProps) {
                 : selected.id
           }
           role={selected}
+          roles={roles.data ?? []}
           source={source}
+          auditLink={auditLink}
           catalogue={catalogue.data}
           canManage={canManage}
           onClose={closePanel}
           onCopy={(role) => {
             select("new", role.id);
+          }}
+          onRestored={(restored) => {
+            setAdded(undefined);
+            // The restored role stays open, whatever the filter hid.
+            onFiltersChange({
+              status: filters.status === "archived" ? "all" : filters.status,
+              q: filters.selected === "new" ? "" : filters.q,
+              selected: restored.id,
+            });
           }}
           onSaved={(saved) => {
             if (filters.selected !== "new") return;

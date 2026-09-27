@@ -518,7 +518,7 @@ describe("editing, deactivating, and reactivating users", () => {
       }),
     ]);
     const revoked = await auditOf(store.tenant.tenantId, "access.session.revoked");
-    expect(revoked.at(-1)).toMatchObject({ after: { userId: user.id } });
+    expect(revoked.at(-1)).toMatchObject({ after: { userId: user.id, reason: "userDeactivated" } });
     expectProblem(
       await call(store.owner, "POST", `/users/${user.id}/deactivate`, { reason: "again" }),
       409,
@@ -808,6 +808,97 @@ describe("roles (flow 7)", () => {
     );
   });
 
+  it("keeps role names unique among all roles, archived ones included, in any case (slice 20)", async () => {
+    const store = await newStore();
+    const created = await call(store.owner, "POST", "/roles", {
+      name: "  Night   Shift ",
+      permissions: [],
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const role = created.json<RoleView>();
+    expect(role.name).toBe("Night Shift");
+    expectProblem(
+      await call(store.owner, "POST", "/roles", { name: "night shift", permissions: [] }),
+      409,
+      accessProblemCodes.roleNameTaken,
+    );
+    // Seeded roles count too, and the owner role.
+    expectProblem(
+      await call(store.owner, "POST", "/roles", { name: "المالك", permissions: [] }),
+      409,
+      accessProblemCodes.roleNameTaken,
+    );
+    expect(
+      (
+        await call(store.owner, "PUT", `/roles/${role.id}`, {
+          name: "NIGHT SHIFT",
+          permissions: [],
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    await call(store.owner, "POST", `/roles/${role.id}/archive`);
+    const accountant = await roleNamed(store, "المحاسب");
+    for (const response of [
+      await call(store.owner, "POST", "/roles", { name: "Night shift", permissions: [] }),
+      await call(store.owner, "PUT", `/roles/${accountant.id}`, {
+        name: "night  shift",
+        permissions: accountant.permissions,
+      }),
+    ]) {
+      expectProblem(response, 409, accessProblemCodes.roleNameArchived);
+      expect(response.json()).toMatchObject({ detail: role.id });
+    }
+  });
+
+  it("restores an archived role with what it held, audited, with no confirmation (slice 20)", async () => {
+    const store = await newStore();
+    const role = (
+      await call(store.owner, "POST", "/roles", {
+        name: "مخزن",
+        permissions: ["inventory.products.view"],
+      })
+    ).json<RoleView>();
+    await call(store.owner, "POST", `/roles/${role.id}/archive`);
+    clock.advance(60_000);
+    const restored = await call(store.owner, "POST", `/roles/${role.id}/restore`);
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json()).toMatchObject({
+      id: role.id,
+      name: "مخزن",
+      archivedAt: null,
+      permissions: ["inventory.products.view"],
+    });
+    expect(await auditOf(store.tenant.tenantId, "access.role.restored")).toEqual([
+      expect.objectContaining({
+        entity_id: role.id,
+        created_by: store.tenant.ownerId,
+        before: { archivedAt: expect.any(String) as string },
+        after: { archivedAt: null },
+      }),
+    ]);
+    // A restored role is given to users again.
+    await addUser(store, { roleId: role.id });
+    expectProblem(
+      await call(store.owner, "POST", `/roles/${role.id}/restore`),
+      409,
+      accessProblemCodes.roleNotArchived,
+    );
+    expectProblem(
+      await call(store.owner, "POST", `/roles/${newId()}/restore`),
+      404,
+      accessProblemCodes.roleNotFound,
+    );
+    // The list names the last change for the panel's last line.
+    const listed = (await call(store.owner, "GET", "/roles"))
+      .json<{ items: (RoleView & { lastChange: unknown })[] }>()
+      .items.find((item) => item.id === role.id);
+    expect(listed?.lastChange).toMatchObject({
+      at: clock.now().toISOString(),
+      by: { id: store.tenant.ownerId },
+    });
+  });
+
   it("serves the catalogue of declared permissions and limits", async () => {
     const store = await newStore();
     const response = await call(store.owner, "GET", "/catalogue");
@@ -996,6 +1087,29 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
     expect(trimmed.statusCode, trimmed.body).toBe(200);
   });
 
+  it("restores only a role within what the manager holds (slice 20)", async () => {
+    const { store, deputy } = await withManager();
+    const auditor = (
+      await call(store.owner, "POST", "/roles", { name: "مراقب", permissions: ["audit.view"] })
+    ).json<RoleView>();
+    const stock = (
+      await call(store.owner, "POST", "/roles", {
+        name: "مخزن",
+        permissions: ["inventory.products.view"],
+      })
+    ).json<RoleView>();
+    await call(store.owner, "POST", `/roles/${auditor.id}/archive`);
+    await call(store.owner, "POST", `/roles/${stock.id}/archive`);
+    expectProblem(
+      await call(deputy, "POST", `/roles/${auditor.id}/restore`),
+      403,
+      accessProblemCodes.beyondOwnGrant,
+    );
+    expect((await call(deputy, "POST", `/roles/${stock.id}/restore`)).statusCode).toBe(200);
+    // An owner restores any.
+    expect((await call(store.owner, "POST", `/roles/${auditor.id}/restore`)).statusCode).toBe(200);
+  });
+
   it("gives users only roles within what the manager holds", async () => {
     const { store, deputy } = await withManager();
     const accountant = await roleNamed(store, "المحاسب");
@@ -1175,6 +1289,11 @@ describe("the users and roles routes' permissions", () => {
     expect((await call(viewer, "GET", "/roles")).statusCode).toBe(200);
     expectProblem(
       await call(viewer, "POST", "/roles", { name: "x", permissions: [] }),
+      403,
+      accessProblemCodes.permissionDenied,
+    );
+    expectProblem(
+      await call(viewer, "POST", `/roles/${newId()}/restore`),
       403,
       accessProblemCodes.permissionDenied,
     );

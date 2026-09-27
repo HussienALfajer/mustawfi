@@ -5,8 +5,10 @@ import {
   limitValueSchema,
   type PermissionCatalogue,
   permissionIdSchema,
+  recordNameSchema,
   ROLE_TEMPLATES,
 } from "@mustawfi/core-config/shared";
+import { lastChangeSchema } from "@mustawfi/core-audit/shared";
 import { licenseStandingSchema } from "@mustawfi/core-tenancy/shared";
 import { z } from "zod";
 import type { RoleAccess } from "./grant.ts";
@@ -52,11 +54,70 @@ export const passwordSchema = z.string().min(10).max(256);
 
 export const userNameSchema = z.string().trim().min(1).max(200);
 
-export const roleNameSchema = z.string().trim().min(1).max(100);
+/**
+ * A role's name: stored with its spaces collapsed, and unique among all of the tenant's roles,
+ * archived ones included, compared case-insensitively (`core-foundation` slice 20).
+ */
+export const roleNameSchema = recordNameSchema;
 
 /** A device's role (ADR-0022): the main POS, or a mobile companion. */
 export const deviceTypeSchema = z.enum(["mainPos", "companion"]);
 export type DeviceType = z.infer<typeof deviceTypeSchema>;
+
+/**
+ * What a device runs on (`core-foundation` slice 20): the Windows app or a browser. Recorded at
+ * registration and shown with the type; the Android app joins with its shell.
+ */
+export const devicePlatformSchema = z.enum(["windows", "browser"]);
+export type DevicePlatform = z.infer<typeof devicePlatformSchema>;
+
+/** The platform of devices registered before it was recorded: V1's type decided it (ADR-0019). */
+export function platformOfType(type: DeviceType): DevicePlatform {
+  return type === "mainPos" ? "windows" : "browser";
+}
+
+/** The license limit a device of `type` counts against (rule 4). */
+export function deviceLimitOf(type: DeviceType): "mainPosDevices" | "companionDevices" {
+  return type === "mainPos" ? "mainPosDevices" : "companionDevices";
+}
+
+/** How many of a device limit are used, of how many the license allows (rule 4). */
+export const deviceLimitUseSchema = z.object({
+  used: z.int().min(0),
+  allowed: z.int().min(0),
+});
+
+export type DeviceLimitUse = z.infer<typeof deviceLimitUseSchema>;
+
+/**
+ * Why a session ended, recorded as `after.reason` of `access.session.revoked`; the audit log
+ * labels each separately (`core-foundation` slice 20). The first four come from the client
+ * that signs out; the others from the change that ended it.
+ */
+export const SESSION_END_REASONS = [
+  "signedOut",
+  "switchedUser",
+  "locked",
+  "idle",
+  "userDeactivated",
+  "passwordSet",
+  "supportReset",
+  "deviceRevoked",
+] as const;
+
+export type SessionEndReason = (typeof SESSION_END_REASONS)[number];
+
+/** What a client may give as the reason it ends its own session (`POST /logout`). */
+export const signOutReasonSchema = z.enum(["signedOut", "switchedUser", "locked", "idle"]);
+
+export type SignOutReason = z.infer<typeof signOutReasonSchema>;
+
+/**
+ * `POST /api/v1/access/logout`: a body is optional. A reason the server does not know as one a
+ * client gives — a newer client's, or one only a change records (`deviceRevoked`) — is recorded
+ * as `signedOut`: it never keeps a session from ending.
+ */
+export const logoutRequestSchema = z.object({ reason: z.string().max(40) }).nullish();
 
 export const deviceNameSchema = z.string().trim().min(1).max(100);
 
@@ -394,6 +455,8 @@ export const registerDeviceRequestSchema = z.object({
   storeCode: z.string().max(20),
   registrationCode: z.string().max(20),
   type: deviceTypeSchema,
+  /** Absent from clients built before slice 20: their type tells it (`platformOfType`). */
+  platform: devicePlatformSchema.optional(),
   name: deviceNameSchema,
 });
 
@@ -415,17 +478,27 @@ export const currentDeviceSchema = z.object({
   tenantId: z.uuid(),
   prefix: z.string(),
   type: deviceTypeSchema,
+  platform: devicePlatformSchema,
   name: z.string(),
+  /** The license limit its type counts against, as used of allowed (rule 4). */
+  limit: deviceLimitUseSchema,
 });
 
 /** `POST /api/v1/access/devices/:id/revoke`: the reason is kept in the audit log. */
 export const revokeDeviceRequestSchema = z.object({ reason: reasonSchema });
+
+/**
+ * `PATCH /api/v1/access/devices/:id`: only the name changes; the prefix never does (rule 30,
+ * non-negotiable 8).
+ */
+export const renameDeviceRequestSchema = z.object({ name: deviceNameSchema });
 
 /** A device as the devices screen shows it; its credential is never sent. */
 export const deviceViewSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   type: deviceTypeSchema,
+  platform: devicePlatformSchema,
   prefix: z.string(),
   registeredAt: z.iso.datetime(),
   /** The server's time of its last push or pull; null before its first. */
@@ -439,6 +512,38 @@ export const deviceViewSchema = z.object({
 });
 
 export type DeviceView = z.infer<typeof deviceViewSchema>;
+
+/** A device as the devices list carries it: with its last change (the panel's last line). */
+export const deviceListItemSchema = deviceViewSchema.extend({
+  lastChange: lastChangeSchema.nullable(),
+});
+
+export type DeviceListItem = z.infer<typeof deviceListItemSchema>;
+
+/**
+ * `GET /api/v1/access/devices`: every device, and each device limit as used of allowed, so the
+ * list, a device's panel, and the registration panel say which limit a device counts against.
+ */
+export const deviceListSchema = z.object({
+  items: z.array(deviceListItemSchema),
+  limits: z.object({ mainPos: deviceLimitUseSchema, companion: deviceLimitUseSchema }),
+});
+
+export type DeviceList = z.infer<typeof deviceListSchema>;
+
+/** A user as the users list carries them: with their last change. */
+export const userListItemSchema = userViewSchema.extend({
+  lastChange: lastChangeSchema.nullable(),
+});
+
+export type UserListItem = z.infer<typeof userListItemSchema>;
+
+/** A role as the roles list carries it: with its last change. */
+export const roleListItemSchema = roleViewSchema.extend({
+  lastChange: lastChangeSchema.nullable(),
+});
+
+export type RoleListItem = z.infer<typeof roleListItemSchema>;
 
 /** The refusals `core.access` answers with; clients map each code to an Arabic message. */
 export const accessProblemCodes = {
@@ -516,8 +621,12 @@ export const accessProblemCodes = {
   currentSecretWrong: "access.user.currentSecretWrong",
   /** No role with this id in the tenant. */
   roleNotFound: "access.role.notFound",
-  /** Another active role has this name. */
+  /** Another role has this name (compared as `nameKey` does). */
   roleNameTaken: "access.role.nameTaken",
+  /** An archived role has this name: restore it instead (`core-foundation` slice 20). */
+  roleNameArchived: "access.role.nameArchived",
+  /** Only an archived role is restored. */
+  roleNotArchived: "access.role.notArchived",
   /** The role is archived: it cannot be edited, archived again, or given to a user. */
   roleArchived: "access.role.archived",
   /** The owner role cannot be edited or archived (rule 14). */

@@ -1,4 +1,4 @@
-import type { DeviceType } from "@mustawfi/core-access/shared";
+import type { DevicePlatform, DeviceType } from "@mustawfi/core-access/shared";
 import type { ApiEndpoint } from "@mustawfi/core-config/client";
 import type { LocalDb } from "@mustawfi/local-db";
 import type { NativeLocalDb } from "@mustawfi/local-db/native";
@@ -22,6 +22,8 @@ export interface OpenedLocalDb {
  */
 export interface ClientPlatform {
   readonly deviceType: DeviceType;
+  /** What it runs on, recorded at registration beside the type. */
+  readonly devicePlatform: DevicePlatform;
   readonly api: ApiEndpoint;
   readonly openLocalDb: () => Promise<OpenedLocalDb>;
   /** The receipt printer transport (ADR-0025); none in the browser, which is no printing client. */
@@ -37,6 +39,7 @@ const LOCAL_DB_NAME = "mustawfi";
  */
 const browser: ClientPlatform = {
   deviceType: "companion",
+  devicePlatform: "browser",
   api: { origin: "", session: "cookie" },
   openLocalDb: async () => {
     const { openBrowserLocalDb } = await import("./local-browser.ts");
@@ -52,6 +55,7 @@ const browser: ClientPlatform = {
  */
 const windows: ClientPlatform = {
   deviceType: "mainPos",
+  devicePlatform: "windows",
   api: {
     origin: import.meta.env.VITE_MUSTAWFI_API_ORIGIN ?? "",
     session: "bearer",

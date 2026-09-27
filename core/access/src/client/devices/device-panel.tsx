@@ -1,13 +1,30 @@
+import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
-import { Button, ConfirmDialog, CopyButton, SidePanel, TextArea, useToast } from "@mustawfi/ui";
+import {
+  Button,
+  ConfirmDialog,
+  CopyButton,
+  SidePanel,
+  TextArea,
+  TextInput,
+  useToast,
+} from "@mustawfi/ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { accessProblemCodes, type DeviceView } from "../../shared/index.ts";
+import {
+  accessProblemCodes,
+  type DeviceList,
+  type DeviceListItem,
+  deviceNameSchema,
+  type DeviceType,
+  type DeviceView,
+} from "../../shared/index.ts";
 import { ACCESS_NAMESPACE } from "../messages.ts";
+import { DeviceLimitNote, useDeviceKind } from "./device-kind.tsx";
 import { DeviceStatus, formatInstant } from "./devices-table.tsx";
 import { issueRegistrationCode } from "../device.ts";
-import { devicesQueryKey, revokeDevice } from "./queries.ts";
+import { devicesQueryKey, renameDevice, revokeDevice } from "./queries.ts";
 
 /** Why a devices request failed, as a `devices.problem.` key. */
 function problemKey(error: unknown): string {
@@ -34,9 +51,27 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
   );
 }
 
-/** A new device: a registration code to type on it, with the store code, once issued. */
-export function NewDevicePanel({ onClose }: { readonly onClose: () => void }) {
+/** How many of each device limit are used, for the limit note; `undefined` while loading. */
+type DeviceLimits = DeviceList["limits"] | undefined;
+
+function limitUse(limits: DeviceLimits, type: DeviceType) {
+  return type === "mainPos" ? limits?.mainPos : limits?.companion;
+}
+
+/**
+ * A new device: a registration code to type on it, with the store code, once issued. It says
+ * what each kind of device registers as and which license limit it counts against, with the
+ * places used (`core-foundation` slice 20).
+ */
+export function NewDevicePanel({
+  limits,
+  onClose,
+}: {
+  readonly limits: DeviceLimits;
+  readonly onClose: () => void;
+}) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
+  const kind = useDeviceKind();
   const issue = useMutation({ mutationFn: issueRegistrationCode });
   const issued = issue.data;
   return (
@@ -47,6 +82,19 @@ export function NewDevicePanel({ onClose }: { readonly onClose: () => void }) {
     >
       <div className="flex flex-col gap-4">
         <p className="text-text-secondary">{t("devices.issue.help")}</p>
+        <ul className="flex flex-col gap-2 rounded-md bg-sunken p-3" data-testid="device-kinds">
+          {(
+            [
+              ["mainPos", "windows"],
+              ["companion", "browser"],
+            ] as const
+          ).map(([type, platform]) => (
+            <li key={type} className="flex flex-col">
+              <span className="text-text">{kind(type, platform)}</span>
+              <DeviceLimitNote type={type} use={limitUse(limits, type)} />
+            </li>
+          ))}
+        </ul>
         <div>
           <Button
             autoFocus
@@ -104,27 +152,44 @@ export function NewDevicePanel({ onClose }: { readonly onClose: () => void }) {
 }
 
 export interface DevicePanelProps {
-  readonly device: DeviceView;
+  readonly device: DeviceListItem;
+  /** Each device limit as used of allowed; `undefined` while the list loads. */
+  readonly limits: DeviceLimits;
   /** Whether it is the device this client is: revoking it signs this client out and wipes it. */
   readonly isCurrent: boolean;
   readonly onClose: () => void;
   /** Once the server has revoked it. */
   readonly onRevoked?: (device: DeviceView) => void;
+  /** The last line's link to the record's history, for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
- * A device beside the list: its facts, its revoke (who, when, why) and whether it has wiped its
- * data yet; an active one can be revoked, with a reason (`screen-patterns.md`: a security action
- * confirms once and asks why).
+ * A device beside the list: its facts — its type in words with its platform and the license
+ * limit it counts against — its name, which an owner changes (never its prefix, rule 30 and
+ * non-negotiable 8), its revoke (who, when, why) and whether it has wiped its data yet; an
+ * active one can be revoked, with a reason (`screen-patterns.md`: a security action confirms
+ * once and asks why). The panel ends with its last change.
  */
-export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePanelProps) {
+export function DevicePanel({
+  device,
+  limits,
+  isCurrent,
+  onClose,
+  onRevoked,
+  auditLink,
+}: DevicePanelProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
+  const kind = useDeviceKind();
   const queryClient = useQueryClient();
   const titleRef = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState(false);
+  const [name, setName] = useState(device.name);
+  const [nameError, setNameError] = useState<string | undefined>();
   const toast = useToast();
+  const active = device.status === "active";
   const revoke = useMutation({
     mutationFn: (why: string) => revokeDevice(device.id, why),
     onSuccess: async (revoked) => {
@@ -140,6 +205,32 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
       setConfirming(false);
     },
   });
+  const rename = useMutation({
+    mutationFn: (next: string) => renameDevice(device.id, next),
+    onSuccess: async (renamed) => {
+      setName(renamed.name);
+      toast.show(t("devices.rename.done", { name: renamed.name }));
+      await queryClient.invalidateQueries({ queryKey: devicesQueryKey });
+    },
+  });
+  const submitName = () => {
+    revoke.reset();
+    rename.reset();
+    const parsed = deviceNameSchema.safeParse(name);
+    if (!parsed.success) {
+      setNameError(
+        t(
+          parsed.error.issues[0]?.code === "too_big"
+            ? "devices.problem.nameTooLong"
+            : "devices.problem.nameRequired",
+        ),
+      );
+      return;
+    }
+    setNameError(undefined);
+    rename.mutate(parsed.data);
+  };
+  const failure = [revoke.error, rename.error].find((error) => error !== null);
 
   return (
     <SidePanel
@@ -147,7 +238,7 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
       closeLabel={t("devices.panel.close")}
       onClose={onClose}
       footer={
-        device.status === "active" ? (
+        active ? (
           <Button
             variant="danger"
             className="ms-auto"
@@ -167,7 +258,14 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
           <Fact label={t("devices.panel.status")}>
             <DeviceStatus device={device} />
           </Fact>
-          <Fact label={t("devices.panel.type")}>{t(`device.types.${device.type}`)}</Fact>
+          <Fact label={t("devices.panel.type")}>
+            <span className="flex flex-col" data-testid="device-kind">
+              <span>{kind(device.type, device.platform)}</span>
+              {active ? (
+                <DeviceLimitNote type={device.type} use={limitUse(limits, device.type)} />
+              ) : null}
+            </span>
+          </Fact>
           <Fact label={t("devices.panel.prefix")}>
             <bdi dir="ltr" className="font-mono">
               {device.prefix}
@@ -192,11 +290,38 @@ export function DevicePanel({ device, isCurrent, onClose, onRevoked }: DevicePan
             </>
           )}
         </dl>
-        {revoke.isError ? (
-          <p role="alert" className="text-text-negative">
-            {t(`devices.problem.${problemKey(revoke.error)}`)}
-          </p>
+        {active ? (
+          // One field: Enter saves it (`screen-patterns.md`).
+          <form
+            noValidate
+            aria-label={t("devices.rename.title")}
+            className="flex flex-col items-start gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitName();
+            }}
+          >
+            <TextInput
+              className="w-full"
+              label={t("devices.rename.name")}
+              description={t("devices.rename.help", { prefix: device.prefix })}
+              errorMessage={nameError}
+              value={name}
+              onChange={setName}
+              maxLength={100}
+              autoComplete="off"
+            />
+            <Button type="submit" variant="secondary" isPending={rename.isPending}>
+              {t("devices.rename.save")}
+            </Button>
+          </form>
         ) : null}
+        {failure === undefined ? null : (
+          <p role="alert" className="text-text-negative">
+            {t(`devices.problem.${problemKey(failure)}`)}
+          </p>
+        )}
+        <LastChangeLine entityId={device.id} lastChange={device.lastChange} auditLink={auditLink} />
       </div>
       <ConfirmDialog
         isOpen={confirming}

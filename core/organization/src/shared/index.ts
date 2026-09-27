@@ -1,3 +1,4 @@
+import { lastChangeSchema } from "@mustawfi/core-audit/shared";
 import {
   departmentNameSchema,
   departmentSchema,
@@ -103,6 +104,16 @@ export const newDepartmentSchema = z.object({
 export const departmentRenameSchema = z.object({
   name: departmentNameSchema,
 });
+
+/**
+ * A department as the departments screen lists it: its last change from the audit log (the
+ * panel's «last changed by … on …»), which devices and the bundle do not carry.
+ */
+export const departmentListItemSchema = departmentSchema.extend({
+  lastChange: lastChangeSchema.nullable(),
+});
+
+export type DepartmentListItem = z.infer<typeof departmentListItemSchema>;
 
 /** The refusals of `core.organization`; clients map each code to an Arabic message. */
 export const organizationProblemCodes = {

@@ -9,6 +9,7 @@ export interface AuditLogQuery {
   readonly user?: string | undefined;
   readonly action?: string | undefined;
   readonly device?: string | undefined;
+  readonly entity?: string | undefined;
   readonly from?: string | undefined;
   readonly to?: string | undefined;
 }
@@ -19,6 +20,7 @@ export function auditEntriesQueryOptions(query: AuditLogQuery) {
     user: query.user,
     action: query.action,
     device: query.device,
+    entity: query.entity,
     from: query.from,
     to: query.to,
   };

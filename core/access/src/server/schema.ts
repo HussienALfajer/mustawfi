@@ -55,9 +55,9 @@ export const roles = coreAccess.table(
     uniqueIndex("roles_one_owner_per_tenant")
       .on(t.tenantId)
       .where(sql`${t.isOwner}`),
-    uniqueIndex("roles_active_name_per_tenant")
-      .on(t.tenantId, t.name)
-      .where(sql`${t.archivedAt} is null`),
+    // Archived ones included, case-insensitive: typing an archived one's name offers to restore
+    // it (`core-foundation` slice 20). Names are stored with their spaces collapsed.
+    uniqueIndex("roles_name_per_tenant").on(t.tenantId, sql`lower(${t.name})`),
   ],
 );
 
@@ -274,6 +274,8 @@ export const devices = coreAccess.table(
     name: text().notNull(),
     /** `mainPos` or `companion` (glossary: main POS device, mobile companion device). */
     type: text().notNull(),
+    /** `windows` or `browser`: what it runs on, as it said when it registered (slice 20). */
+    platform: text().notNull(),
     /**
      * Two symbols without `I`, `O`, `0`, `1`; unique within the tenant, and never reused
      * because a device row is never deleted (ADR-0020).
@@ -300,6 +302,7 @@ export const devices = coreAccess.table(
   (t) => [
     unique("devices_prefix_per_tenant").on(t.tenantId, t.prefix),
     check("devices_type", sql`${t.type} in ('mainPos', 'companion')`),
+    check("devices_platform", sql`${t.platform} in ('windows', 'browser')`),
     check("devices_prefix_format", sql`${t.prefix} ~ '^[A-HJ-NP-Z2-9]{2}$'`),
     check("devices_credential_hash_format", sql`${t.credentialHash} ~ ${sql.raw(SHA256_HEX)}`),
     check(

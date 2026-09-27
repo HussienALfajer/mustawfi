@@ -1,0 +1,1 @@
+CREATE INDEX "entries_by_entity" ON "core_audit"."entries" USING btree ("tenant_id","entity_id","created_at");

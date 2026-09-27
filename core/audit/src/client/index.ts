@@ -1,4 +1,5 @@
-export { auditLabelKey } from "./labels.ts";
+export { auditLabelKey, auditVariantLabelKey } from "./labels.ts";
+export { type AuditLink, LastChangeLine, type LastChangeLineProps } from "./last-change.tsx";
 export { AUDIT_NAMESPACE, auditMessages } from "./messages.ts";
 export {
   AuditEntryPanel,

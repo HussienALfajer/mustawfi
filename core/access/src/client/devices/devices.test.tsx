@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
 import { createI18n } from "@mustawfi/i18n";
 import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
@@ -8,7 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DeviceView } from "../../shared/index.ts";
+import type { DeviceList, DeviceListItem, DeviceView } from "../../shared/index.ts";
 import { ACCESS_NAMESPACE, accessMessages } from "../messages.ts";
 import { type CurrentSession, sessionQueryKey } from "../session.ts";
 import { DeviceRemovedScreen } from "./device-removed-screen.tsx";
@@ -20,13 +21,20 @@ import {
 } from "./devices-screen.tsx";
 import { formatInstant } from "./devices-table.tsx";
 
-const i18n = createI18n({ [UI_NAMESPACE]: uiMessages, [ACCESS_NAMESPACE]: accessMessages });
+const i18n = createI18n({
+  [UI_NAMESPACE]: uiMessages,
+  [ACCESS_NAMESPACE]: accessMessages,
+  [AUDIT_NAMESPACE]: auditMessages,
+});
 
-function device(id: string, name: string, extra: Partial<DeviceView> = {}): DeviceView {
+const OWNER = { id: "0190a000-0000-7000-8000-00000000c001", name: "سامر" };
+
+function device(id: string, name: string, extra: Partial<DeviceListItem> = {}): DeviceListItem {
   return {
     id,
     name,
     type: "mainPos",
+    platform: "windows",
     prefix: "K7",
     registeredAt: "2026-09-20T08:00:00.000Z",
     lastSyncAt: "2026-09-26T07:30:00.000Z",
@@ -35,13 +43,25 @@ function device(id: string, name: string, extra: Partial<DeviceView> = {}): Devi
     revokedBy: null,
     revokeReason: null,
     wipedAt: null,
+    lastChange: {
+      entryId: "0190a000-0000-7000-8000-0000000ae001",
+      at: "2026-09-20T08:00:00.000Z",
+      by: OWNER,
+      bySupport: false,
+    },
     ...extra,
   };
 }
 
+const LIMITS: DeviceList["limits"] = {
+  mainPos: { used: 1, allowed: 3 },
+  companion: { used: 1, allowed: 2 },
+};
+
 const TILL = device("0190a000-0000-7000-8000-0000000de001", "الصندوق الرئيسي");
 const PHONE = device("0190a000-0000-7000-8000-0000000de002", "هاتف المستودع", {
   type: "companion",
+  platform: "browser",
   prefix: "M3",
   lastSyncAt: null,
 });
@@ -73,7 +93,7 @@ describe("device filters", () => {
 });
 
 /** A fake API: the devices list, and each write answered from `answers`. */
-function fakeApi(devices: DeviceView[], answers: Record<string, () => Response> = {}) {
+function fakeApi(devices: DeviceListItem[], answers: Record<string, () => Response> = {}) {
   const calls: { method: string; url: string; body: unknown }[] = [];
   vi.stubGlobal("fetch", (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -84,7 +104,7 @@ function fakeApi(devices: DeviceView[], answers: Record<string, () => Response> 
     });
     const answer = answers[`${method} ${url}`];
     if (answer !== undefined) return Promise.resolve(answer());
-    return Promise.resolve(Response.json({ items: devices }));
+    return Promise.resolve(Response.json({ items: devices, limits: LIMITS }));
   });
   return calls;
 }
@@ -163,12 +183,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("DevicesScreen", () => {
-  it("lists each device's type, prefix, last sync, and status, marking this one", async () => {
+  it("lists each device's type with its platform, prefix, last sync, and status, marking this one", async () => {
     fakeApi([TILL, PHONE, OLD]);
     renderScreen({ initial: { status: "all" }, currentDeviceId: PHONE.id });
     const table = await screen.findByRole("grid", { name: "الأجهزة" });
     const till = within(table).getByRole("row", { name: /الصندوق الرئيسي/ });
-    expect(till).toHaveTextContent("جهاز رئيسي (كاشير)");
+    expect(till).toHaveTextContent("تطبيق Windows — جهاز بيع رئيسي");
+    expect(within(table).getByRole("row", { name: /هاتف المستودع/ })).toHaveTextContent(
+      "متصفح — جهاز مساعد",
+    );
     expect(till).toHaveTextContent("K7");
     expect(till).toHaveTextContent(formatInstant(TILL.lastSyncAt ?? ""));
     expect(till).toHaveTextContent("نشط");
@@ -191,6 +214,80 @@ describe("DevicesScreen", () => {
     expect(screen.getByTestId("filters")).toHaveTextContent(TILL.id);
   });
 
+  it("says in a device's panel which license limit it counts against, and ends with its last change", async () => {
+    fakeApi([TILL, PHONE]);
+    renderScreen({ initial: { selected: PHONE.id } });
+    const panel = await screen.findByRole("complementary", { name: "هاتف المستودع" });
+    expect(within(panel).getByTestId("device-kind")).toHaveTextContent(
+      "متصفح — جهاز مساعديُحسب ضمن الأجهزة المساعدة: 1 من 2",
+    );
+    // No audit link given (the viewer may not read the log): the line is plain text.
+    const last = panel.querySelector("[data-last-change]");
+    expect(last).toHaveTextContent(/^آخر تعديل بواسطة سامر في /);
+    expect(within(panel).queryByRole("link")).toBeNull();
+  });
+
+  it("links the last change to the record's history for readers of the audit log", async () => {
+    fakeApi([TILL]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(sessionQueryKey, session(["access.devices.manage"]));
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToastProvider>
+          <QueryClientProvider client={queryClient}>
+            <DevicesScreen
+              filters={{ status: "active", q: "", selected: TILL.id }}
+              onFiltersChange={() => undefined}
+              currentDeviceId={null}
+              auditLink={(target, children) => (
+                <a href={`/admin/audit?entity=${target.entity}&selected=${target.entry}`}>
+                  {children}
+                </a>
+              )}
+            />
+          </QueryClientProvider>
+        </ToastProvider>
+      </I18nextProvider>,
+    );
+    const panel = await screen.findByRole("complementary", { name: "الصندوق الرئيسي" });
+    expect(within(panel).getByRole("link", { name: /آخر تعديل بواسطة سامر/ })).toHaveAttribute(
+      "href",
+      `/admin/audit?entity=${TILL.id}&selected=${TILL.lastChange?.entryId ?? ""}`,
+    );
+  });
+
+  it("renames an active device with Enter; its prefix stays", async () => {
+    const list = [TILL];
+    const calls = fakeApi(list, {
+      [`PATCH /api/v1/access/devices/${TILL.id}`]: () => {
+        const renamed: DeviceView = { ...TILL, name: "صندوق المدخل" };
+        list[0] = { ...TILL, name: "صندوق المدخل" };
+        return Response.json(renamed);
+      },
+    });
+    renderScreen({ initial: { selected: TILL.id } });
+    const panel = await screen.findByRole("complementary", { name: "الصندوق الرئيسي" });
+    const name = within(panel).getByLabelText("اسم الجهاز");
+    expect(name).toHaveAccessibleDescription(/K7/);
+    await userEvent.clear(name);
+    await userEvent.keyboard("{Enter}");
+    expect(name).toHaveAccessibleDescription(/اكتب اسم الجهاز/);
+    expect(calls.filter((call) => call.method === "PATCH")).toEqual([]);
+    await userEvent.type(name, "صندوق المدخل{Enter}");
+    expect(
+      await within(screen.getByRole("region", { name: uiMessages.toast.region })).findByRole(
+        "list",
+      ),
+    ).toHaveTextContent("صار اسم الجهاز «صندوق المدخل»");
+    expect(calls.filter((call) => call.method === "PATCH")).toEqual([
+      {
+        method: "PATCH",
+        url: `/api/v1/access/devices/${TILL.id}`,
+        body: { name: "صندوق المدخل" },
+      },
+    ]);
+  });
+
   it("shows a revoked device's revoke: when, by whom, why, and its wipe", async () => {
     fakeApi([OLD]);
     renderScreen({ initial: { status: "revoked", selected: OLD.id } });
@@ -199,6 +296,8 @@ describe("DevicesScreen", () => {
     expect(panel).toHaveTextContent("تعطّل");
     expect(panel).toHaveTextContent(`مُسحت في ${formatInstant(OLD.wipedAt ?? "")}`);
     expect(within(panel).queryByRole("button", { name: "إبطال الجهاز" })).toBeNull();
+    // A revoked device keeps the name it was revoked under.
+    expect(within(panel).queryByLabelText("اسم الجهاز")).toBeNull();
   });
 
   it("issues a registration code with the store code from a new panel (N)", async () => {
@@ -213,6 +312,11 @@ describe("DevicesScreen", () => {
     await screen.findByRole("grid", { name: "الأجهزة" });
     await userEvent.keyboard("n");
     const panel = await screen.findByRole("complementary", { name: "إضافة جهاز" });
+    // What each kind of device registers as, and the limit it counts against.
+    expect(within(panel).getByTestId("device-kinds")).toHaveTextContent(
+      "تطبيق Windows — جهاز بيع رئيسييُحسب ضمن أجهزة البيع الرئيسية: 1 من 3" +
+        "متصفح — جهاز مساعديُحسب ضمن الأجهزة المساعدة: 1 من 2",
+    );
     const issue = within(panel).getByRole("button", { name: "إصدار رمز تسجيل" });
     expect(issue).toHaveFocus();
     await userEvent.keyboard("{Enter}");
@@ -239,7 +343,7 @@ describe("DevicesScreen", () => {
           revokedBy: { id: "0190a000-0000-7000-8000-00000000c001", name: "سامر" },
           revokeReason: "سُرق",
         };
-        list[0] = revoked;
+        list[0] = { ...revoked, lastChange: TILL.lastChange };
         return Response.json(revoked);
       },
     });

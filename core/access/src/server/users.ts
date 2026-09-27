@@ -14,12 +14,15 @@ import {
   type DepartmentScope,
   loginSchema,
   type RoleAccess,
+  type SessionEndReason,
+  type UserListItem,
   userNameSchema,
   type UserStatus,
   type UserView,
 } from "../shared/index.ts";
 import { auditAs, checkGrantable, type Manager, type RoleActor, violates } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
+import { namedLastChanges } from "./last-change.ts";
 import { hashPassword, hashPin, verifyPassword } from "./passwords.ts";
 import { activeRole, holdingsOf } from "./roles.ts";
 import { roles, sessions, userDepartments, users } from "./schema.ts";
@@ -188,6 +191,24 @@ export async function scopesOf(
   return result;
 }
 
+/**
+ * The users whose listed scope names `departmentId`, by id — archived departments stay listed
+ * there, hidden (rule 28), so restoring one brings it back into these scopes; its audit entry
+ * records them (`core-foundation` slice 20).
+ */
+export async function usersListingDepartment(
+  tx: TenantTransaction,
+  departmentId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .select({ userId: userDepartments.userId })
+    .from(userDepartments)
+    .innerJoin(users, eq(users.id, userDepartments.userId))
+    .where(and(eq(userDepartments.departmentId, departmentId), eq(users.departmentScope, "listed")))
+    .orderBy(asc(userDepartments.userId));
+  return rows.map((row) => row.userId);
+}
+
 type UserRow = typeof users.$inferSelect;
 type RoleRow = typeof roles.$inferSelect;
 
@@ -219,6 +240,39 @@ export async function listUsers(tx: TenantTransaction): Promise<UserView[]> {
     rows.filter((row) => row.user.departmentScope === "listed").map((row) => row.user.id),
   );
   return rows.map((row) => toView(row.user, row.role, scopes.get(row.user.id) ?? []));
+}
+
+/**
+ * The actions that change a user, for their «last changed by … on …»: not sign-ins, lockouts, or
+ * the sessions they end.
+ */
+const USER_CHANGES = [
+  "access.user.created",
+  "access.user.changed",
+  "access.user.roleChanged",
+  "access.user.scopeChanged",
+  "access.user.deactivated",
+  "access.user.reactivated",
+  "access.user.pinSet",
+  "access.user.passwordSet",
+  "access.user.pinChanged",
+  "access.user.passwordChanged",
+  "access.user.passwordReset",
+  "access.twoFactor.enabled",
+  "access.twoFactor.disabled",
+  "access.twoFactor.cleared",
+];
+
+/** `listUsers` with each user's last change, for the users screen. */
+export async function listUserItems(tx: TenantTransaction): Promise<UserListItem[]> {
+  const items = await listUsers(tx);
+  const changes = await namedLastChanges(
+    tx,
+    "access.user",
+    items.map((item) => item.id),
+    USER_CHANGES,
+  );
+  return items.map((item) => ({ ...item, lastChange: changes.get(item.id) ?? null }));
 }
 
 async function viewOf(tx: TenantTransaction, userId: string): Promise<UserView> {
@@ -565,7 +619,7 @@ export async function deactivateUser(
     after: { status: "deactivated" },
     reason,
   });
-  await revokeUserSessions(tx, manager, id, dependencies);
+  await revokeUserSessions(tx, manager, id, dependencies, "userDeactivated");
   return viewOf(tx, id);
 }
 
@@ -600,12 +654,16 @@ export async function reactivateUser(
   return viewOf(tx, id);
 }
 
-/** Ends every open session of `userId`, each audited `access.session.revoked`. */
+/**
+ * Ends every open session of `userId`, each audited `access.session.revoked` with `reason`, the
+ * change that ended it (`core-foundation` slice 20).
+ */
 export async function revokeUserSessions(
   tx: TenantTransaction,
   actor: RoleActor,
   userId: string,
   dependencies: AccessDependencies,
+  reason: Extract<SessionEndReason, "userDeactivated" | "passwordSet" | "supportReset">,
 ): Promise<void> {
   const revoked = await tx
     .update(sessions)
@@ -616,7 +674,7 @@ export async function revokeUserSessions(
     await auditAs(tx, actor, dependencies, {
       action: "access.session.revoked",
       entity: { type: "access.session", id: session.id },
-      after: { userId },
+      after: { userId, reason },
     });
   }
 }
@@ -674,7 +732,7 @@ export async function setUserPassword(
     before: { hasPassword: target.user.passwordHash !== null },
     after: { hasPassword: true },
   });
-  await revokeUserSessions(tx, manager, id, dependencies);
+  await revokeUserSessions(tx, manager, id, dependencies, "passwordSet");
   return viewOf(tx, id);
 }
 

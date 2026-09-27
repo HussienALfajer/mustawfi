@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
 import { createI18n } from "@mustawfi/i18n";
 import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
@@ -20,6 +21,7 @@ import {
 const i18n = createI18n({
   [UI_NAMESPACE]: uiMessages,
   [ORGANIZATION_NAMESPACE]: organizationMessages,
+  [AUDIT_NAMESPACE]: auditMessages,
 });
 
 const STORE: DepartmentView = {
@@ -73,7 +75,9 @@ function fakeApi(departments: DepartmentView[], answers: Record<string, () => Re
     });
     const answer = answers[`${method} ${url}`];
     if (answer !== undefined) return Promise.resolve(answer());
-    return Promise.resolve(Response.json({ items: departments }));
+    return Promise.resolve(
+      Response.json({ items: departments.map((item) => ({ lastChange: null, ...item })) }),
+    );
   });
   return calls;
 }
@@ -183,7 +187,7 @@ describe("DepartmentsScreen", () => {
     await userEvent.type(within(panel).getByLabelText(/اسم القسم/), "الصيانة{Enter}");
     await waitFor(() => {
       expect(within(panel).getByLabelText(/اسم القسم/)).toHaveAccessibleDescription(
-        /يوجد قسم نشط بهذا الاسم/,
+        /يوجد قسم بهذا الاسم/,
       );
     });
 
@@ -216,6 +220,85 @@ describe("DepartmentsScreen", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "أرشفة" }));
     expect(await screen.findByText("أُرشف القسم «الصيانة»")).toBeInTheDocument();
     expect(calls.filter((call) => call.url.endsWith("/archive"))).toHaveLength(1);
+  });
+
+  it("offers to restore an archived department whose name is typed, whatever its case or spaces", async () => {
+    const list = [STORE, OLD];
+    const calls = fakeApi(list, {
+      [`POST /api/v1/organization/departments/${OLD.id}/restore`]: () => {
+        const restored = { ...OLD, archivedAt: null };
+        list[1] = restored;
+        return Response.json(restored);
+      },
+    });
+    renderScreen({ selected: "new" });
+    const panel = await screen.findByRole("complementary", { name: "قسم جديد" });
+    await userEvent.type(within(panel).getByLabelText(/اسم القسم/), "  الإكسسوارات ");
+    const offer = within(panel).getByRole("status");
+    expect(offer).toHaveTextContent("يوجد قسم مؤرشف باسم «الإكسسوارات»");
+    await userEvent.click(within(offer).getByRole("button", { name: "استعادة «الإكسسوارات»" }));
+    // Restored, not added: the panel moves to it, with no confirmation asked.
+    expect(await screen.findByRole("complementary", { name: "الإكسسوارات" })).toBeVisible();
+    expect(calls.filter((call) => call.method === "POST")).toEqual([
+      {
+        method: "POST",
+        url: `/api/v1/organization/departments/${OLD.id}/restore`,
+        body: undefined,
+      },
+    ]);
+    expect(screen.getByTestId("filters")).toHaveTextContent(OLD.id);
+    expect(
+      within(screen.getByRole("region", { name: uiMessages.toast.region })).getByRole("list"),
+    ).toHaveTextContent("استُعيد القسم «الإكسسوارات»");
+  });
+
+  it("says on the field when the server finds an archived department with the name", async () => {
+    fakeApi([STORE], {
+      "POST /api/v1/organization/departments": problem(409, "tenancy.department.nameArchived"),
+    });
+    renderScreen({ selected: "new" });
+    const panel = await screen.findByRole("complementary", { name: "قسم جديد" });
+    await userEvent.type(within(panel).getByLabelText(/اسم القسم/), "الورشة{Enter}");
+    await waitFor(() => {
+      expect(within(panel).getByLabelText(/اسم القسم/)).toHaveAccessibleDescription(
+        /يوجد قسم مؤرشف بهذا الاسم/,
+      );
+    });
+  });
+
+  it("restores an archived department from its panel, and ends the panel with its last change", async () => {
+    const archived = {
+      ...OLD,
+      lastChange: {
+        entryId: "0190a000-0000-7000-8000-0000000ae001",
+        at: "2026-09-20T10:00:00.000Z",
+        by: { id: "0190a000-0000-7000-8000-00000000c001", name: "سامر" },
+        bySupport: false,
+      },
+    };
+    const calls = fakeApi([STORE, archived], {
+      [`POST /api/v1/organization/departments/${OLD.id}/restore`]: () =>
+        Response.json({ ...OLD, archivedAt: null }),
+    });
+    renderScreen({ status: "archived", selected: OLD.id });
+    const panel = await screen.findByRole("complementary", { name: "الإكسسوارات" });
+    expect(panel.querySelector("[data-last-change]")).toHaveTextContent(
+      /^آخر تعديل بواسطة سامر في /,
+    );
+    expect(within(panel).queryByRole("button", { name: /أرشفة/ })).toBeNull();
+    await userEvent.click(within(panel).getByRole("button", { name: "استعادة القسم" }));
+    expect(
+      await within(screen.getByRole("region", { name: uiMessages.toast.region })).findByRole(
+        "list",
+      ),
+    ).toHaveTextContent("استُعيد القسم «الإكسسوارات»");
+    expect(calls.filter((call) => call.url.endsWith("/restore"))).toHaveLength(1);
+    // The archived filter would hide it now: the list shows all, the panel stays on it.
+    expect(JSON.parse(screen.getByTestId("filters").textContent ?? "")).toEqual({
+      status: "all",
+      q: "",
+      selected: OLD.id,
+    });
   });
 
   it("says when the list needs the server and the device is offline", async () => {

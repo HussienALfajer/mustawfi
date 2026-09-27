@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   type NewUserRequest,
   type UserChangeRequest,
+  userListItemSchema,
   userViewSchema,
   type UserView,
 } from "../../shared/index.ts";
@@ -19,7 +20,7 @@ export function usersQueryOptions() {
     queryFn: async ({ signal }) =>
       (
         await apiRequest(BASE, {
-          schema: z.object({ items: z.array(userViewSchema) }),
+          schema: z.object({ items: z.array(userListItemSchema) }),
           signal,
         })
       ).items,

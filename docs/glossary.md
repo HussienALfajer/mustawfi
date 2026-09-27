@@ -13,8 +13,11 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | دور | Role | `role` |
 | صلاحية | Permission | `permission` |
 | موافقة المشرف | Supervisor override | `supervisorOverride` |
-| جهاز رئيسي (كاشير) | Main POS device (device type `mainPos`) | `mainPosDevice` |
+| جهاز بيع رئيسي | Main POS device (device type `mainPos`) | `mainPosDevice` |
 | جهاز مساعد (موبايل) | Mobile companion device (device type `companion`; the browser registers as one) | `companionDevice` |
+| منصة الجهاز | Device platform: what a device runs on, recorded at registration — `windows` (تطبيق Windows) or `browser` (متصفح) | `devicePlatform` |
+| استعادة | Restore: an archived department or role made active again | `restore` |
+| آخر تعديل | Last change of a record, from its audit entries (the last line of a details panel) | `lastChange` |
 | لوحة المالك | Owner dashboard | `ownerDashboard` |
 | القسم الافتراضي | Default department (seeded with the tenant, hidden while it is the only active one) | `defaultDepartment` |
 | نطاق الأقسام | Department scope (all, or listed departments) | `departmentScope` |

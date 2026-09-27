@@ -251,6 +251,51 @@ describe("sessions", () => {
     expect(rows.map((row) => row.revoked_by)).toEqual([store.ownerId]);
     const revoked = await auditOf(store.tenantId, "access.session.revoked");
     expect(revoked.map((entry) => entry.entity_id)).toContain(rows[0]?.id);
+    // Without a body the user signed out (slice 20).
+    expect(revoked.find((entry) => entry.entity_id === rows[0]?.id)?.after).toEqual({
+      userId: store.ownerId,
+      reason: "signedOut",
+    });
+  });
+
+  it("records why a client ended its own session; a reason it may not give reads as a sign-out", async () => {
+    for (const reason of ["switchedUser", "locked", "idle", "signedOut"] as const) {
+      const token = await tokenFor();
+      const logout = await server.inject({
+        method: "POST",
+        url: "/api/v1/access/logout",
+        headers: bearer(token),
+        payload: { reason },
+      });
+      expect(logout.statusCode).toBe(204);
+      const { rows } = await superuser.query<{ after: unknown }>(
+        `select e.after from core_audit.entries e
+           join core_access.sessions s on s.id = e.entity_id
+          where s.token_hash = $1 and e.action = 'access.session.revoked'`,
+        [sha256(token)],
+      );
+      expect(rows).toEqual([{ after: { userId: store.ownerId, reason } }]);
+    }
+    // The changes that end sessions give their own reasons; a client cannot claim them, and a
+    // reason the server does not know never keeps the session open.
+    for (const reason of ["deviceRevoked", "somethingNew"]) {
+      const token = await tokenFor();
+      const logout = await server.inject({
+        method: "POST",
+        url: "/api/v1/access/logout",
+        headers: bearer(token),
+        payload: { reason },
+      });
+      expect(logout.statusCode).toBe(204);
+      expectProblem(await session(token), 401, accessProblemCodes.sessionRequired);
+      const { rows } = await superuser.query<{ after: unknown }>(
+        `select e.after from core_audit.entries e
+           join core_access.sessions s on s.id = e.entity_id
+          where s.token_hash = $1 and e.action = 'access.session.revoked'`,
+        [sha256(token)],
+      );
+      expect(rows).toEqual([{ after: { userId: store.ownerId, reason: "signedOut" } }]);
+    }
   });
 
   it("refuses an expired session", async () => {
@@ -481,7 +526,10 @@ describe("device registration", () => {
       tenantId: store.tenantId,
       prefix: device.prefix,
       type: "mainPos",
+      // A client built before slice 20 names no platform: its type tells it.
+      platform: "windows",
       name: "كاشير ١",
+      limit: { used: expect.any(Number) as number, allowed: expect.any(Number) as number },
     });
     const [tag, tenantId] = device.credential.split(".");
     for (const credential of [`${tag}.${tenantId}.${"A".repeat(43)}`, await tokenFor(), ""]) {
@@ -504,6 +552,7 @@ describe("device registration", () => {
       after: expect.objectContaining({
         prefix: device.prefix,
         type: "mainPos",
+        platform: "windows",
         name: "كاشير ١",
       }) as unknown,
     });
@@ -630,8 +679,8 @@ describe("device prefixes", () => {
          select gen_random_uuid(), $1, $2, now(), $3, encode(sha256(prefix::bytea), 'hex'), now(), now()
          from prefixes returning id, code_hash)
        insert into core_access.devices
-         (id, tenant_id, branch_id, created_at, created_by, name, type, prefix, credential_hash, registration_code_id)
-       select gen_random_uuid(), $1, $2, now(), $3, 'filler', 'mainPos', p.prefix,
+         (id, tenant_id, branch_id, created_at, created_by, name, type, platform, prefix, credential_hash, registration_code_id)
+       select gen_random_uuid(), $1, $2, now(), $3, 'filler', 'mainPos', 'windows', p.prefix,
          encode(sha256(('credential ' || p.prefix)::bytea), 'hex'), c.id
        from prefixes p join codes c on c.code_hash = encode(sha256(p.prefix::bytea), 'hex')`,
       [tenant.tenantId, tenant.branchId, tenant.ownerId],
@@ -643,7 +692,7 @@ describe("device prefixes", () => {
     });
   });
 
-  it("cannot free or change a prefix: devices are never deleted or edited, and prefixes are unique", async () => {
+  it("cannot free or change a prefix: devices are never deleted, only renamed, and prefixes are unique", async () => {
     const tenant = await newTenant("متجر القيود");
     const device = await registerDirect(tenant);
     const app = await database.connect("app");
@@ -662,14 +711,24 @@ describe("device prefixes", () => {
       expect(await asApp("update core_access.devices set prefix = 'ZZ' where id = $1")).toBe(
         "42501",
       );
+      // Its name is the one thing an owner changes (slice 20), with its type and platform fixed.
+      expect(await asApp("update core_access.devices set name = 'الكاشير' where id = $1")).toBe(
+        "changed 1",
+      );
+      expect(await asApp("update core_access.devices set type = 'companion' where id = $1")).toBe(
+        "42501",
+      );
+      expect(await asApp("update core_access.devices set platform = 'browser' where id = $1")).toBe(
+        "42501",
+      );
     } finally {
       await app.end();
     }
     const duplicate = await superuser
       .query(
         `insert into core_access.devices
-           (id, tenant_id, branch_id, created_at, created_by, name, type, prefix, credential_hash, registration_code_id)
-         select gen_random_uuid(), tenant_id, branch_id, now(), created_by, 'twin', type, prefix,
+           (id, tenant_id, branch_id, created_at, created_by, name, type, platform, prefix, credential_hash, registration_code_id)
+         select gen_random_uuid(), tenant_id, branch_id, now(), created_by, 'twin', type, platform, prefix,
            repeat('0', 64), registration_code_id from core_access.devices where id = $1`,
         [device.deviceId],
       )
@@ -686,8 +745,8 @@ describe("device prefixes", () => {
            select gen_random_uuid(), tenant_id, branch_id, now(), created_by, repeat('1', 64), now(), now()
            from core_access.devices where id = $1 returning id)
          insert into core_access.devices
-           (id, tenant_id, branch_id, created_at, created_by, name, type, prefix, credential_hash, registration_code_id)
-         select gen_random_uuid(), d.tenant_id, d.branch_id, now(), d.created_by, 'twin', d.type, d.prefix,
+           (id, tenant_id, branch_id, created_at, created_by, name, type, platform, prefix, credential_hash, registration_code_id)
+         select gen_random_uuid(), d.tenant_id, d.branch_id, now(), d.created_by, 'twin', d.type, d.platform, d.prefix,
            repeat('0', 64), code.id from core_access.devices d, code where d.id = $1`,
         [device.deviceId],
       )

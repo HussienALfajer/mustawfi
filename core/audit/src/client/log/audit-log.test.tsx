@@ -23,7 +23,15 @@ const i18n = createI18n({
   [UI_NAMESPACE]: uiMessages,
   [AUDIT_NAMESPACE]: auditMessages,
   organization: { audit: { department: { renamed: "تغيير اسم قسم" } } },
-  access: { audit: { pin: { failed: "رمز PIN خاطئ على الجهاز" } } },
+  access: {
+    audit: {
+      pin: { failed: "رمز PIN خاطئ على الجهاز" },
+      session: {
+        revoked: "إنهاء جلسة",
+        revokedFor: { switchedUser: "إنهاء جلسة: تبديل المستخدم على الجهاز" },
+      },
+    },
+  },
 });
 
 const OWNER = { id: "0190a000-0000-7000-8000-00000000c001", name: "سامر" };
@@ -154,6 +162,51 @@ describe("AuditLogScreen", () => {
       within(table).getByRole("row", { name: /إجراء غير معروف \(repairs\.ticket\.opened\)/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("لا سجلات أقدم")).toBeInTheDocument();
+  });
+
+  it("labels each reason an entry records separately, and falls back to the action's label", async () => {
+    const session = { type: "access.session", id: "0190a000-0000-7000-8000-00000000f0f1" };
+    fakeApi({
+      first: {
+        items: [
+          entry("0190a000-0000-7000-8000-00000000e011", {
+            action: "access.session.revoked",
+            entity: session,
+            before: null,
+            after: { userId: OWNER.id, reason: "switchedUser" },
+          }),
+          entry("0190a000-0000-7000-8000-00000000e012", {
+            action: "access.session.revoked",
+            entity: session,
+            before: null,
+            after: { userId: OWNER.id, reason: "somethingNew" },
+          }),
+        ],
+        next: null,
+      },
+    });
+    renderScreen();
+    const table = await screen.findByRole("grid", { name: "سجل التدقيق" });
+    expect(
+      within(table).getByRole("row", { name: /إنهاء جلسة: تبديل المستخدم على الجهاز/ }),
+    ).toBeInTheDocument();
+    // A reason this client has no label for reads as the action itself.
+    expect(within(table).getAllByRole("row", { name: /إنهاء جلسة/ })).toHaveLength(2);
+    expect(within(table).getAllByRole("row", { name: /إنهاء جلسة:/ })).toHaveLength(1);
+  });
+
+  it("shows one record's history when opened from a panel's last line, and clears it", async () => {
+    const urls = fakeApi({ first: { items: [RENAMED], next: null } });
+    const entity = RENAMED.entity?.id ?? "";
+    renderScreen({ entity, selected: RENAMED.id });
+    // Its latest entry is open beside it.
+    expect(await screen.findByRole("complementary", { name: "تغيير اسم قسم" })).toBeVisible();
+    expect(screen.getByTestId("audit-entity-filter")).toHaveTextContent("يعرض سجل عنصر واحد");
+    const asked = urls.find((url) => url.startsWith("/api/v1/audit/entries"));
+    expect(new URL(asked ?? "", "http://localhost").searchParams.get("entity")).toBe(entity);
+    await userEvent.click(screen.getByRole("button", { name: "مسح التصفية" }));
+    expect(screen.getByTestId("filters")).toHaveTextContent("{}");
+    expect(screen.queryByTestId("audit-entity-filter")).toBeNull();
   });
 
   it("asks the server with the URL's filters", async () => {

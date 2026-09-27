@@ -300,7 +300,13 @@ async function openDevice(
   );
   const local = await registerThisDevice(
     db,
-    { type: "mainPos", storeCode: store.tenant.storeCode, registrationCode: code, name },
+    {
+      type: "mainPos",
+      platform: "windows",
+      storeCode: store.tenant.storeCode,
+      registrationCode: code,
+      name,
+    },
     clock,
   );
   const engine = createSyncEngine({

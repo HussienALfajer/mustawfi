@@ -30,6 +30,8 @@ export const auditQuerySchema = z
     user: z.uuid().optional(),
     action: auditActionSchema.optional(),
     device: z.uuid().optional(),
+    /** One record's history: the entries naming it (`core-foundation` slice 20). */
+    entity: z.uuid().optional(),
     from: z.iso.date().optional(),
     to: z.iso.date().optional(),
     after: z.uuid().optional(),
@@ -93,3 +95,22 @@ export const auditFacetsSchema = z.object({
 });
 
 export type AuditFacets = z.infer<typeof auditFacetsSchema>;
+
+/**
+ * The last change of a record, from its audit entries, for the «last changed by … on …» line
+ * that ends every details panel (`screen-patterns.md`): when, by whom (null when no known user
+ * acted: Vertex support, a device on its own), and the entry, which readers of the log open.
+ * Lists carry it for whoever may read the record, whether or not they may read the log.
+ */
+export const lastChangeSchema = z.object({
+  entryId: z.uuid(),
+  at: z.iso.datetime(),
+  by: auditUserSchema.nullable(),
+  /**
+   * Made through Vertex support (a support reset code): the entry names the owner it acted for,
+   * so the line says support rather than that user.
+   */
+  bySupport: z.boolean(),
+});
+
+export type LastChange = z.infer<typeof lastChangeSchema>;

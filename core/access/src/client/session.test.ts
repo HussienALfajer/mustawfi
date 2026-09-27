@@ -161,7 +161,7 @@ describe("a sign-in after a session ended in the background", () => {
       return Promise.resolve(Response.json(session));
     });
     // A lock, or an idle session ended at start-up (`restoreDeviceSession`).
-    endServerSessionInBackground(4_000);
+    endServerSessionInBackground(4_000, "locked");
     const signingIn = signIn({ storeCode: "AB2CD3", login: "owner", password: "secret" });
     await vi.waitFor(() => expect(order).toEqual(["sent /api/v1/access/logout"]));
     answerLogout();

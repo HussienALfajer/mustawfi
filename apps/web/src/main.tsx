@@ -148,7 +148,7 @@ const printerTransport = platform.openPrinter?.().catch((error: unknown) => {
 
 Promise.all([startLocalRuntime(queryClient, platform), printerTransport]).then(
   ([{ db, sync }, printer]) => {
-    router = createAppRouter(queryClient, platform.deviceType, db);
+    router = createAppRouter(queryClient, platform, db);
     localDb = db;
     root.render(
       <StrictMode>

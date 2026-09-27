@@ -4,8 +4,10 @@ export {
   type Actor,
   addDepartment,
   changeDepartmentName,
+  listDepartmentItems,
   type OrganizationDependencies,
   publishDepartment,
+  reinstateDepartment,
   retireDepartment,
 } from "./departments.ts";
 export { organizationModule } from "./manifest.ts";

@@ -60,7 +60,8 @@ Every screen is one of these. A new pattern needs a recorded decision and a prev
 - Status is written as a word with its colour («نشط», «موقوف», «مُبطَل»), never colour alone. **Archived** is a solid neutral grey badge with an archive icon (`Badge tone="archived"`), never red: red stays for errors, danger, and negative amounts.
 - Routine actions have no confirmation. Destructive or security actions (revoke a device, deactivate a user, archive a department) confirm once and ask for a reason, which goes to the audit log.
 - Important failures (sync, print, posting, save) stay on screen until resolved. **Toasts** (`useToast`, one `ToastProvider` at the app's root) confirm a success, inform, or warn about something already done — never the only report of a failure, so there is no error toast. They sit at the screen's end corner in a polite live region, close by themselves after 5–8 seconds unless the pointer or the focus is on them, and have a close button.
-- Every details panel ends with «last changed by … on …», linked to the audit log for users who may read it.
+- Every details panel ends with «last changed by … on …», linked to the audit log for users who may read it: the link opens that record's history with the change open (`LastChangeLine`, `core-foundation` slice 20).
+- **Archived records** (departments, roles) are restored from their panel without confirmation. Names are unique among archived and active records alike; typing an archived record's name for a new one offers «استعادة» beside the field instead of a refusal.
 - Loading never blocks the screen on the network and always says whether the app is offline.
 - Codes read by a machine (QR codes, barcodes) keep dark modules on a light box in every theme (`data-theme="light"` on the box): scanners and authenticator apps read dark on light. The same value is shown beside it as text for typing by hand.
 

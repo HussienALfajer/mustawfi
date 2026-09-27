@@ -126,7 +126,7 @@ export async function registerDevice(
   const prefix = page.getByTestId("device-prefix");
   await expect(prefix).toHaveText(/^[A-HJ-NP-Z2-9]{2}$/);
   // The browser is never the main POS (ADR-0019); the Windows app is.
-  await expect(page.getByTestId("device-type")).toHaveText("جهاز مساعد");
+  await expect(page.getByTestId("device-type")).toHaveText("متصفح — جهاز مساعد");
   await expectAccessible(page);
   return (await prefix.textContent()) ?? "";
 }

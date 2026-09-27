@@ -21,6 +21,7 @@ export const organizationMessages = {
       created: "إضافة قسم",
       renamed: "إعادة تسمية قسم",
       archived: "أرشفة قسم",
+      restored: "استعادة قسم مؤرشف",
     },
     profile: {
       created: "إنشاء ملف المتجر",
