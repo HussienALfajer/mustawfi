@@ -1,7 +1,8 @@
 import type { ReactNode, Ref } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import { cx, FOCUS_RING } from "./cx.ts";
+import { cx, FOCUS_RING, FOCUS_RING_INSET } from "./cx.ts";
+import { ROW_STATES } from "./interaction.ts";
 import { UI_NAMESPACE } from "./messages.ts";
 
 export interface DataColumn<T> {
@@ -107,9 +108,8 @@ export function DataTable<T>({
             data-row-id={item.id}
             columns={columns}
             className={cx(
-              "h-row cursor-default even:bg-row-alt-bg data-[selected]:bg-row-selected-bg rtl:data-[selected]:shadow-[inset_-3px_0_0_var(--mf-color-accent)] ltr:data-[selected]:shadow-[inset_3px_0_0_var(--mf-color-accent)]",
-              FOCUS_RING,
-              "data-[focus-visible]:-outline-offset-2",
+              "h-row even:bg-row-alt-bg",
+              onSelect === undefined ? cx("cursor-default", FOCUS_RING_INSET) : ROW_STATES,
             )}
           >
             {(column) => (
@@ -117,8 +117,7 @@ export function DataTable<T>({
                 className={cx(
                   "border-b border-divider px-pad-inline",
                   alignment(column),
-                  FOCUS_RING,
-                  "data-[focus-visible]:-outline-offset-2",
+                  FOCUS_RING_INSET,
                 )}
               >
                 {column.cell(item.row)}

@@ -43,7 +43,7 @@ export {
   THEMES,
   type ThemeName,
 } from "./tokens/themes.ts";
-export { Button, type ButtonProps, type ButtonVariant } from "./components/button.tsx";
+export { Button, buttonClass, type ButtonProps, type ButtonVariant } from "./components/button.tsx";
 export { cx } from "./components/cx.ts";
 export {
   type DataColumn,
@@ -68,8 +68,10 @@ export { ConfirmDialog, type ConfirmDialogProps } from "./components/confirm-dia
 export { ModalDialog, type ModalDialogProps } from "./components/dialog.tsx";
 export { Kbd, shortcutLabel } from "./components/kbd.tsx";
 export {
+  enterMovesThenSubmits,
   enterMovesToNextField,
   isTypingTarget,
+  saveShortcutSubmits,
   type Shortcut,
   useShortcut,
 } from "./components/keyboard.ts";
@@ -99,3 +101,33 @@ export {
 } from "./components/checkbox.tsx";
 export { Select, type SelectOption, type SelectProps } from "./components/select.tsx";
 export { type MenuAction, MenuButton, type MenuButtonProps } from "./components/menu-button.tsx";
+export {
+  ICON_BUTTON,
+  ITEM_STATES,
+  LINK_ITEM_STATES,
+  PRESSABLE,
+  ROW_STATES,
+  SEGMENT_STATES,
+  TEXT_LINK,
+} from "./components/interaction.ts";
+export {
+  Toast,
+  TOAST_DURATION_MS,
+  type ToastApi,
+  type ToastOptions,
+  type ToastProps,
+  ToastProvider,
+  type ToastTone,
+  useToast,
+} from "./components/toast.tsx";
+export { PasswordField, type PasswordFieldProps } from "./components/password-field.tsx";
+export { COPY_FEEDBACK_MS, CopyButton, type CopyButtonProps } from "./components/copy-button.tsx";
+export {
+  type DatePreset,
+  DatePicker,
+  type DatePickerProps,
+  DateRangePicker,
+  type DateRangePickerProps,
+  type DateRangeValue,
+  presetRange,
+} from "./components/date-picker.tsx";

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -85,9 +85,11 @@ function renderWith(children: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <div dir="rtl">{children}</div>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <div dir="rtl">{children}</div>
+        </QueryClientProvider>
+      </ToastProvider>
     </I18nextProvider>,
   );
 }
@@ -237,8 +239,15 @@ describe("«My account» (flow 11)", () => {
     const pin = await screen.findByRole("form", { name: "الرمز السري" });
     await userEvent.type(within(pin).getByLabelText("كلمة المرور الحالية"), "current password");
     await userEvent.type(within(pin).getByLabelText("الرمز السري الجديد"), "2580");
+    // Enter never saves a settings section (screen-patterns.md); Ctrl+S inside it does.
     await userEvent.type(within(pin).getByLabelText("أعد كتابة الرمز الجديد"), "2580{Enter}");
-    expect(await within(pin).findByRole("status")).toHaveTextContent("تغيّر رمزك السري");
+    expect(calls.filter((call) => call.method === "PUT")).toEqual([]);
+    await userEvent.keyboard("{Control>}s{/Control}");
+    expect(
+      await within(screen.getByRole("region", { name: uiMessages.toast.region })).findByRole(
+        "list",
+      ),
+    ).toHaveTextContent("تغيّر رمزك السري");
     expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
       currentPassword: "current password",
       pin: "2580",
@@ -253,7 +262,8 @@ describe("«My account» (flow 11)", () => {
     const pin = await screen.findByRole("form", { name: "الرمز السري" });
     await userEvent.type(within(pin).getByLabelText("كلمة المرور الحالية"), "x");
     await userEvent.type(within(pin).getByLabelText("الرمز السري الجديد"), "1234");
-    await userEvent.type(within(pin).getByLabelText("أعد كتابة الرمز الجديد"), "1234{Enter}");
+    await userEvent.type(within(pin).getByLabelText("أعد كتابة الرمز الجديد"), "1234");
+    await userEvent.keyboard("{Control>}s{/Control}");
     expect(within(pin).getByLabelText("الرمز السري الجديد")).toBeInvalid();
     expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
   });
@@ -300,6 +310,11 @@ describe("«My account» (flow 11)", () => {
     );
     const code = within(section).getByLabelText("الرمز من التطبيق");
     expect(code).toHaveFocus();
+    // The key copies without the spaces that group it for reading.
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await userEvent.click(within(section).getByRole("button", { name: /نسخ\s+المفتاح/ }));
+    expect(writeText).toHaveBeenLastCalledWith("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP");
     await userEvent.type(code, "111111{Enter}");
     expect(await within(section).findByRole("alert")).toHaveTextContent("الرمز غير صحيح");
     await userEvent.clear(code);
@@ -312,6 +327,8 @@ describe("«My account» (flow 11)", () => {
         .map((item) => item.textContent),
     ).toEqual(codes);
     expect(within(section).getByRole("heading", { name: "فُعّل التحقق بخطوتين" })).toHaveFocus();
+    await userEvent.click(within(section).getByRole("button", { name: /نسخ\s+رموز الاسترداد/ }));
+    expect(writeText).toHaveBeenLastCalledWith(codes.join("\n"));
     expect(calls.filter((call) => call.method === "POST").map((call) => call.body)).toEqual([
       { currentPassword: "my password" },
       { code: "111111" },

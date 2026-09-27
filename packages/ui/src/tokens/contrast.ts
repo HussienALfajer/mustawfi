@@ -15,16 +15,14 @@ export interface ContrastPair {
   readonly kind: "text" | "non-text";
 }
 
-const BACKGROUNDS = ["page", "surface", "sunken", "selected"] as const;
+const BACKGROUNDS = ["page", "surface", "sunken", "hover", "selected"] as const;
+/**
+ * Every background but `selected`: its tint is one step too strong for muted text (4.15:1) and
+ * for positive text (4.43:1) in light. A selected row carries them only inside a badge's tint.
+ */
+const UNSELECTED_BACKGROUNDS = ["page", "surface", "sunken", "hover"] as const;
 const TINTS = ["positive-tint", "negative-tint", "warning-tint", "info-tint"] as const;
-const READING_TEXT = ["text", "text-secondary", "text-muted"] as const;
-const COLOURED_TEXT = [
-  "text-accent",
-  "text-positive",
-  "text-negative",
-  "text-warning",
-  "text-info",
-] as const;
+const COLOURED_TEXT = ["text-accent", "text-negative", "text-warning", "text-info"] as const;
 
 const pairs = (
   foregrounds: readonly SemanticToken[],
@@ -40,7 +38,10 @@ const pairs = (
  * not use; `docs/design/design-system.md` lists the rules.
  */
 export const CONTRAST_PAIRS: readonly ContrastPair[] = [
-  ...pairs([...READING_TEXT, ...COLOURED_TEXT], BACKGROUNDS, "text"),
+  ...pairs(["text", "text-secondary", ...COLOURED_TEXT], BACKGROUNDS, "text"),
+  ...pairs(["text-muted", "text-positive"], UNSELECTED_BACKGROUNDS, "text"),
+  // A control being pressed carries body or accent text only (secondary text turns to body text).
+  ...pairs(["text", "text-accent"], ["pressed"], "text"),
   // Alerts and status rows: body text on every tint, each status text on its own tint. Muted
   // text stays off tints: on the anchored positive tint it reaches only 4.39:1.
   ...pairs(["text", "text-secondary"], TINTS, "text"),
@@ -48,14 +49,16 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
   { foreground: "text-negative", background: "negative-tint", kind: "text" },
   { foreground: "text-warning", background: "warning-tint", kind: "text" },
   { foreground: "text-info", background: "info-tint", kind: "text" },
-  ...pairs(["text-on-accent"], ["accent", "accent-hover"], "text"),
+  ...pairs(["text-on-accent"], ["accent", "accent-hover", "accent-pressed"], "text"),
+  { foreground: "text-negative", background: "negative-pressed", kind: "text" },
+  { foreground: "text-on-neutral-solid", background: "neutral-solid", kind: "text" },
   // A field's boundary is measured against its own background, which is always `surface`.
   { foreground: "border-field", background: "surface", kind: "non-text" },
-  ...pairs(["focus-ring", "accent"], BACKGROUNDS, "non-text"),
+  ...pairs(["focus-ring", "accent"], [...BACKGROUNDS, "pressed"], "non-text"),
 ];
 
 /** Tokens that carry no information and so need no contrast: never text, never status. */
-export const DECORATIVE_TOKENS: readonly SemanticToken[] = ["divider", "signature"];
+export const DECORATIVE_TOKENS: readonly SemanticToken[] = ["divider", "signature", "hover-bar"];
 
 export interface ContrastResult extends ContrastPair {
   readonly ratio: number;

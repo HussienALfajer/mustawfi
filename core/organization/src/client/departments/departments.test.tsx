@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -100,11 +100,13 @@ function renderScreen(initial?: Partial<DepartmentFilters>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <div dir="rtl">
-          <Screen {...(initial === undefined ? {} : { initial })} />
-        </div>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <div dir="rtl">
+            <Screen {...(initial === undefined ? {} : { initial })} />
+          </div>
+        </QueryClientProvider>
+      </ToastProvider>
     </I18nextProvider>,
   );
 }
@@ -150,8 +152,11 @@ describe("DepartmentsScreen", () => {
     );
     expect(field).toHaveFocus();
     await userEvent.keyboard("تحويل الرصيد{Control>}s{/Control}");
-    const panel = await screen.findByRole("complementary", { name: "تحويل الرصيد" });
-    expect(within(panel).getByRole("status")).toHaveTextContent("أُضيف القسم «تحويل الرصيد»");
+    // The panel moved to the new department.
+    expect(await screen.findByRole("complementary", { name: "تحويل الرصيد" })).toBeVisible();
+    expect(
+      within(screen.getByRole("region", { name: uiMessages.toast.region })).getByRole("list"),
+    ).toHaveTextContent("أُضيف القسم «تحويل الرصيد»");
     expect(calls).toContainEqual({
       method: "POST",
       url: "/api/v1/organization/departments",

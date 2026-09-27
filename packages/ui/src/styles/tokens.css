@@ -230,9 +230,14 @@
   --mf-color-page: var(--mf-paper);
   --mf-color-surface: var(--mf-white);
   --mf-color-sunken: var(--mf-ledger-50);
-  --mf-color-selected: var(--mf-accent-50);
+  --mf-color-selected: var(--mf-accent-100);
+  --mf-color-hover: var(--mf-accent-50);
+  --mf-color-pressed: var(--mf-accent-200);
   --mf-color-accent: var(--mf-accent-700);
   --mf-color-accent-hover: var(--mf-accent-800);
+  --mf-color-accent-pressed: var(--mf-accent-900);
+  --mf-color-negative-pressed: var(--mf-danger-100);
+  --mf-color-neutral-solid: var(--mf-neutral-600);
   --mf-color-positive-tint: var(--mf-success-50);
   --mf-color-negative-tint: var(--mf-danger-50);
   --mf-color-warning-tint: var(--mf-warning-50);
@@ -242,12 +247,14 @@
   --mf-color-text-muted: var(--mf-neutral-500);
   --mf-color-text-accent: var(--mf-accent-700);
   --mf-color-text-on-accent: var(--mf-white);
+  --mf-color-text-on-neutral-solid: var(--mf-white);
   --mf-color-text-positive: var(--mf-success-700);
   --mf-color-text-negative: var(--mf-danger-700);
   --mf-color-text-warning: var(--mf-warning-700);
   --mf-color-text-info: var(--mf-info-700);
   --mf-color-border-field: var(--mf-neutral-400);
   --mf-color-focus-ring: var(--mf-accent-700);
+  --mf-color-hover-bar: var(--mf-accent-300);
   --mf-color-divider: var(--mf-neutral-100);
   --mf-color-signature: var(--mf-signature-400);
 }
@@ -257,9 +264,14 @@
   --mf-color-page: var(--mf-neutral-950);
   --mf-color-surface: var(--mf-neutral-900);
   --mf-color-sunken: var(--mf-neutral-950);
-  --mf-color-selected: var(--mf-accent-900);
+  --mf-color-selected: var(--mf-accent-800);
+  --mf-color-hover: var(--mf-accent-900);
+  --mf-color-pressed: var(--mf-accent-700);
   --mf-color-accent: var(--mf-accent-400);
   --mf-color-accent-hover: var(--mf-accent-300);
+  --mf-color-accent-pressed: var(--mf-accent-200);
+  --mf-color-negative-pressed: var(--mf-danger-900);
+  --mf-color-neutral-solid: var(--mf-neutral-300);
   --mf-color-positive-tint: var(--mf-success-950);
   --mf-color-negative-tint: var(--mf-danger-950);
   --mf-color-warning-tint: var(--mf-warning-950);
@@ -269,12 +281,14 @@
   --mf-color-text-muted: var(--mf-neutral-300);
   --mf-color-text-accent: var(--mf-accent-300);
   --mf-color-text-on-accent: var(--mf-neutral-950);
+  --mf-color-text-on-neutral-solid: var(--mf-neutral-950);
   --mf-color-text-positive: var(--mf-success-400);
   --mf-color-text-negative: var(--mf-danger-400);
   --mf-color-text-warning: var(--mf-warning-400);
   --mf-color-text-info: var(--mf-info-400);
   --mf-color-border-field: var(--mf-neutral-500);
   --mf-color-focus-ring: var(--mf-accent-400);
+  --mf-color-hover-bar: var(--mf-accent-600);
   --mf-color-divider: var(--mf-neutral-800);
   --mf-color-signature: var(--mf-signature-400);
 }
@@ -285,9 +299,14 @@
     --mf-color-page: var(--mf-neutral-950);
     --mf-color-surface: var(--mf-neutral-900);
     --mf-color-sunken: var(--mf-neutral-950);
-    --mf-color-selected: var(--mf-accent-900);
+    --mf-color-selected: var(--mf-accent-800);
+    --mf-color-hover: var(--mf-accent-900);
+    --mf-color-pressed: var(--mf-accent-700);
     --mf-color-accent: var(--mf-accent-400);
     --mf-color-accent-hover: var(--mf-accent-300);
+    --mf-color-accent-pressed: var(--mf-accent-200);
+    --mf-color-negative-pressed: var(--mf-danger-900);
+    --mf-color-neutral-solid: var(--mf-neutral-300);
     --mf-color-positive-tint: var(--mf-success-950);
     --mf-color-negative-tint: var(--mf-danger-950);
     --mf-color-warning-tint: var(--mf-warning-950);
@@ -297,12 +316,14 @@
     --mf-color-text-muted: var(--mf-neutral-300);
     --mf-color-text-accent: var(--mf-accent-300);
     --mf-color-text-on-accent: var(--mf-neutral-950);
+    --mf-color-text-on-neutral-solid: var(--mf-neutral-950);
     --mf-color-text-positive: var(--mf-success-400);
     --mf-color-text-negative: var(--mf-danger-400);
     --mf-color-text-warning: var(--mf-warning-400);
     --mf-color-text-info: var(--mf-info-400);
     --mf-color-border-field: var(--mf-neutral-500);
     --mf-color-focus-ring: var(--mf-accent-400);
+    --mf-color-hover-bar: var(--mf-accent-600);
     --mf-color-divider: var(--mf-neutral-800);
     --mf-color-signature: var(--mf-signature-400);
   }
@@ -313,12 +334,18 @@
 [data-theme] {
   --mf-button-primary-bg: var(--mf-color-accent);
   --mf-button-primary-bg-hover: var(--mf-color-accent-hover);
+  --mf-button-primary-bg-pressed: var(--mf-color-accent-pressed);
   --mf-button-primary-text: var(--mf-color-text-on-accent);
   --mf-field-bg: var(--mf-color-surface);
   --mf-field-border: var(--mf-color-border-field);
   --mf-field-text: var(--mf-color-text);
   --mf-row-alt-bg: var(--mf-color-sunken);
   --mf-row-selected-bg: var(--mf-color-selected);
+  --mf-state-hover-bg: var(--mf-color-hover);
+  --mf-state-pressed-bg: var(--mf-color-pressed);
+  --mf-state-selected-bg: var(--mf-color-selected);
+  --mf-state-bar-hover: var(--mf-color-hover-bar);
+  --mf-state-bar-selected: var(--mf-color-accent);
   --mf-total-rule: var(--mf-color-signature);
 }
 

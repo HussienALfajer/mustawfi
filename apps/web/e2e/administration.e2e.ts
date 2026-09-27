@@ -1,4 +1,4 @@
-import { attachScreens, signIn, tabTo } from "./steps.ts";
+import { attachScreens, signIn, tabTo, toasts } from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 test("keyboard only: edit the store profile and add a department", async ({ page }, testInfo) => {
@@ -29,7 +29,9 @@ test("keyboard only: edit the store profile and add a department", async ({ page
   await page.keyboard.press("Control+A");
   await page.keyboard.type("+963 11 222 3344");
   await page.keyboard.press("Control+S");
-  await expect(page.getByRole("status").filter({ hasText: "حُفظت بيانات المتجر" })).toBeVisible();
+  await expect(toasts(page)).toContainText("حُفظت بيانات المتجر");
+  // Nothing left to discard: the discard button is gone with the unsaved changes.
+  await expect(page.getByRole("button", { name: "تراجع عن التغييرات" })).toHaveCount(0);
   await attachScreens(page, testInfo, "store-profile");
   await page.reload();
   await expect(page.getByLabel("اسم المتجر (مطلوب)")).toHaveValue("موبايلات الحلبي");
@@ -47,7 +49,8 @@ test("keyboard only: edit the store profile and add a department", async ({ page
   await page.keyboard.type("الصيانة");
   await page.keyboard.press("Control+S");
   const added = page.getByRole("complementary", { name: "الصيانة" });
-  await expect(added.getByRole("status")).toHaveText("أُضيف القسم «الصيانة»");
+  await expect(added).toBeVisible();
+  await expect(toasts(page)).toContainText("أُضيف القسم «الصيانة»");
   await expect(page).toHaveURL(/selected=/);
   const row = table.getByRole("row").filter({ hasText: "الصيانة" });
   await expect(row).toHaveAttribute("aria-selected", "true");

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -192,11 +192,13 @@ function renderScreen({
   queryClient.setQueryData(sessionQueryKey, session(permissions, isOwner));
   return render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <div dir="rtl">
-          <Screen initial={initial} departments={departments} />
-        </div>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <div dir="rtl">
+            <Screen initial={initial} departments={departments} />
+          </div>
+        </QueryClientProvider>
+      </ToastProvider>
     </I18nextProvider>,
   );
 }
@@ -279,7 +281,9 @@ describe("UsersScreen", () => {
     await userEvent.keyboard("{Control>}s{/Control}");
 
     const saved = await screen.findByRole("complementary", { name: "ليلى" });
-    expect(within(saved).getByRole("status")).toHaveTextContent("أُضيف المستخدم «ليلى»");
+    expect(
+      within(screen.getByRole("region", { name: uiMessages.toast.region })).getByRole("list"),
+    ).toHaveTextContent("أُضيف المستخدم «ليلى»");
     // The first PIN field leaves with the new user; focus stays in the panel.
     expect(within(saved).getByLabelText(/^الاسم/)).toHaveFocus();
     expect(calls).toContainEqual({
@@ -386,7 +390,9 @@ describe("UsersScreen", () => {
     await userEvent.click(within(panel).getByRole("radio", { name: "كل الأقسام" }));
     await userEvent.click(within(panel).getByRole("button", { name: /حفظ/ }));
     await waitFor(() => {
-      expect(within(panel).getByRole("status")).toHaveTextContent("حُفظ المستخدم «رنا»");
+      expect(
+        within(screen.getByRole("region", { name: uiMessages.toast.region })).getByRole("list"),
+      ).toHaveTextContent("حُفظ المستخدم «رنا»");
     });
     expect(calls).toContainEqual({
       method: "PATCH",

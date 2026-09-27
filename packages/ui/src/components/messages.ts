@@ -20,4 +20,32 @@ export const uiMessages = {
   dataTable: {
     empty: "لا توجد بيانات بعد",
   },
+  toast: {
+    region: "الإشعارات",
+    close: "إغلاق الإشعار",
+  },
+  passwordField: {
+    reveal: "إظهار ما كُتب",
+  },
+  copy: {
+    action: "نسخ",
+    done: "نُسخ",
+    doneFor: "نُسخ {label}",
+    failed: "تعذّر النسخ، انسخه يدويًا",
+  },
+  datePicker: {
+    open: "فتح التقويم",
+    previous: "الشهر السابق",
+    next: "الشهر التالي",
+    presets: "فترات جاهزة",
+    rangeSeparator: "–",
+    preset: {
+      today: "اليوم",
+      yesterday: "أمس",
+      last7: "آخر 7 أيام",
+      last30: "آخر 30 يومًا",
+      thisMonth: "هذا الشهر",
+      lastMonth: "الشهر الماضي",
+    },
+  },
 } satisfies Messages;

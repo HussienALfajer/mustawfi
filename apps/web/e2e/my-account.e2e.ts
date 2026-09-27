@@ -2,7 +2,7 @@ import type { APIRequestContext } from "@playwright/test";
 import { Secret, TOTP } from "otpauth";
 import { e2eStore } from "./environment.ts";
 import { runCli } from "./server-cli.ts";
-import { attachScreens, chooseFromUserMenu, signIn, signOut, tabTo } from "./steps.ts";
+import { attachScreens, chooseFromUserMenu, signIn, signOut, tabTo, toasts } from "./steps.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 const LOGIN = "rana";
@@ -61,7 +61,7 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByRole("heading", { name: "حسابي", level: 1 })).toBeVisible();
 
-  // PIN: proved with the current one; Enter moves on and submits on the last field.
+  // PIN: proved with the current one; Enter moves on and never saves; Ctrl+S saves the section.
   const pinForm = page.getByRole("form", { name: "الرمز السري" });
   await tabTo(page, pinForm.getByLabel("الرمز السري الحالي"), 60);
   await page.keyboard.type("4826");
@@ -70,7 +70,9 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await page.keyboard.press("Enter");
   await page.keyboard.type("3691");
   await page.keyboard.press("Enter");
-  await expect(pinForm.getByRole("status")).toHaveText("تغيّر رمزك السري");
+  await expect(pinForm.getByLabel("أعد كتابة الرمز الجديد")).toBeFocused();
+  await page.keyboard.press("Control+S");
+  await expect(toasts(page)).toContainText("تغيّر رمزك السري");
 
   // Password.
   const passwordForm = page.getByRole("form", { name: "كلمة المرور" });
@@ -80,8 +82,8 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await page.keyboard.type(SECOND_PASSWORD);
   await page.keyboard.press("Enter");
   await page.keyboard.type(SECOND_PASSWORD);
-  await page.keyboard.press("Enter");
-  await expect(passwordForm.getByRole("status")).toHaveText("تغيّرت كلمة مرورك");
+  await page.keyboard.press("Control+S");
+  await expect(toasts(page)).toContainText("تغيّرت كلمة مرورك");
   await expectAccessible(page);
 
   // Two-factor authentication: the password starts it, the app's first code turns it on.

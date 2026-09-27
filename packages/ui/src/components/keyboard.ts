@@ -60,19 +60,57 @@ export function useShortcut(
 }
 
 /**
- * A form's `onKeyDown`: `Enter` in a single-line field moves to the next field, and submits
- * from the last one (`screen-patterns.md`, keyboard).
+ * The single-line fields of a form, in order: what `Enter` moves between. Buttons, checkboxes,
+ * and disabled fields are skipped.
+ */
+function typingFields(form: HTMLFormElement): HTMLElement[] {
+  return Array.from(form.querySelectorAll<HTMLElement>("input, textarea, select")).filter(
+    (field) => isTypingTarget(field) && !field.hasAttribute("disabled"),
+  );
+}
+
+function isPlainEnter(event: ReactKeyboardEvent<HTMLFormElement>): boolean {
+  return event.key === "Enter" && !event.shiftKey && !event.ctrlKey && !event.altKey;
+}
+
+/**
+ * A settings or long form's `onKeyDown` (`screen-patterns.md`, keyboard): `Enter` in a
+ * single-line field moves to the next field and never saves, not even from the last one —
+ * `Ctrl+S` or the Save button saves. Pair it with `saveShortcutSubmits` when the form has no
+ * screen-wide `Ctrl+S`.
  */
 export function enterMovesToNextField(event: ReactKeyboardEvent<HTMLFormElement>): void {
-  if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey) return;
+  if (!isPlainEnter(event)) return;
   const target = event.target;
   if (!(target instanceof HTMLInputElement) || !isTypingTarget(target)) return;
-  const fields = Array.from(
-    event.currentTarget.querySelectorAll<HTMLElement>("input, textarea, select"),
-  ).filter((field) => isTypingTarget(field) && !field.hasAttribute("disabled"));
+  const fields = typingFields(event.currentTarget);
+  event.preventDefault();
+  fields[fields.indexOf(target) + 1]?.focus();
+}
+
+/**
+ * A short form's `onKeyDown` when it has several fields (a sign-in step, a reset code with a
+ * new password): `Enter` moves to the next field and submits from the last one, even when the
+ * form's button sits outside it. A one-field form needs nothing: the browser's `Enter` submits.
+ */
+export function enterMovesThenSubmits(event: ReactKeyboardEvent<HTMLFormElement>): void {
+  if (!isPlainEnter(event)) return;
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || !isTypingTarget(target)) return;
+  const form = event.currentTarget;
+  const fields = typingFields(form);
   const next = fields[fields.indexOf(target) + 1];
   event.preventDefault();
-  // The last field submits, even when the form's Save button sits outside it (a sticky footer).
-  if (next === undefined) event.currentTarget.requestSubmit();
+  if (next === undefined) form.requestSubmit();
   else next.focus();
+}
+
+/**
+ * `Ctrl+S` inside this form submits it: for a screen with several forms that each save on
+ * their own (My account's security sections), where a screen-wide shortcut could not choose.
+ */
+export function saveShortcutSubmits(event: ReactKeyboardEvent<HTMLFormElement>): void {
+  if (event.code !== "KeyS" || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+  event.preventDefault();
+  event.currentTarget.requestSubmit();
 }

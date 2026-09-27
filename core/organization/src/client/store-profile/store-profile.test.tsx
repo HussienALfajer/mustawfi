@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -74,11 +74,13 @@ function renderScreen(onDirtyChange = vi.fn()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <I18nextProvider i18n={i18n}>
-      <QueryClientProvider client={queryClient}>
-        <div dir="rtl">
-          <StoreProfileScreen onDirtyChange={onDirtyChange} />
-        </div>
-      </QueryClientProvider>
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <div dir="rtl">
+            <StoreProfileScreen onDirtyChange={onDirtyChange} />
+          </div>
+        </QueryClientProvider>
+      </ToastProvider>
     </I18nextProvider>,
   );
   return onDirtyChange;
@@ -114,6 +116,21 @@ describe("StoreProfileScreen", () => {
       commercialRegister: null,
     });
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("offers «تراجع عن التغييرات» only while there are unsaved changes, beside why", async () => {
+    fakeApi(() => new Response(null, { status: 500 }));
+    renderScreen();
+    const name = await screen.findByLabelText("اسم المتجر (مطلوب)");
+    expect(screen.queryByRole("button", { name: "تراجع عن التغييرات" })).toBeNull();
+    await userEvent.type(name, " الجديد");
+    expect(screen.getByText("تغييرات غير محفوظة")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "تراجع عن التغييرات" }));
+    expect(name).toHaveValue("موبايلات الحلبي");
+    // The button is gone; focus is not lost with it.
+    expect(name).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "تراجع عن التغييرات" })).toBeNull();
+    expect(screen.queryByText("تغييرات غير محفوظة")).toBeNull();
   });
 
   it("keeps what was typed when the server refuses, and says why on the page", async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createI18n } from "@mustawfi/i18n";
-import { UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
+import { presetRange, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -175,6 +175,19 @@ describe("AuditLogScreen", () => {
     await userEvent.keyboard("{Enter}");
     await userEvent.click(await screen.findByRole("option", { name: "ليلى" }));
     expect(screen.getByTestId("filters")).toHaveTextContent(`"user":"${CASHIER.id}"`);
+  });
+
+  it("filters by a range of dates picked from a preset, both ends in the URL", async () => {
+    fakeApi({ first: { items: [RENAMED], next: null } });
+    renderScreen();
+    await screen.findByRole("grid", { name: "سجل التدقيق" });
+    await userEvent.click(screen.getByRole("button", { name: /فتح التقويم/ }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "آخر 7 أيام" }));
+    const { start, end } = presetRange("last7");
+    expect(screen.getByTestId("filters")).toHaveTextContent(
+      `"from":"${start.toString()}","to":"${end.toString()}"`,
+    );
   });
 
   it("does not ask for a range that ends before it starts, and says why", async () => {

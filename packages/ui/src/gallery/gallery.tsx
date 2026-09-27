@@ -3,15 +3,26 @@ import { Layers, ShoppingCart, ReceiptText } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "../components/badge.tsx";
-import { Button } from "../components/button.tsx";
+import { Button, buttonClass, type ButtonVariant } from "../components/button.tsx";
 import { Checkbox, CheckboxGroup } from "../components/checkbox.tsx";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
+import { CopyButton } from "../components/copy-button.tsx";
+import { cx } from "../components/cx.ts";
+import { DatePicker, DateRangePicker, type DateRangeValue } from "../components/date-picker.tsx";
 import { DataTable } from "../components/data-table.tsx";
 import { ModalDialog } from "../components/dialog.tsx";
+import {
+  ITEM_STATES,
+  LINK_ITEM_STATES,
+  ROW_STATES,
+  SEGMENT_STATES,
+  TEXT_LINK,
+} from "../components/interaction.ts";
 import { Kbd } from "../components/kbd.tsx";
 import { MenuButton } from "../components/menu-button.tsx";
 import { MoneyInput } from "../components/money-input.tsx";
 import { Money } from "../components/money.tsx";
+import { PasswordField } from "../components/password-field.tsx";
 import { SearchField } from "../components/search-field.tsx";
 import { SegmentedControl } from "../components/segmented-control.tsx";
 import { Select } from "../components/select.tsx";
@@ -20,6 +31,7 @@ import { NAV_LINK_CLASS, SideNavigation } from "../components/side-navigation.ts
 import { SidePanel } from "../components/side-panel.tsx";
 import { TextArea } from "../components/text-area.tsx";
 import { TextInput } from "../components/text-input.tsx";
+import { Toast, ToastProvider, useToast } from "../components/toast.tsx";
 import { checkContrast } from "../tokens/contrast.ts";
 import { generatePalette, RAMP_SPECS, STEPS } from "../tokens/palette.ts";
 import { type DensityName, TYPE_SCALE } from "../tokens/scale.ts";
@@ -48,7 +60,10 @@ export const GALLERY_COMPONENTS = [
   "Checkbox",
   "CheckboxGroup",
   "ConfirmDialog",
+  "CopyButton",
   "DataTable",
+  "DatePicker",
+  "DateRangePicker",
   "FormFooter",
   "FormSection",
   "Kbd",
@@ -56,6 +71,7 @@ export const GALLERY_COMPONENTS = [
   "ModalDialog",
   "Money",
   "MoneyInput",
+  "PasswordField",
   "SearchField",
   "SegmentedControl",
   "Select",
@@ -63,6 +79,8 @@ export const GALLERY_COMPONENTS = [
   "SidePanel",
   "TextArea",
   "TextInput",
+  "Toast",
+  "ToastProvider",
 ] as const;
 
 type GalleryComponent = (typeof GALLERY_COMPONENTS)[number];
@@ -107,6 +125,14 @@ function Specimens() {
   const [role, setRole] = useState<"cashier" | "accountant" | null>("cashier");
   const [allowed, setAllowed] = useState(true);
   const [scope, setScope] = useState<string[]>(["repairs"]);
+  const [password, setPassword] = useState("s3cret-Pass");
+  const [pin, setPin] = useState("4827");
+  const [date, setDate] = useState<string | null>("2026-09-27");
+  const [range, setRange] = useState<DateRangeValue | null>({
+    start: "2026-09-01",
+    end: "2026-09-27",
+  });
+  const toast = useToast();
   const rows: DepartmentRow[] = [
     { id: "store", name: t("sample.rows.store"), users: 2, active: true },
     { id: "repairs", name: t("sample.rows.repairs"), users: 3, active: true },
@@ -155,10 +181,11 @@ function Specimens() {
       </Specimen>
       <Specimen name="Badge">
         <Badge tone="positive">{t("sample.active")}</Badge>
-        <Badge tone="neutral">{t("sample.archived")}</Badge>
+        <Badge tone="neutral">{t("sample.deactivated")}</Badge>
         <Badge tone="info">{t("sample.default")}</Badge>
         <Badge tone="warning">{t("sample.expiring")}</Badge>
         <Badge tone="negative">{t("sample.revoked")}</Badge>
+        <Badge tone="archived">{t("sample.archived")}</Badge>
       </Specimen>
       <Specimen name="TextInput">
         <TextInput
@@ -169,6 +196,69 @@ function Specimens() {
         />
         <TextInput label={t("sample.storeName")} errorMessage={t("sample.required")} value="" />
         <TextInput label={t("sample.documentNumber")} dir="ltr" value="K7-INV-000123" isReadOnly />
+      </Specimen>
+      <Specimen name="PasswordField">
+        <PasswordField
+          label={t("sample.password")}
+          autoComplete="off"
+          value={password}
+          onChange={setPassword}
+        />
+        <PasswordField
+          label={t("sample.pin")}
+          description={t("sample.pinHelp")}
+          inputMode="numeric"
+          maxLength={6}
+          autoComplete="off"
+          value={pin}
+          onChange={setPin}
+        />
+        <PasswordField
+          label={t("sample.resetCode")}
+          errorMessage={t("sample.required")}
+          autoComplete="off"
+          value=""
+        />
+      </Specimen>
+      <Specimen name="CopyButton">
+        <span className="inline-flex items-center gap-2">
+          <bdi dir="ltr" className="font-mono text-lg">
+            {t("sample.registrationCodeValue")}
+          </bdi>
+          <CopyButton
+            value={t("sample.registrationCodeValue")}
+            label={t("sample.registrationCode")}
+          />
+        </span>
+      </Specimen>
+      <Specimen name="DatePicker">
+        <DatePicker label={t("sample.date")} value={date} onChange={setDate} />
+      </Specimen>
+      <Specimen name="DateRangePicker">
+        <DateRangePicker label={t("sample.dateRange")} value={range} onChange={setRange} />
+        <DateRangePicker
+          label={t("sample.dateRange")}
+          value={null}
+          onChange={() => undefined}
+          errorMessage={t("sample.dateRangeError")}
+        />
+      </Specimen>
+      <Specimen name="Toast">
+        <div className="flex w-full max-w-sm flex-col gap-2">
+          <Toast tone="success" message={t("sample.toastSaved")} onClose={() => undefined} />
+          <Toast tone="info" message={t("sample.toastInfo")} onClose={() => undefined} />
+          <Toast tone="warning" message={t("sample.toastWarning")} onClose={() => undefined} />
+        </div>
+      </Specimen>
+      <Specimen name="ToastProvider">
+        <Button
+          variant="secondary"
+          onPress={() => {
+            toast.show(t("sample.toastSaved"));
+          }}
+        >
+          {t("sample.toastShow")}
+        </Button>
       </Specimen>
       <Specimen name="TextArea">
         <TextArea label={t("sample.address")} value={address} onChange={setAddress} rows={2} />
@@ -268,7 +358,7 @@ function Specimens() {
                     row.active ? (
                       <Badge tone="positive">{t("sample.active")}</Badge>
                     ) : (
-                      <Badge tone="neutral">{t("sample.archived")}</Badge>
+                      <Badge tone="archived">{t("sample.archived")}</Badge>
                     ),
                 },
                 {
@@ -409,6 +499,167 @@ function Specimens() {
           </div>
         </ModalDialog>
       </Specimen>
+    </div>
+  );
+}
+
+type ForcedState = "rest" | "hover" | "pressed" | "selected" | "focus";
+
+const FORCED_STATES: readonly ForcedState[] = ["rest", "hover", "pressed", "selected", "focus"];
+
+/** The attributes React Aria sets for a state, set by hand so every state shows at once. */
+function forced(state: ForcedState): Record<string, string | undefined> {
+  switch (state) {
+    case "rest":
+      return {};
+    case "hover":
+      return { "data-hovered": "true" };
+    case "pressed":
+      return { "data-hovered": "true", "data-pressed": "true" };
+    case "selected":
+      return { "data-selected": "true" };
+    case "focus":
+      return { "data-focus-visible": "true", "data-focused": "true" };
+  }
+}
+
+interface StateKind {
+  readonly id: string;
+  /** Whether the kind has a selected state (a button has none). */
+  readonly selectable: boolean;
+  readonly render: (state: ForcedState, label: string) => ReactNode;
+}
+
+const buttonKind = (variant: ButtonVariant): StateKind => ({
+  id: variant,
+  selectable: false,
+  render: (state, label) => (
+    <span {...forced(state)} className={buttonClass(variant)}>
+      {label}
+    </span>
+  ),
+});
+
+const STATE_KINDS: readonly StateKind[] = [
+  buttonKind("primary"),
+  buttonKind("secondary"),
+  buttonKind("quiet"),
+  buttonKind("danger"),
+  {
+    id: "row",
+    selectable: true,
+    render: (state, label) => (
+      <span
+        {...forced(state)}
+        className={cx("flex h-row w-32 items-center bg-surface px-pad-inline", ROW_STATES)}
+      >
+        {label}
+      </span>
+    ),
+  },
+  {
+    id: "nav",
+    selectable: true,
+    render: (state, label) => (
+      <span
+        {...forced(state)}
+        {...(state === "selected" ? { "aria-current": "page" as const } : {})}
+        className={cx(
+          "flex h-9 w-32 items-center rounded-md px-3 text-text-secondary",
+          LINK_ITEM_STATES,
+        )}
+      >
+        {label}
+      </span>
+    ),
+  },
+  {
+    id: "menu",
+    selectable: true,
+    render: (state, label) => (
+      <span
+        {...forced(state)}
+        className={cx("flex w-32 rounded-sm px-pad-inline py-1.5", ITEM_STATES)}
+      >
+        {label}
+      </span>
+    ),
+  },
+  {
+    id: "segment",
+    selectable: true,
+    render: (state, label) => (
+      <span
+        {...forced(state)}
+        className={cx(
+          "inline-flex h-[26px] items-center border border-field-border bg-surface px-2.5 text-sm",
+          SEGMENT_STATES,
+        )}
+      >
+        {label}
+      </span>
+    ),
+  },
+  {
+    id: "link",
+    selectable: false,
+    render: (state, label) => (
+      <span
+        {...(state === "hover" ? { style: { textDecorationThickness: "2px" } } : {})}
+        {...(state === "focus"
+          ? { style: { outline: "2px solid var(--mf-color-focus-ring)", outlineOffset: "2px" } }
+          : {})}
+        {...(state === "pressed" ? { style: { color: "var(--mf-color-text)" } } : {})}
+        className={TEXT_LINK}
+      >
+        {label}
+      </span>
+    ),
+  },
+];
+
+/**
+ * Every clickable kind in every state at once (core-foundation slice 19): the preview the user
+ * approves, and the check that the interaction tokens hold in each theme and density.
+ */
+function StatesTable() {
+  const { t } = useTranslation(GALLERY_NAMESPACE);
+  return (
+    <div data-states className="flex flex-col gap-2">
+      <h4 className="font-semibold">{t("states.title")}</h4>
+      <p className="max-w-3xl text-sm text-text-secondary">{t("states.intro")}</p>
+      <div className="overflow-x-auto">
+        <table className="border-separate border-spacing-2 text-start">
+          <thead>
+            <tr className="text-xs text-text-secondary">
+              <th className="text-start font-medium">{t("states.kind")}</th>
+              {FORCED_STATES.map((state) => (
+                <th key={state} className="text-start font-medium">
+                  {t(`states.${state}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {STATE_KINDS.map((kind) => (
+              <tr key={kind.id}>
+                <th scope="row" className="text-start text-xs font-medium text-text-secondary">
+                  {t(`states.${kind.id}`)}
+                </th>
+                {FORCED_STATES.map((state) => (
+                  <td key={state} aria-hidden="true">
+                    {state === "selected" && !kind.selectable ? (
+                      <span className="text-text-secondary">{t("states.notApplicable")}</span>
+                    ) : (
+                      kind.render(state, t(`states.${kind.id}`))
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -580,12 +831,21 @@ function TypeSection() {
 export function ComponentGallery() {
   const { t } = useTranslation(GALLERY_NAMESPACE);
   return (
+    <ToastProvider>
+      <GalleryPage title={t("title")} intro={t("intro")} />
+    </ToastProvider>
+  );
+}
+
+function GalleryPage({ title, intro }: { readonly title: string; readonly intro: string }) {
+  const { t } = useTranslation(GALLERY_NAMESPACE);
+  return (
     <main className="flex min-h-screen flex-col gap-10 bg-page p-6 text-text">
       <header className="flex flex-col gap-2">
         <h1 className="self-start border-b-4 border-double border-signature text-3xl font-bold">
-          {t("title")}
+          {title}
         </h1>
-        <p className="text-text-secondary">{t("intro")}</p>
+        <p className="text-text-secondary">{intro}</p>
       </header>
       <PaletteSection />
       <SemanticSection />
@@ -607,6 +867,7 @@ export function ComponentGallery() {
               <h3 className="text-lg font-semibold">
                 {t(`themes.${theme}`)} — {t(`densities.${density}`)}
               </h3>
+              <StatesTable />
               <Specimens />
             </section>
           )),

@@ -16,6 +16,11 @@ export async function tabTo(page: Page, target: Locator, limit = 25): Promise<vo
   await expect(target).toBeFocused();
 }
 
+/** The toasts' region: a success is confirmed there (`screen-patterns.md`). */
+export function toasts(page: Page): Locator {
+  return page.getByRole("region", { name: "الإشعارات" });
+}
+
 /** Signs in with the keyboard alone, from the start page (the store's owner by default). */
 export async function signIn(
   page: Page,

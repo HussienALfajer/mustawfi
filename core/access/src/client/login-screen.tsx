@@ -1,5 +1,5 @@
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
-import { Button, TextInput } from "@mustawfi/ui";
+import { Button, PasswordField, TextInput } from "@mustawfi/ui";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
@@ -206,7 +206,7 @@ function PasswordStep({
           control={form.control}
           name="password"
           render={({ field, fieldState }) => (
-            <TextInput
+            <PasswordField
               label={t("login.password")}
               errorMessage={fieldError(fieldState.error?.message)}
               value={field.value}
@@ -214,8 +214,6 @@ function PasswordStep({
               onBlur={field.onBlur}
               inputRef={field.ref}
               name={field.name}
-              type="password"
-              dir="ltr"
               autoComplete="current-password"
             />
           )}

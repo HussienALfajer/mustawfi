@@ -9,7 +9,7 @@ import {
   rasterToPngUrl,
 } from "@mustawfi/printing";
 import { type RecordedInvoiceRef, useReceiptDocument } from "@mustawfi/sales/client";
-import { Button } from "@mustawfi/ui";
+import { Button, TEXT_LINK } from "@mustawfi/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { createContext, type ReactNode, useContext, useId, useState } from "react";
@@ -204,7 +204,7 @@ export function ReceiptActions({ invoice }: { readonly invoice: RecordedInvoiceR
         <p role="alert" className="text-sm text-text-negative">
           {t(`printing.${state.problem}`)}{" "}
           {state.problem === "noPrinter" ? (
-            <Link to="/printer" className="text-text-accent underline">
+            <Link to="/printer" className={TEXT_LINK}>
               {t("printing.choosePrinter")}
             </Link>
           ) : null}

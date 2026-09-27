@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
 import { hostProblemCodes } from "@mustawfi/core-config/shared";
-import { Button, enterMovesToNextField, TextInput } from "@mustawfi/ui";
+import { Button, enterMovesThenSubmits, PasswordField, TextInput } from "@mustawfi/ui";
 import { useMutation } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -90,7 +90,8 @@ export function PasswordResetScreen({ onReset, backLink }: PasswordResetScreenPr
     props: {
       readonly label: string;
       readonly description?: string;
-      readonly type?: "password";
+      /** A secret is hidden, with a toggle to show it; a PIN brings the digit keyboard. */
+      readonly secret?: "text" | "pin";
       readonly autoComplete: string;
       readonly autoFocus?: boolean;
     },
@@ -98,19 +99,26 @@ export function PasswordResetScreen({ onReset, backLink }: PasswordResetScreenPr
     <Controller
       control={form.control}
       name={name}
-      render={({ field: control, fieldState }) => (
-        <TextInput
-          {...props}
-          errorMessage={problem(fieldState.error?.message)}
-          value={control.value}
-          onChange={control.onChange}
-          onBlur={control.onBlur}
-          inputRef={control.ref}
-          name={control.name}
-          dir="ltr"
-          spellCheck="false"
-        />
-      )}
+      render={({ field: control, fieldState }) => {
+        const { secret, ...shown } = props;
+        const common = {
+          ...shown,
+          errorMessage: problem(fieldState.error?.message),
+          value: control.value,
+          onChange: control.onChange,
+          onBlur: control.onBlur,
+          inputRef: control.ref,
+          name: control.name,
+        };
+        return secret === undefined ? (
+          <TextInput {...common} dir="ltr" spellCheck="false" />
+        ) : (
+          <PasswordField
+            {...common}
+            {...(secret === "pin" ? { inputMode: "numeric" as const, maxLength: 6 } : {})}
+          />
+        );
+      }}
     />
   );
 
@@ -119,7 +127,7 @@ export function PasswordResetScreen({ onReset, backLink }: PasswordResetScreenPr
       <form
         noValidate
         aria-labelledby="recovery-title"
-        onKeyDown={enterMovesToNextField}
+        onKeyDown={enterMovesThenSubmits}
         className="flex w-full flex-col gap-density-gap rounded-md bg-surface p-6 shadow-floating"
         onSubmit={(event) => {
           void form.handleSubmit((values) => {
@@ -146,23 +154,24 @@ export function PasswordResetScreen({ onReset, backLink }: PasswordResetScreenPr
         {field("code", {
           label: t("recovery.code"),
           description: t("recovery.codeHelp"),
+          secret: "text",
           autoComplete: "one-time-code",
         })}
         {field("password", {
           label: t("recovery.password"),
           description: t("recovery.passwordHelp"),
-          type: "password",
+          secret: "text",
           autoComplete: "new-password",
         })}
         {field("confirmPassword", {
           label: t("recovery.confirmPassword"),
-          type: "password",
+          secret: "text",
           autoComplete: "new-password",
         })}
         {field("pin", {
           label: t("recovery.pin"),
           description: t("recovery.pinHelp"),
-          type: "password",
+          secret: "pin",
           autoComplete: "off",
         })}
         {mutation.isError ? (

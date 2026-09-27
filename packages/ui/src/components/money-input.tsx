@@ -3,8 +3,9 @@ import { type Currency, Decimal, Money as KernelMoney } from "@mustawfi/kernel";
 import type { Ref } from "react";
 import { Input, Radio, RadioGroup, TextField } from "react-aria-components";
 import { useTranslation } from "react-i18next";
-import { cx, FOCUS_RING } from "./cx.ts";
+import { cx } from "./cx.ts";
 import { FieldHelp, FieldLabel, INPUT_CLASS } from "./field.tsx";
+import { SEGMENT_STATES } from "./interaction.ts";
 import { UI_NAMESPACE } from "./messages.ts";
 import { useCurrencyLabel } from "./money.tsx";
 
@@ -127,8 +128,8 @@ export function MoneyInput({
               key={option.code}
               value={option.code}
               className={cx(
-                "flex min-h-control min-w-control cursor-default items-center justify-center rounded-sm border border-field-border bg-surface px-pad-inline text-density text-text data-[selected]:border-accent data-[selected]:bg-selected data-[selected]:font-semibold data-[selected]:text-text-accent",
-                FOCUS_RING,
+                "flex min-h-control min-w-control items-center justify-center rounded-sm border border-field-border bg-surface px-pad-inline text-density text-text data-[selected]:border-accent",
+                SEGMENT_STATES,
               )}
             >
               {currencyLabel(option.code)}
