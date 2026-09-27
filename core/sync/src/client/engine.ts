@@ -164,7 +164,16 @@ export interface SyncEngineOptions {
    * is verified before it replaces the stored one (`core-foundation` rules 11–12).
    */
   readonly bundle?: BundleVerifier;
+  /**
+   * Fetches, with the device credential, what pulled rows name but do not carry (the store's
+   * logo, `core-foundation` slice 21). Each runs after push, pull, and the bundle in every round
+   * that reached the server; a failure is logged and tried again next round, never failing it.
+   */
+  readonly followUps?: readonly SyncFollowUp[];
 }
+
+/** Work a round does last, with the device credential (`SyncEngineOptions.followUps`). */
+export type SyncFollowUp = (credential: string) => Promise<unknown>;
 
 /** Pages a round pulls at most, so a long catch-up yields to pushes in between. */
 const PULL_PAGES_PER_ROUND = 20;
@@ -296,6 +305,16 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     if (serverTime !== undefined) await recordServerTime(db, serverTime, clock);
   }
 
+  async function followUp(credential: string): Promise<void> {
+    for (const run of options.followUps ?? []) {
+      try {
+        await run(credential);
+      } catch (error) {
+        console.warn("a sync follow-up failed; the next round tries again", error);
+      }
+    }
+  }
+
   async function round(): Promise<void> {
     const device = await localDevice(db);
     if (device === undefined) {
@@ -315,6 +334,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         if (!revoked && options.bundle !== undefined) {
           await refreshBundle(device, credential, options.bundle);
         }
+        if (!revoked) await followUp(credential);
       } catch (error) {
         // Pull refused the credential: the device was revoked while its outbox was empty.
         if (!(error instanceof ApiProblem && error.code === accessProblemCodes.deviceRevoked)) {

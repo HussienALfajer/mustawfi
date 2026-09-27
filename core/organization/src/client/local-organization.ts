@@ -1,4 +1,4 @@
-import type { PullApplier } from "@mustawfi/core-sync/client";
+import type { PullApplier, SyncFollowUp } from "@mustawfi/core-sync/client";
 import {
   type LocalDb,
   type LocalExecutor,
@@ -8,16 +8,18 @@ import {
 } from "@mustawfi/local-db";
 import { queryOptions } from "@tanstack/react-query";
 import { asc, eq, isNull } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { customType, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import {
   DEPARTMENT_ENTITY,
   departmentSchema,
   type DepartmentView,
+  type LogoPrintMode,
   type LogoType,
   STORE_PROFILE_ENTITY,
   storeProfileSchema,
   type StoreProfileView,
 } from "../shared/index.ts";
+import { fetchDeviceLogo } from "./store-profile/queries.ts";
 
 /**
  * Departments as the server last sent them (server-authoritative master data, ADR-0005),
@@ -43,11 +45,28 @@ const localStoreProfile = sqliteTable("organization_store_profile", {
   logoType: text("logo_type"),
   logoSha256: text("logo_sha256"),
   logoSize: safeInteger("logo_size"),
+  logoPrint: text("logo_print").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+/** Bytes as the local database adapters hand them over (`LocalValue`): no conversion. */
+const bytes = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+  dataType: () => "blob",
+});
+
+/**
+ * The store's logo, fetched after a sync round when the pulled profile names another one, and
+ * kept only when its bytes hash to what the profile says: receipts print it offline.
+ */
+const localStoreLogo = sqliteTable("organization_store_logo", {
+  sha256: text().primaryKey(),
+  type: text().notNull(),
+  bytes: bytes().notNull(),
 });
 
 export const LOCAL_DEPARTMENTS_TABLE = "organization_departments";
 export const LOCAL_STORE_PROFILE_TABLE = "organization_store_profile";
+export const LOCAL_STORE_LOGO_TABLE = "organization_store_logo";
 
 /** `core.organization`'s local schema (ADR-0019). */
 export const organizationLocalMigrations: readonly LocalMigration[] = [
@@ -77,6 +96,27 @@ export const organizationLocalMigrations: readonly LocalMigration[] = [
   },
 ];
 
+/**
+ * `core-foundation` slice 21: how receipts print the logo, and the logo itself. Its own list,
+ * since devices match applied migrations by position: the app appends it at the end of
+ * `LOCAL_MIGRATIONS`.
+ */
+export const storeLogoLocalMigrations: readonly LocalMigration[] = [
+  {
+    id: "core.organization.0002_store_logo",
+    statements: [
+      `ALTER TABLE organization_store_profile
+        ADD COLUMN logo_print TEXT NOT NULL DEFAULT 'threshold'
+        CHECK (logo_print IN ('threshold', 'dither'))`,
+      `CREATE TABLE organization_store_logo (
+        sha256 TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK (type IN ('image/png', 'image/jpeg')),
+        bytes BLOB NOT NULL
+      ) STRICT`,
+    ],
+  },
+];
+
 type LocalStoreProfileRow = typeof localStoreProfile.$inferSelect;
 
 function storeProfileView(row: LocalStoreProfileRow): StoreProfileView {
@@ -85,12 +125,15 @@ function storeProfileView(row: LocalStoreProfileRow): StoreProfileView {
     name: row.name,
     address: row.address,
     phones: JSON.parse(row.phones) as string[],
+    // Only the profile screen shows these, from the server; receipts leave them out.
+    unreadablePhones: [],
     taxNumber: row.taxNumber,
     commercialRegister: row.commercialRegister,
     logo:
       row.logoType === null || row.logoSha256 === null || row.logoSize === null
         ? null
         : { type: row.logoType as LogoType, sha256: row.logoSha256, size: row.logoSize },
+    logoPrint: row.logoPrint as LogoPrintMode,
     updatedAt: row.updatedAt,
   };
 }
@@ -131,6 +174,7 @@ export const storeProfilePullApplier: PullApplier = {
       logoType: profile.logo?.type ?? null,
       logoSha256: profile.logo?.sha256 ?? null,
       logoSize: profile.logo?.size ?? null,
+      logoPrint: profile.logoPrint,
       updatedAt: profile.updatedAt,
     };
     await orm
@@ -178,6 +222,63 @@ export async function readLocalStoreProfile(
 ): Promise<StoreProfileView | undefined> {
   const row = await localOrm(executor).select().from(localStoreProfile).get();
   return row === undefined ? undefined : storeProfileView(row);
+}
+
+/** Lower-case hex SHA-256 of `bytes`. */
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Brings the device's copy of the logo in line with the pulled profile: fetches it when the
+ * profile names another one, and keeps it only when its bytes hash to the profile's `sha256`
+ * (a logo changed again since the pull is fetched at the next round); forgets it when the
+ * profile has none. Returns whether the stored logo changed.
+ */
+export async function refreshLocalStoreLogo(
+  db: LocalDb,
+  fetchLogo: () => Promise<Uint8Array>,
+): Promise<boolean> {
+  const orm = localOrm(db);
+  const wanted = (await readLocalStoreProfile(db))?.logo ?? null;
+  const held = await orm.select({ sha256: localStoreLogo.sha256 }).from(localStoreLogo).get();
+  if (wanted === null) {
+    if (held === undefined) return false;
+    await orm.delete(localStoreLogo);
+    return true;
+  }
+  if (held?.sha256 === wanted.sha256) return false;
+  const bytes = await fetchLogo();
+  if ((await sha256Hex(bytes)) !== wanted.sha256) return false;
+  await db.transaction(async (tx) => {
+    const txOrm = localOrm(tx);
+    await txOrm.delete(localStoreLogo);
+    await txOrm.insert(localStoreLogo).values({ sha256: wanted.sha256, type: wanted.type, bytes });
+  });
+  return true;
+}
+
+/** The sync engine's follow-up that keeps the logo on this device (`refreshLocalStoreLogo`). */
+export function storeLogoFollowUp(db: LocalDb): SyncFollowUp {
+  return (credential) => refreshLocalStoreLogo(db, () => fetchDeviceLogo(credential));
+}
+
+/**
+ * The logo receipts print on this device: the stored image when it is the one the local
+ * profile names, else `undefined` (none, or not fetched yet).
+ */
+export async function readLocalStoreLogo(
+  executor: LocalExecutor,
+): Promise<{ readonly type: LogoType; readonly bytes: Uint8Array } | undefined> {
+  const wanted = (await readLocalStoreProfile(executor))?.logo ?? null;
+  if (wanted === null) return undefined;
+  const row = await localOrm(executor)
+    .select()
+    .from(localStoreLogo)
+    .where(eq(localStoreLogo.sha256, wanted.sha256))
+    .get();
+  return row === undefined ? undefined : { type: row.type as LogoType, bytes: row.bytes };
 }
 
 export const localDepartmentsQueryKey = ["local", "organization", "departments"] as const;

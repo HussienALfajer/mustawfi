@@ -4,7 +4,7 @@ import {
   restoreDeviceSession,
 } from "@mustawfi/core-access/client";
 import { IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
-import { organizationPullAppliers } from "@mustawfi/core-organization/client";
+import { organizationPullAppliers, storeLogoFollowUp } from "@mustawfi/core-organization/client";
 import { createSyncEngine, type SyncEngine } from "@mustawfi/core-sync/client";
 import { inventoryPullAppliers } from "@mustawfi/inventory/client";
 import { systemClock } from "@mustawfi/kernel";
@@ -83,6 +83,8 @@ export async function startLocalRuntime(
     clock: systemClock,
     // The configuration bundle, fetched after each round and verified (`core-foundation` rule 11).
     bundle: bundleVerifier(),
+    // The store's logo, which receipts print offline (`core-foundation` slice 21).
+    followUps: [storeLogoFollowUp(db)],
     // A revoked device's wipe deletes the database copies too (`core-foundation` rule 23).
     ...(removeBackups === undefined ? {} : { onWiped: removeBackups }),
   });

@@ -135,6 +135,11 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | تقسيم الدفع | Split payment | `splitPayment` |
 | طلب مُرسل إلى الكاشير | Cashier order (sent from mobile) | `cashierOrder` |
 | إيصال رقمي | Digital receipt | `digitalReceipt` |
+| طباعة الشعار | Logo print mode | `logoPrint` |
+| شعار خطّي | Threshold (each dot black or white by its brightness) | `threshold` |
+| صورة (طباعة الشعار) | Dither (error diffusion, Floyd–Steinberg) | `dither` |
+| رمز الدولة (الهاتف) | Country calling code | `phoneCallingCode` |
+| رقم هاتف بالصيغة الدولية | Phone number in E.164 | `phone` (stored), `formatPhone` (grouped) |
 | مورد | Supplier | `supplier` |
 | زبون | Customer | `customer` |
 | ذمم مدينة (ديون الزبائن) | Receivables | `receivables` |

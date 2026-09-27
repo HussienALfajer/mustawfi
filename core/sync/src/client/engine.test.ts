@@ -19,7 +19,7 @@ import { tenancyLocalMigrations } from "@mustawfi/core-tenancy/client";
 import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { type LocalDb, localOrm, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   OperationResult,
   PullResponse,
@@ -27,7 +27,12 @@ import type {
   SyncChange,
   SyncOperation,
 } from "../shared/index.ts";
-import { createSyncEngine, type PullApplier, type SyncTransport } from "./engine.ts";
+import {
+  createSyncEngine,
+  type PullApplier,
+  type SyncFollowUp,
+  type SyncTransport,
+} from "./engine.ts";
 import { enqueueOperation, syncLocalMigrations, syncOutbox } from "./outbox.ts";
 
 const clock = manualClock(new Date("2026-09-25T10:00:00.000Z"));
@@ -652,5 +657,68 @@ describe("the configuration bundle (core-foundation rules 11–12)", () => {
     await sync.syncNow();
     expect(sync.status().phase).toBe("removed");
     expect(server.bundleAsks).toEqual([]);
+  });
+});
+
+describe("follow-ups (core-foundation slice 21)", () => {
+  function following(followUps: readonly SyncFollowUp[]) {
+    return createSyncEngine({
+      db,
+      migrations: MIGRATIONS,
+      appliers: [itemApplier],
+      clock,
+      transport: server,
+      followUps,
+    });
+  }
+
+  it("run last, with the device credential, in every round that reached the server", async () => {
+    await registerDevice();
+    server.changes = [change("a")];
+    const seen: string[] = [];
+    const sync = following([
+      (credential) => {
+        seen.push(`${credential}:${applied.join(",")}`);
+        return Promise.resolve();
+      },
+    ]);
+    await sync.syncNow();
+    expect(seen).toEqual([`${CREDENTIAL}:a`]);
+
+    server.reachable = false;
+    await sync.syncNow();
+    expect(seen).toHaveLength(1);
+  });
+
+  it("never fail the round: the next follow-up runs and the round ends idle", async () => {
+    await registerDevice();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let ran = false;
+    const sync = following([
+      () => Promise.reject(new Error("no logo")),
+      () => {
+        ran = true;
+        return Promise.resolve();
+      },
+    ]);
+    await sync.syncNow();
+    expect(ran).toBe(true);
+    expect(sync.status().phase).toBe("idle");
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("do not run once the device is revoked", async () => {
+    await registerDevice();
+    server.revoked = true;
+    let ran = false;
+    const sync = following([
+      () => {
+        ran = true;
+        return Promise.resolve();
+      },
+    ]);
+    await sync.syncNow();
+    expect(ran).toBe(false);
   });
 });

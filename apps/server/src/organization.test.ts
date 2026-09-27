@@ -166,6 +166,7 @@ describe("a new tenant", () => {
       taxNumber: null,
       commercialRegister: null,
       logo: null,
+      logoPrint: "threshold",
     });
     const { tenantId, ownerId } = store.tenant;
     expect(await auditOf(tenantId, "organization.department.created")).toEqual([
@@ -470,40 +471,94 @@ describe("departments", () => {
   });
 });
 
+/** Registers a main POS device for `store` and returns its credential. */
+async function registerDevice(store: Awaited<ReturnType<typeof newStore>>): Promise<string> {
+  const issued = await server.inject({
+    method: "POST",
+    url: "/api/v1/access/registration-codes",
+    headers: { authorization: `Bearer ${store.token}` },
+  });
+  const registered = await server.inject({
+    method: "POST",
+    url: "/api/v1/access/devices",
+    payload: {
+      storeCode: store.tenant.storeCode,
+      registrationCode: issued.json<{ code: string }>().code,
+      type: "mainPos",
+      name: "الصندوق",
+    },
+  });
+  return registered.json<{ credential: string }>().credential;
+}
+
 describe("the store profile", () => {
   it("is edited as a whole, audited with before and after", async () => {
     const store = await newStore("متجر الملف");
+    // A phone the slice 21 upgrade could not read, kept as typed until this save.
+    await superuser.query(
+      "update core_organization.store_profiles set unreadable_phones = $2 where tenant_id = $1",
+      [store.tenant.tenantId, ["0944123456 0933123456"]],
+    );
+    expect(
+      (await call(store, "GET", "/profile")).json<StoreProfileView>().unreadablePhones,
+    ).toEqual(["0944123456 0933123456"]);
     const response = await call(store, "PUT", "/profile", {
       name: "متجر الملف الجديد",
       address: "دمشق، الحميدية",
-      phones: ["+963 11 222 3333", "0944-123-456"],
+      phones: ["+963 11 222 3333", "0944-123-456", "+961 3 123 456"],
       taxNumber: "123456",
       commercialRegister: "",
+      logoPrint: "dither",
     });
     expect(response.statusCode).toBe(200);
     const profile = response.json<StoreProfileView>();
+    // Phones are stored in E.164, a national number read as Syrian.
     expect(profile).toMatchObject({
       name: "متجر الملف الجديد",
       address: "دمشق، الحميدية",
-      phones: ["+963 11 222 3333", "0944-123-456"],
+      phones: ["+963112223333", "+963944123456", "+9613123456"],
+      unreadablePhones: [],
       taxNumber: "123456",
       commercialRegister: null,
       logo: null,
+      logoPrint: "dither",
     });
     const edits = await auditOf(store.tenant.tenantId, "organization.profile.changed");
     expect(edits).toHaveLength(1);
     expect(edits).toMatchObject([
       {
         entity_id: profile.id,
-        before: { name: "متجر الملف", phones: [] },
-        after: { name: "متجر الملف الجديد", taxNumber: "123456" },
+        before: {
+          name: "متجر الملف",
+          phones: [],
+          unreadablePhones: ["0944123456 0933123456"],
+          logoPrint: "threshold",
+        },
+        after: { name: "متجر الملف الجديد", taxNumber: "123456", logoPrint: "dither" },
       },
     ]);
+
+    // A number that is not real is refused, as is an unknown print mode; the print mode left out
+    // is the threshold.
+    for (const body of [
+      { name: "متجر", phones: ["1234"] },
+      { name: "متجر", phones: ["0944 123"] },
+      { name: "متجر", logoPrint: "halftone" },
+    ]) {
+      expectProblem(
+        await call(store, "PUT", "/profile", body),
+        400,
+        hostProblemCodes.invalidRequest,
+      );
+    }
+    expect(
+      (await call(store, "PUT", "/profile", { name: "متجر" })).json<StoreProfileView>().logoPrint,
+    ).toBe("threshold");
 
     expectProblem(
       await call(store, "PUT", "/profile", {
         name: "متجر",
-        phones: ["1234", "2345", "3456", "4567"],
+        phones: ["0944123451", "0944123452", "0944123453", "0944123454"],
       }),
       400,
       hostProblemCodes.invalidRequest,
@@ -546,10 +601,55 @@ describe("the store profile", () => {
     // The audit log records which image, not its bytes.
     expect(changes[0]?.after).toMatchObject({ logo: { type: "image/png", size: PNG.length } });
 
+    // A registered device fetches it with its credential, to print it offline.
+    const credential = await registerDevice(store);
+    const onDevice = await server.inject({
+      method: "GET",
+      url: "/api/v1/organization/device/logo",
+      headers: { authorization: `Bearer ${credential}` },
+    });
+    expect(onDevice.statusCode).toBe(200);
+    expect(new Uint8Array(onDevice.rawPayload)).toEqual(largest);
+    // A session is no device.
+    expect(
+      (
+        await server.inject({
+          method: "GET",
+          url: "/api/v1/organization/device/logo",
+          headers: { authorization: `Bearer ${store.token}` },
+        })
+      ).statusCode,
+    ).toBe(401);
+
     const removed = await call(store, "DELETE", "/profile/logo");
     expect(removed.json<StoreProfileView>().logo).toBeNull();
     expectProblem(
       await call(store, "GET", "/profile/logo"),
+      404,
+      organizationProblemCodes.logoNotFound,
+    );
+    expectProblem(
+      await server.inject({
+        method: "GET",
+        url: "/api/v1/organization/device/logo",
+        headers: { authorization: `Bearer ${credential}` },
+      }),
+      404,
+      organizationProblemCodes.logoNotFound,
+    );
+  });
+
+  it("gives a device only its own store's logo", async () => {
+    const mine = await newStore("متجري");
+    const other = await newStore("متجر آخر");
+    await call(other, "PUT", "/profile/logo", { data: Buffer.from(PNG).toString("base64") });
+    const credential = await registerDevice(mine);
+    expectProblem(
+      await server.inject({
+        method: "GET",
+        url: "/api/v1/organization/device/logo",
+        headers: { authorization: `Bearer ${credential}` },
+      }),
       404,
       organizationProblemCodes.logoNotFound,
     );
@@ -565,22 +665,7 @@ describe("pull", () => {
     await call(store, "PUT", "/profile", { name: "متجر الجهاز", phones: ["0944123456"] });
     await call(store, "PUT", "/profile/logo", { data: Buffer.from(PNG).toString("base64") });
 
-    const issued = await server.inject({
-      method: "POST",
-      url: "/api/v1/access/registration-codes",
-      headers: { authorization: `Bearer ${store.token}` },
-    });
-    const registered = await server.inject({
-      method: "POST",
-      url: "/api/v1/access/devices",
-      payload: {
-        storeCode: store.tenant.storeCode,
-        registrationCode: issued.json<{ code: string }>().code,
-        type: "mainPos",
-        name: "الصندوق",
-      },
-    });
-    const { credential } = registered.json<{ credential: string }>();
+    const credential = await registerDevice(store);
     const pulled = await server.inject({
       method: "GET",
       url: "/api/v1/sync/pull?limit=1000",

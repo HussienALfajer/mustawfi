@@ -7,6 +7,7 @@ export {
   type PullApplier,
   type SyncEngine,
   type SyncEngineOptions,
+  type SyncFollowUp,
   type SyncPhase,
   type SyncStatus,
   type SyncTransport,

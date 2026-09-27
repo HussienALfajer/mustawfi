@@ -54,6 +54,10 @@ async function drawInFrame(
     // Lay out, and wait for the receipt font's faces the text uses (data URLs, no network).
     void receipt.offsetHeight;
     await frame.document.fonts.ready;
+    // And for its images (the logo, a data URL): drawn before they decode, they would be blank.
+    await Promise.all(
+      Array.from(receipt.querySelectorAll("img"), (image) => image.decode().catch(() => undefined)),
+    );
     const canvas = await domToCanvas(receipt, {
       width: widthDots,
       scale: 1,

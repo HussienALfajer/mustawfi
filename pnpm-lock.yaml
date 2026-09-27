@@ -1058,6 +1058,9 @@ importers:
       '@mustawfi/local-db':
         specifier: workspace:*
         version: link:../../packages/local-db
+      '@mustawfi/printing':
+        specifier: workspace:*
+        version: link:../../packages/printing
       '@mustawfi/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -1166,6 +1169,9 @@ importers:
       decimal.js:
         specifier: 10.6.0
         version: 10.6.0
+      libphonenumber-js:
+        specifier: 1.13.14
+        version: 1.13.14
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -1257,6 +1263,9 @@ importers:
       '@types/node':
         specifier: 24.13.6
         version: 24.13.6
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -3734,6 +3743,9 @@ packages:
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
+
+  libphonenumber-js@1.13.14:
+    resolution: {integrity: sha512-llihgCcx0BFLksecLP+x1J+6JDE1GsXS1RN/LoPF6qcwpeQcnjj0lcvZxY8AzbEpYwyZWPZW/nDuqkqzm3amiw==}
 
   light-my-request@6.6.0:
     resolution: {integrity: sha512-CHYbu8RtboSIoVsHZ6Ye4cj4Aw/yg2oAFimlF7mNvfDV192LR7nDiKtSIfCuLT7KokPSTn/9kfVLm5OGN0A28A==}
@@ -6619,6 +6631,8 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
+
+  libphonenumber-js@1.13.14: {}
 
   light-my-request@6.6.0:
     dependencies:

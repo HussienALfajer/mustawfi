@@ -132,6 +132,7 @@ describe("route authorization (core-foundation rule 17)", () => {
       "PUT /api/v1/organization/profile/logo → organization.profile.edit",
       "DELETE /api/v1/organization/profile/logo → organization.profile.edit",
       "GET /api/v1/organization/profile/logo → session",
+      "GET /api/v1/organization/device/logo → device",
       "GET /api/v1/organization/license → organization.license.view",
       "POST /api/v1/inventory/products → inventory.products.manage",
       "GET /api/v1/inventory/products → inventory.products.view",

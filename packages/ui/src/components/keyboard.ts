@@ -61,11 +61,17 @@ export function useShortcut(
 
 /**
  * The single-line fields of a form, in order: what `Enter` moves between. Buttons, checkboxes,
- * and disabled fields are skipped.
+ * disabled fields, and fields out of the tab order are skipped — among them the native
+ * `<select>` React Aria's `Select` keeps hidden for form submission, which took the focus
+ * where no one could see it (`core-foundation` slice 21).
  */
 function typingFields(form: HTMLFormElement): HTMLElement[] {
   return Array.from(form.querySelectorAll<HTMLElement>("input, textarea, select")).filter(
-    (field) => isTypingTarget(field) && !field.hasAttribute("disabled"),
+    (field) =>
+      isTypingTarget(field) &&
+      !field.hasAttribute("disabled") &&
+      field.tabIndex >= 0 &&
+      field.closest("[aria-hidden=true]") === null,
   );
 }
 

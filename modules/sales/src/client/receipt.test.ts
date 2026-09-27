@@ -19,7 +19,12 @@ import {
 } from "./local-sales.ts";
 import { salesMessages } from "./messages.ts";
 import { CASH_RECEIPT_TEMPLATE, cashReceiptTemplate } from "./receipt-templates.ts";
-import { type ReceiptFormat, readReceiptInvoice, receiptDocument } from "./receipt.ts";
+import {
+  type ReceiptFormat,
+  readReceiptInvoice,
+  receiptDocument,
+  receiptStore,
+} from "./receipt.ts";
 
 const clock = manualClock(new Date("2026-09-25T21:30:00.000Z"));
 const newId = uuidV7Generator({ clock, random: cryptoRandom });
@@ -37,7 +42,14 @@ const device: LocalDevice = {
 };
 
 const format: ReceiptFormat = {
-  storeName: "متجر النور",
+  store: {
+    name: "متجر النور",
+    address: "",
+    phones: [],
+    taxNumber: "",
+    commercialRegister: "",
+    logo: null,
+  },
   label: (key) => `«${key}»`,
   currencyLabel: (code) => (code === "SYP" ? "ل.س" : code),
   digits: "latn",
@@ -105,8 +117,49 @@ describe("receipt", () => {
     });
     const invoice = (await readReceiptInvoice(db, sale.invoiceId))!;
     expect(invoice.templateVersion).toBe(CASH_RECEIPT_TEMPLATE.version);
-    expect(CASH_RECEIPT_TEMPLATE.version).toBe("receipt.cash.2");
+    expect(CASH_RECEIPT_TEMPLATE.version).toBe("receipt.cash.3");
     expect(CASH_RECEIPT_TEMPLATE.source).toContain('<div class="store">{{ store.name }}</div>');
+    expect(CASH_RECEIPT_TEMPLATE.source).toContain('<img src="{{ store.logo.src }}"');
+  });
+
+  it("reprints an invoice recorded with the slice 4 template with that template, unchanged", async () => {
+    await addToCart(db, await product("شاحن", "5"));
+    const sale = await completeCashSale(db, {
+      device,
+      seller: anySeller(),
+      clock,
+      newId,
+      license: allowed,
+    });
+    const invoice = (await readReceiptInvoice(db, sale.invoiceId))!;
+    const document = receiptDocument({ ...invoice, templateVersion: "receipt.cash.2" }, format);
+    expect(document.templateVersion).toBe("receipt.cash.2");
+    // It never printed a logo, and keeps not printing one (non-negotiable 7).
+    expect(document.template).not.toContain("store.logo");
+    expect(createHash("sha256").update(document.template).digest("hex")).toBe(
+      "d90d3221efa4b2f42cf8203a1beefd3ea49ffeeb0ef2eb64e3265e0d59b2e885",
+    );
+  });
+
+  it("heads the receipt with the store from its profile, phones grouped", () => {
+    expect(
+      receiptStore({
+        name: "متجر النور",
+        address: "دمشق، الحميدية",
+        phones: ["+963944123456", "+963112223344"],
+        taxNumber: "123",
+        commercialRegister: null,
+      }),
+    ).toEqual({
+      name: "متجر النور",
+      address: "دمشق، الحميدية",
+      phones: ["+963 944 123 456", "+963 11 222 3344"],
+      taxNumber: "123",
+      commercialRegister: "",
+      logo: null,
+    });
+    // Before the profile reaches the device, the receipt has no heading.
+    expect(receiptStore(undefined)).toMatchObject({ name: "", phones: [], logo: null });
   });
 
   it("reprints an invoice recorded with the skeleton's template with that template", async () => {
@@ -151,10 +204,10 @@ describe("receipt", () => {
     expect(invoice).toBeDefined();
     const document = receiptDocument(invoice!, format);
 
-    expect(document.templateVersion).toBe("receipt.cash.2");
+    expect(document.templateVersion).toBe("receipt.cash.3");
     expect(document.documentName).toBe("K7-INV-000001");
     expect(document.data).toEqual({
-      store: { name: "متجر النور" },
+      store: format.store,
       labels: {
         title: "«title»",
         number: "«number»",
@@ -166,6 +219,8 @@ describe("receipt", () => {
         amount: "«amount»",
         total: "«total»",
         thanks: "«thanks»",
+        taxNumber: "«taxNumber»",
+        commercialRegister: "«commercialRegister»",
       },
       invoice: {
         number: "K7-INV-000001",

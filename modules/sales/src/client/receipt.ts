@@ -1,14 +1,16 @@
-import { readLocalStoreProfile } from "@mustawfi/core-organization/client";
+import { readLocalStoreLogo, readLocalStoreProfile } from "@mustawfi/core-organization/client";
+import { formatDocumentNumber, type StoreProfileView } from "@mustawfi/core-organization/shared";
 import { priceCurrency } from "@mustawfi/inventory/client";
 import { type DigitShape, formatDecimal, LOCALE, useDigitShape } from "@mustawfi/i18n";
-import { Decimal, Money } from "@mustawfi/kernel";
+import { type Clock, Decimal, formatPhone, Money } from "@mustawfi/kernel";
+import { type LogoPrintMode, prepareReceiptLogo, type ReceiptLogo } from "@mustawfi/printing";
 import { type LocalExecutor, localOrm, useLocalDb } from "@mustawfi/local-db";
 import { useCurrencyLabel } from "@mustawfi/ui";
 import { asc, eq } from "drizzle-orm";
 import { useTranslation } from "react-i18next";
 import { BUSINESS_TIME_ZONE, localInvoiceLines, localInvoices } from "./local-sales.ts";
 import { SALES_NAMESPACE } from "./messages.ts";
-import { cashReceiptTemplate } from "./receipt-templates.ts";
+import { CASH_RECEIPT_TEMPLATE, cashReceiptTemplate } from "./receipt-templates.ts";
 
 /** One recorded invoice as its receipt shows it: exact values, not yet formatted. */
 export interface ReceiptInvoice {
@@ -67,9 +69,42 @@ export interface ReceiptDocument {
   readonly documentName: string;
 }
 
+/**
+ * The store as the receipt heads it, from its profile: empty text for what the profile leaves
+ * out (or all of it, until the profile reaches the device), phones grouped for reading, and the
+ * logo prepared for printing by the profile's print mode.
+ */
+export interface ReceiptStore {
+  readonly name: string;
+  readonly address: string;
+  readonly phones: readonly string[];
+  readonly taxNumber: string;
+  readonly commercialRegister: string;
+  readonly logo: ReceiptLogo | null;
+}
+
+/** The store of a receipt from the profile on this device, or nothing yet. */
+export function receiptStore(
+  profile:
+    | (Pick<StoreProfileView, "name" | "address" | "taxNumber" | "commercialRegister"> & {
+        readonly phones: readonly string[];
+      })
+    | undefined,
+  logo: ReceiptLogo | null = null,
+): ReceiptStore {
+  return {
+    name: profile?.name ?? "",
+    address: profile?.address ?? "",
+    phones: (profile?.phones ?? []).map(formatPhone),
+    taxNumber: profile?.taxNumber ?? "",
+    commercialRegister: profile?.commercialRegister ?? "",
+    logo,
+  };
+}
+
 export interface ReceiptFormat {
-  /** The store's name from its profile; empty until the profile reaches the device. */
-  readonly storeName: string;
+  /** The store from its profile (`receiptStore`); its current one, on a reprint too. */
+  readonly store: ReceiptStore;
   readonly label: (key: string) => string;
   readonly currencyLabel: (code: string) => string;
   readonly digits: DigitShape;
@@ -120,6 +155,8 @@ export function receiptDocument(invoice: ReceiptInvoice, format: ReceiptFormat):
       "amount",
       "total",
       "thanks",
+      "taxNumber",
+      "commercialRegister",
     ].map((key) => [key, format.label(key)]),
   );
   return {
@@ -127,7 +164,7 @@ export function receiptDocument(invoice: ReceiptInvoice, format: ReceiptFormat):
     templateVersion: template.version,
     documentName: invoice.number,
     data: {
-      store: { name: format.storeName },
+      store: format.store,
       labels,
       invoice: {
         number: invoice.number,
@@ -146,6 +183,34 @@ export function receiptDocument(invoice: ReceiptInvoice, format: ReceiptFormat):
   };
 }
 
+/** The last logo prepared for receipts, by the image's hash and the print mode. */
+let preparedLogo: { readonly key: string; readonly logo: Promise<ReceiptLogo | null> } | undefined;
+
+/**
+ * The stored logo as receipts print it, prepared once per image and print mode (decoding and
+ * dithering it for every receipt would slow each print). A logo that cannot be drawn prints as
+ * none: it is decoration, and never stops a receipt.
+ */
+function receiptLogo(
+  sha256: string,
+  mode: LogoPrintMode,
+  stored: { readonly type: string; readonly bytes: Uint8Array },
+): Promise<ReceiptLogo | null> {
+  const key = `${sha256}:${mode}`;
+  if (preparedLogo?.key !== key) {
+    const logo = prepareReceiptLogo(
+      new Blob([new Uint8Array(stored.bytes)], { type: stored.type }),
+      mode,
+    ).catch((error: unknown) => {
+      console.warn("the store's logo could not be drawn; the receipt prints without it", error);
+      if (preparedLogo?.key === key) preparedLogo = undefined;
+      return null;
+    });
+    preparedLogo = { key, logo };
+  }
+  return preparedLogo.logo;
+}
+
 /** Builds the receipt of an invoice this device recorded, in the user's language and digits. */
 export function useReceiptDocument(): (
   invoiceId: string,
@@ -159,12 +224,60 @@ export function useReceiptDocument(): (
     const invoice = await readReceiptInvoice(db, invoiceId);
     if (invoice === undefined) throw new Error(`no local invoice ${invoiceId}`);
     const profile = await readLocalStoreProfile(db);
+    const logo = await readLocalStoreLogo(db);
     return receiptDocument(invoice, {
-      storeName: profile?.name ?? "",
+      store: receiptStore(
+        profile,
+        logo === undefined || profile?.logo == null
+          ? null
+          : await receiptLogo(profile.logo.sha256, profile.logoPrint, logo),
+      ),
       label: (key) => t(`receipt.${key}`),
       currencyLabel,
       digits,
       deviceName,
     });
+  };
+}
+
+/**
+ * A receipt of made-up lines on the latest template, headed by `store`: the store profile's
+ * live preview of what the next sale prints.
+ */
+export function useSampleReceiptDocument(clock: Clock): (store: ReceiptStore) => ReceiptDocument {
+  const { t } = useTranslation(SALES_NAMESPACE);
+  const digits = useDigitShape();
+  const currencyLabel = useCurrencyLabel();
+  return (store) => {
+    const currency = priceCurrency("SYP");
+    const line = (name: string, quantity: string, price: string) => {
+      const unitPrice = Money.of(price, currency);
+      return {
+        name,
+        quantity: Decimal.of(quantity),
+        unitPrice,
+        amount: Money.of(Decimal.of(price).times(Decimal.of(quantity)).toString(), currency),
+      };
+    };
+    const lines = [
+      line(t("receiptSample.first"), "2", "12500"),
+      line(t("receiptSample.second"), "1", "3000"),
+    ];
+    return receiptDocument(
+      {
+        number: formatDocumentNumber("K7", "INV", 123),
+        soldAt: clock.now().toISOString(),
+        templateVersion: CASH_RECEIPT_TEMPLATE.version,
+        total: Money.of("28000", currency),
+        lines,
+      },
+      {
+        store,
+        label: (key) => t(`receipt.${key}`),
+        currencyLabel,
+        digits,
+        deviceName: t("receiptSample.device"),
+      },
+    );
   };
 }

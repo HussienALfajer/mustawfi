@@ -5,6 +5,7 @@ import {
   LICENSE_STATES,
   tenantNameSchema,
 } from "@mustawfi/core-tenancy/shared";
+import { phoneNumberSchema } from "@mustawfi/kernel";
 import { z } from "zod";
 
 export { type DocumentNumber, formatDocumentNumber, parseDocumentNumber } from "./numbering.ts";
@@ -41,11 +42,17 @@ export function logoTypeOf(bytes: Uint8Array): LogoType | undefined {
   return undefined;
 }
 
-/** Up to three phone numbers as people write them: digits, `+`, spaces, and dashes. */
-export const phoneSchema = z
-  .string()
-  .trim()
-  .regex(/^\+?[0-9][0-9 -]{2,23}$/, "a phone number is digits, with an optional + and dashes");
+/** The store's phones: up to three, stored in E.164 (`core-foundation` slice 21). */
+export const STORE_PHONES_MAX = 3;
+
+/**
+ * How the receipt prints the logo (`core-foundation` slice 21): `threshold` — «شعار خطّي»,
+ * each dot black or white by its brightness, sharp for a drawn logo; `dither` — «صورة»,
+ * error diffusion, which keeps the greys of a photo as patterns of dots.
+ */
+export const LOGO_PRINT_MODES = ["threshold", "dither"] as const;
+
+export type LogoPrintMode = (typeof LOGO_PRINT_MODES)[number];
 
 const optionalText = (max: number) =>
   z
@@ -59,9 +66,10 @@ const optionalText = (max: number) =>
 export const storeProfileInputSchema = z.object({
   name: tenantNameSchema,
   address: optionalText(500),
-  phones: z.array(phoneSchema).max(3).default([]),
+  phones: z.array(phoneNumberSchema).max(STORE_PHONES_MAX).default([]),
   taxNumber: optionalText(50),
   commercialRegister: optionalText(50),
+  logoPrint: z.enum(LOGO_PRINT_MODES).default("threshold"),
 });
 
 export type StoreProfileInput = z.input<typeof storeProfileInputSchema>;
@@ -80,10 +88,17 @@ export const storeProfileSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   address: z.string().nullable(),
-  phones: z.array(z.string()).max(3),
+  /** E.164 (`core-foundation` slice 21). */
+  phones: z.array(z.string()).max(STORE_PHONES_MAX),
+  /**
+   * Phones written before slice 21 that could not be read as a number, as typed: the store
+   * profile screen shows them flagged, and the next save replaces them. Receipts leave them out.
+   */
+  unreadablePhones: z.array(z.string()).max(STORE_PHONES_MAX).default([]),
   taxNumber: z.string().nullable(),
   commercialRegister: z.string().nullable(),
   logo: logoInfoSchema.nullable(),
+  logoPrint: z.enum(LOGO_PRINT_MODES),
   updatedAt: z.iso.datetime(),
 });
 

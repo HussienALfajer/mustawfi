@@ -7,7 +7,10 @@ import {
   localDefaultDepartment,
   organizationLocalMigrations,
   organizationPullAppliers,
+  readLocalStoreLogo,
   readLocalStoreProfile,
+  refreshLocalStoreLogo,
+  storeLogoLocalMigrations,
 } from "./local-organization.ts";
 
 const shop: DepartmentView = {
@@ -28,10 +31,12 @@ const profile: StoreProfileView = {
   id: "01a0d794-1000-7141-9365-dd8a6e877510",
   name: "متجر النور",
   address: "دمشق",
-  phones: ["0944123456", "+963 11 222 3333"],
+  phones: ["+963944123456", "+963112223333"],
+  unreadablePhones: [],
   taxNumber: "123456",
   commercialRegister: null,
   logo: { type: "image/png", sha256: "a".repeat(64), size: 1024 },
+  logoPrint: "dither",
   updatedAt: "2026-09-25T08:00:00.000Z",
 };
 
@@ -41,7 +46,7 @@ let db: LocalDb;
 
 beforeEach(async () => {
   db = openNodeLocalDb(":memory:");
-  await migrateLocalDb(db, organizationLocalMigrations);
+  await migrateLocalDb(db, [...organizationLocalMigrations, ...storeLogoLocalMigrations]);
 });
 
 afterEach(async () => {
@@ -114,5 +119,65 @@ describe("the pulled store profile", () => {
       ]),
     ).rejects.toThrow();
     expect(await listLocalDepartments(db)).toEqual([]);
+  });
+});
+
+describe("the store's logo on the device", () => {
+  const LOGO = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const OTHER = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9]);
+
+  async function sha256(bytes: Uint8Array): Promise<string> {
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)));
+    return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function pullProfile(logo: Uint8Array | null): Promise<void> {
+    const row = {
+      ...profile,
+      logo:
+        logo === null ? null : { type: "image/png", sha256: await sha256(logo), size: logo.length },
+    };
+    await apply([{ entity: "organization.storeProfile", id: profile.id, row }]);
+  }
+
+  it("is fetched once when the pulled profile names it, and kept while it does", async () => {
+    let fetches = 0;
+    const fetchLogo = () => {
+      fetches += 1;
+      return Promise.resolve(LOGO);
+    };
+    expect(await refreshLocalStoreLogo(db, fetchLogo)).toBe(false);
+    expect(fetches).toBe(0);
+
+    await pullProfile(LOGO);
+    expect(await readLocalStoreLogo(db)).toBeUndefined();
+    expect(await refreshLocalStoreLogo(db, fetchLogo)).toBe(true);
+    expect(await readLocalStoreLogo(db)).toEqual({ type: "image/png", bytes: LOGO });
+    expect(await refreshLocalStoreLogo(db, fetchLogo)).toBe(false);
+    expect(fetches).toBe(1);
+  });
+
+  it("is not kept when its bytes do not hash to the profile's, nor shown for another profile", async () => {
+    await pullProfile(LOGO);
+    // The logo changed again on the server since the pull: the next round fetches it.
+    expect(await refreshLocalStoreLogo(db, () => Promise.resolve(OTHER))).toBe(false);
+    expect(await readLocalStoreLogo(db)).toBeUndefined();
+
+    await refreshLocalStoreLogo(db, () => Promise.resolve(LOGO));
+    await pullProfile(OTHER);
+    // The profile names another logo: the stored one is no longer printed.
+    expect(await readLocalStoreLogo(db)).toBeUndefined();
+    await refreshLocalStoreLogo(db, () => Promise.resolve(OTHER));
+    expect(await readLocalStoreLogo(db)).toEqual({ type: "image/png", bytes: OTHER });
+  });
+
+  it("is forgotten when the profile has none", async () => {
+    await pullProfile(LOGO);
+    await refreshLocalStoreLogo(db, () => Promise.resolve(LOGO));
+    await pullProfile(null);
+    const fetchLogo = () => Promise.reject(new Error("no logo to fetch"));
+    expect(await refreshLocalStoreLogo(db, fetchLogo)).toBe(true);
+    expect(await readLocalStoreLogo(db)).toBeUndefined();
+    expect(await refreshLocalStoreLogo(db, fetchLogo)).toBe(false);
   });
 });

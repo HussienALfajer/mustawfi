@@ -38,8 +38,16 @@ export const storeProfiles = coreOrganization.table(
     createdBy: uuid().notNull(),
     name: text().notNull(),
     address: text(),
-    /** Up to three, as people write them. */
+    /** Up to three, in E.164 (`core-foundation` slice 21). */
     phones: text().array().notNull(),
+    /**
+     * Phones written before E.164 that could not be read as one, kept as typed until the owner's
+     * next save replaces them (`core-foundation` slice 21): the screen shows them flagged.
+     */
+    unreadablePhones: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     taxNumber: text(),
     commercialRegister: text(),
     /** PNG or JPEG, at most 256 KB; `logo_type`, `logo_sha256`, and `logo_size` describe it. */
@@ -47,12 +55,23 @@ export const storeProfiles = coreOrganization.table(
     logoType: text(),
     logoSha256: text(),
     logoSize: integer(),
+    /** How receipts print the logo: `threshold` or `dither` (`LOGO_PRINT_MODES`). */
+    logoPrint: text().notNull().default("threshold"),
     updatedAt: timestamp({ withTimezone: true }).notNull(),
     updatedBy: uuid().notNull(),
   },
   (t) => [
     unique("store_profiles_one_per_tenant").on(t.tenantId),
     check("store_profiles_phones", sql`cardinality(${t.phones}) <= 3`),
+    check(
+      "store_profiles_phones_e164",
+      sql`array_to_string(${t.phones}, ',') ~ '^([+][1-9][0-9]{1,14}(,[+][1-9][0-9]{1,14})*)?$'`,
+    ),
+    check(
+      "store_profiles_unreadable_phones",
+      sql`cardinality(${t.phones}) + cardinality(${t.unreadablePhones}) <= 3`,
+    ),
+    check("store_profiles_logo_print", sql`${t.logoPrint} in ('threshold', 'dither')`),
     check(
       "store_profiles_logo",
       sql`(${t.logo} is null and ${t.logoType} is null and ${t.logoSha256} is null and ${t.logoSize} is null)

@@ -12,3 +12,16 @@ export { Currency, CurrencyMismatchError, Money } from "./money.ts";
 export { Quantity, UnitMismatchError } from "./quantity.ts";
 export { cryptoRandom, type RandomSource, seededRandom } from "./random.ts";
 export { decimalString, type DecimalStringOptions } from "./wire.ts";
+export {
+  DEFAULT_PHONE_COUNTRY,
+  formatPhone,
+  isE164,
+  isPhoneCountry,
+  parsePhone,
+  PHONE_COUNTRIES,
+  PHONE_TEXT_MAX,
+  phoneCallingCode,
+  type PhoneCountry,
+  phoneNumberSchema,
+  phoneParts,
+} from "./phone.ts";

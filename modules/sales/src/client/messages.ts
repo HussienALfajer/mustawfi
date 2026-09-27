@@ -99,6 +99,14 @@ export const salesMessages = {
     amount: "المبلغ",
     total: "الإجمالي",
     thanks: "شكرًا لزيارتكم",
+    taxNumber: "الرقم الضريبي",
+    commercialRegister: "السجل التجاري",
+  },
+  /** The made-up sale the store profile's receipt preview shows. */
+  receiptSample: {
+    first: "شاحن سريع",
+    second: "غطاء حماية",
+    device: "الصندوق الرئيسي",
   },
   invoices: {
     title: "المبيعات المسجّلة على الخادم",

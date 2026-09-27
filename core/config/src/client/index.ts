@@ -266,7 +266,7 @@ export async function apiRequest<T>(path: string, request: ApiRequest<T>): Promi
  */
 export async function apiBlob(
   path: string,
-  request: Pick<ApiRequest<Blob>, "signal" | "fetch"> = {},
+  request: Pick<ApiRequest<Blob>, "signal" | "fetch" | "bearer"> = {},
 ): Promise<Blob> {
   const response = await send(path, request);
   if (!response.ok) return refuse(response);

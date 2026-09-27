@@ -42,5 +42,8 @@ export {
   type ReceiptInvoice,
   readReceiptInvoice,
   receiptDocument,
+  type ReceiptStore,
+  receiptStore,
   useReceiptDocument,
+  useSampleReceiptDocument,
 } from "./receipt.ts";
