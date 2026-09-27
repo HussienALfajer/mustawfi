@@ -1,8 +1,8 @@
-import { type RouteAccess, type Session, sessionOf } from "@mustawfi/core-access/server";
+import { deviceOf, type RouteAccess, type Session, sessionOf } from "@mustawfi/core-access/server";
 import { ProblemError } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
@@ -60,6 +60,16 @@ const editProfile: { readonly access: RouteAccess } = {
 const viewLicense: { readonly access: RouteAccess } = {
   access: { permission: "organization.license.view" },
 };
+
+/** The logo's bytes as stored, or 404 `organization.logo.notFound`. */
+function sendLogo(reply: FastifyReply, logo: Awaited<ReturnType<typeof storeLogo>>): FastifyReply {
+  if (logo === undefined) {
+    throw new ProblemError(organizationProblemCodes.logoNotFound, 404, {
+      title: "The store has no logo",
+    });
+  }
+  return reply.type(logo.type).send(Buffer.from(logo.bytes));
+}
 
 /**
  * `core.organization` routes, under `/api/v1/organization`: departments (stored by
@@ -244,13 +254,22 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
     { config: read, schema: { tags } },
     async (request, reply) => {
       const session = sessionOf(request);
-      const logo = await asActor(session, (tx) => storeLogo(tx));
-      if (logo === undefined) {
-        throw new ProblemError(organizationProblemCodes.logoNotFound, 404, {
-          title: "The store has no logo",
-        });
-      }
-      return reply.type(logo.type).send(Buffer.from(logo.bytes));
+      return sendLogo(reply, await asActor(session, (tx) => storeLogo(tx)));
+    },
+  );
+
+  app.get(
+    "/device/logo",
+    // The same image for a registered device, which prints it on receipts offline: fetched with
+    // the device credential after a sync round, and checked against the pulled profile's hash.
+    { config: { access: "device" }, schema: { tags } },
+    async (request, reply) => {
+      const device = deviceOf(request);
+      const logo = await context.tenants.withTenant(
+        { tenantId: device.tenantId, deviceId: device.deviceId },
+        (tx) => storeLogo(tx),
+      );
+      return sendLogo(reply, logo);
     },
   );
 

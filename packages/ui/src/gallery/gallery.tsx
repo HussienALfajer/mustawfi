@@ -23,6 +23,7 @@ import { MenuButton } from "../components/menu-button.tsx";
 import { MoneyInput } from "../components/money-input.tsx";
 import { Money } from "../components/money.tsx";
 import { PasswordField } from "../components/password-field.tsx";
+import { EMPTY_PHONE, PhoneField, type PhoneValue } from "../components/phone-field.tsx";
 import { SearchField } from "../components/search-field.tsx";
 import { SegmentedControl } from "../components/segmented-control.tsx";
 import { Select } from "../components/select.tsx";
@@ -72,6 +73,7 @@ export const GALLERY_COMPONENTS = [
   "Money",
   "MoneyInput",
   "PasswordField",
+  "PhoneField",
   "SearchField",
   "SegmentedControl",
   "Select",
@@ -126,6 +128,8 @@ function Specimens() {
   const [allowed, setAllowed] = useState(true);
   const [scope, setScope] = useState<string[]>(["repairs"]);
   const [password, setPassword] = useState("s3cret-Pass");
+  const [phone, setPhone] = useState<PhoneValue>({ country: "SY", number: "0944 123 456" });
+  const [otherPhone, setOtherPhone] = useState<PhoneValue>(EMPTY_PHONE);
   const [pin, setPin] = useState("4827");
   const [date, setDate] = useState<string | null>("2026-09-27");
   const [range, setRange] = useState<DateRangeValue | null>({
@@ -218,6 +222,24 @@ function Specimens() {
           errorMessage={t("sample.required")}
           autoComplete="off"
           value=""
+        />
+      </Specimen>
+      <Specimen name="PhoneField">
+        <PhoneField
+          label={t("sample.phone")}
+          countryLabel={t("sample.countryCode")}
+          description={t("sample.phoneHelp")}
+          value={phone}
+          onChange={setPhone}
+          className="flex w-96 items-start gap-2"
+        />
+        <PhoneField
+          label={t("sample.phone")}
+          countryLabel={t("sample.countryCode")}
+          errorMessage={t("sample.phoneInvalid")}
+          value={otherPhone}
+          onChange={setOtherPhone}
+          className="flex w-96 items-start gap-2"
         />
       </Specimen>
       <Specimen name="CopyButton">

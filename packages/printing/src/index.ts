@@ -12,10 +12,20 @@ export {
   type Raster,
   toMonochrome,
 } from "./raster.ts";
+export {
+  ditherToMonochrome,
+  fitLogo,
+  type LogoPrintMode,
+  logoToMonochrome,
+  prepareReceiptLogo,
+  RECEIPT_LOGO_BOX,
+  type ReceiptLogo,
+} from "./logo.ts";
 export { rasterizeHtml, rasterToPngUrl } from "./rasterize.ts";
 export {
   type PreparedReceipt,
   prepareReceipt,
+  previewReceipt,
   type PrintedReceipt,
   printReceipt,
   type ReceiptJob,

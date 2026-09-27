@@ -121,6 +121,13 @@ export {
   useToast,
 } from "./components/toast.tsx";
 export { PasswordField, type PasswordFieldProps } from "./components/password-field.tsx";
+export {
+  EMPTY_PHONE,
+  PhoneField,
+  type PhoneFieldProps,
+  type PhoneValue,
+  phoneValue,
+} from "./components/phone-field.tsx";
 export { COPY_FEEDBACK_MS, CopyButton, type CopyButtonProps } from "./components/copy-button.tsx";
 export {
   type DatePreset,

@@ -92,7 +92,7 @@ import { z } from "zod";
 import { useTranslation } from "react-i18next";
 import { bundleVerifier } from "./bundle-verifier.ts";
 import { SHELL_NAMESPACE } from "./messages.ts";
-import { PrinterScreen, ReceiptActions } from "./printing.tsx";
+import { PrinterScreen, ReceiptActions, StoreReceiptPreview } from "./printing.tsx";
 
 export interface RouterContext {
   readonly queryClient: QueryClient;
@@ -923,6 +923,7 @@ function StoreProfilePage() {
   return (
     <StoreProfileScreen
       onDirtyChange={setDirty}
+      preview={(draft) => <StoreReceiptPreview draft={draft} />}
       leave={
         blocker.status === "blocked" ? { proceed: blocker.proceed, stay: blocker.reset } : undefined
       }

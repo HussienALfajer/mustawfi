@@ -30,6 +30,7 @@ import {
   organizationBundlePart,
   organizationLocalMigrations,
   organizationPullAppliers,
+  storeLogoLocalMigrations,
 } from "@mustawfi/core-organization/client";
 import {
   type BundleVerifier,
@@ -291,6 +292,7 @@ async function openDevice(
     ...configLocalMigrations,
     ...tenancyLocalMigrations,
     ...salesOverrideLocalMigrations,
+    ...storeLogoLocalMigrations,
   ];
   await migrateLocalDb(db, migrations);
   const { code } = await ownerRequest<{ code: string }>(

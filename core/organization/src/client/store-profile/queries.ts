@@ -49,6 +49,15 @@ export function uploadStoreLogo(bytes: Uint8Array): Promise<StoreProfileView> {
   });
 }
 
+/**
+ * The logo for this registered device, with its credential (the sync engine's follow-up): the
+ * sync loop runs whoever is signed in, or no one.
+ */
+export async function fetchDeviceLogo(credential: string): Promise<Uint8Array> {
+  const blob = await apiBlob("/api/v1/organization/device/logo", { bearer: credential });
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 export function removeStoreLogo(): Promise<StoreProfileView> {
   return apiRequest(`${BASE}/logo`, { method: "DELETE", schema: storeProfileSchema });
 }

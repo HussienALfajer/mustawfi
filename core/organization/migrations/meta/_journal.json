@@ -29,6 +29,13 @@
       "when": 1790370794477,
       "tag": "0003_document_sequences_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790490519891,
+      "tag": "0004_store_profile_phones_logo_print",
+      "breakpoints": true
     }
   ]
 }

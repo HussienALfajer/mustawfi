@@ -1,18 +1,37 @@
+import { ORGANIZATION_NAMESPACE, type StoreProfileDraft } from "@mustawfi/core-organization/client";
+import { systemClock } from "@mustawfi/kernel";
 import {
+  type LogoPrintMode,
   PAPER_DOTS,
   type ReceiptFonts,
   type PaperWidth,
   prepareReceipt,
+  prepareReceiptLogo,
+  previewReceipt,
   printReceipt,
   type RawPrinterTransport,
+  type ReceiptLogo,
   type ReceiptTimings,
   rasterToPngUrl,
 } from "@mustawfi/printing";
-import { type RecordedInvoiceRef, useReceiptDocument } from "@mustawfi/sales/client";
+import {
+  type RecordedInvoiceRef,
+  receiptStore,
+  useReceiptDocument,
+  useSampleReceiptDocument,
+} from "@mustawfi/sales/client";
 import { Button, TEXT_LINK } from "@mustawfi/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { createContext, type ReactNode, useContext, useId, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { SHELL_NAMESPACE } from "./messages.ts";
 import { receiptCommands } from "./receipt-commands.ts";
@@ -231,6 +250,110 @@ export function ReceiptActions({ invoice }: { readonly invoice: RecordedInvoiceR
           />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** How long the preview waits for typing to pause before drawing the receipt again. */
+const PREVIEW_DELAY_MS = 250;
+
+type PreviewState =
+  | { readonly kind: "working"; readonly src: string | undefined }
+  | { readonly kind: "done"; readonly src: string }
+  | { readonly kind: "failed" };
+
+/**
+ * The store profile's live receipt preview (`core-foundation` slice 21): a made-up sale on the
+ * latest receipt template, headed by the form's values as they stand, drawn by the same pipeline
+ * that prints — the logo 1-bit by its print mode, the receipt at this device's paper width. It
+ * draws again once typing pauses, keeping the last drawing meanwhile.
+ */
+export function StoreReceiptPreview({ draft }: { readonly draft: StoreProfileDraft }) {
+  const { t } = useTranslation(ORGANIZATION_NAMESPACE);
+  const { fonts } = usePrinting();
+  const [settings] = usePrinterSettings();
+  const sample = useSampleReceiptDocument(systemClock);
+  const sampleRef = useRef(sample);
+  sampleRef.current = sample;
+  // Dithering a logo is the slow part: redone only when the image or its mode changes.
+  const logoCache = useRef<{
+    readonly image: Blob;
+    readonly mode: LogoPrintMode;
+    readonly logo: Promise<ReceiptLogo>;
+  }>(undefined);
+  const [state, setState] = useState<PreviewState>({ kind: "working", src: undefined });
+  const text = JSON.stringify([
+    draft.name,
+    draft.address,
+    draft.phones,
+    draft.taxNumber,
+    draft.commercialRegister,
+    draft.logoPrint,
+  ]);
+
+  useEffect(() => {
+    let current = true;
+    setState((previous) => ({
+      kind: "working",
+      src: previous.kind === "failed" ? undefined : previous.src,
+    }));
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          let logo: ReceiptLogo | null = null;
+          if (draft.logo !== null) {
+            const cached = logoCache.current;
+            if (cached?.image !== draft.logo || cached.mode !== draft.logoPrint) {
+              const logoPromise = prepareReceiptLogo(draft.logo, draft.logoPrint);
+              logoCache.current = { image: draft.logo, mode: draft.logoPrint, logo: logoPromise };
+              // A logo that failed is not kept: the next drawing tries it again.
+              logoPromise.catch(() => {
+                if (logoCache.current?.logo === logoPromise) logoCache.current = undefined;
+              });
+            }
+            logo = await (logoCache.current?.logo ?? null);
+          }
+          const document = sampleRef.current(receiptStore(draft, logo));
+          const raster = await previewReceipt({
+            template: document.template,
+            data: document.data,
+            paper: settings.paper,
+            fonts: await fonts,
+          });
+          if (current) setState({ kind: "done", src: rasterToPngUrl(raster) });
+        } catch (error) {
+          console.error("the receipt preview could not be drawn", error);
+          if (current) setState({ kind: "failed" });
+        }
+      })();
+    }, PREVIEW_DELAY_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+    // `text` stands for the draft's text; the logo is compared by identity.
+  }, [text, draft.logo, fonts, settings.paper]);
+
+  const src = state.kind === "failed" ? undefined : state.src;
+  return (
+    <div className="flex flex-col gap-2" aria-busy={state.kind === "working"}>
+      {src === undefined ? (
+        <p
+          className="border border-divider bg-surface p-4 text-sm text-text-secondary"
+          style={{ inlineSize: PAPER_DOTS[settings.paper] / 2 }}
+        >
+          {t(state.kind === "failed" ? "profile.preview.failed" : "profile.preview.working")}
+        </p>
+      ) : (
+        <img
+          src={src}
+          alt={t("profile.preview.image")}
+          data-testid="profile-receipt-preview"
+          data-state={state.kind}
+          className="border border-divider bg-surface"
+          style={{ inlineSize: PAPER_DOTS[settings.paper] / 2 }}
+        />
+      )}
     </div>
   );
 }

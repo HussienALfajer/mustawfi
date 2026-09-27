@@ -6,6 +6,7 @@ import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import { eq } from "drizzle-orm";
 import {
   LOGO_MAX_BYTES,
+  type LogoPrintMode,
   type LogoType,
   logoTypeOf,
   organizationProblemCodes,
@@ -25,11 +26,13 @@ const viewColumns = {
   name: storeProfiles.name,
   address: storeProfiles.address,
   phones: storeProfiles.phones,
+  unreadablePhones: storeProfiles.unreadablePhones,
   taxNumber: storeProfiles.taxNumber,
   commercialRegister: storeProfiles.commercialRegister,
   logoType: storeProfiles.logoType,
   logoSha256: storeProfiles.logoSha256,
   logoSize: storeProfiles.logoSize,
+  logoPrint: storeProfiles.logoPrint,
   updatedAt: storeProfiles.updatedAt,
 };
 
@@ -41,12 +44,14 @@ function toView(row: ViewRow): StoreProfileView {
     name: row.name,
     address: row.address,
     phones: row.phones,
+    unreadablePhones: row.unreadablePhones,
     taxNumber: row.taxNumber,
     commercialRegister: row.commercialRegister,
     logo:
       row.logoType === null || row.logoSha256 === null || row.logoSize === null
         ? null
         : { type: row.logoType as LogoType, sha256: row.logoSha256, size: row.logoSize },
+    logoPrint: row.logoPrint as LogoPrintMode,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -154,7 +159,8 @@ export async function editStoreProfile(
   dependencies: OrganizationDependencies,
 ): Promise<StoreProfileView> {
   const values = storeProfileInputSchema.parse(input);
-  return update(tx, actor, values, dependencies);
+  // The phones saved replace whatever could not be read before slice 21.
+  return update(tx, actor, { ...values, unreadablePhones: [] }, dependencies);
 }
 
 /**

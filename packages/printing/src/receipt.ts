@@ -52,6 +52,17 @@ export async function prepareReceipt(job: ReceiptJob): Promise<PreparedReceipt> 
   };
 }
 
+/**
+ * Template → HTML → raster → 1-bit, without the printer's bytes: a preview of what a receipt
+ * prints (the store profile's live preview). Browser only.
+ */
+export async function previewReceipt(
+  job: Pick<ReceiptJob, "template" | "data" | "paper" | "fonts">,
+): Promise<Raster> {
+  const html = renderTemplate(job.template, job.data);
+  return toMonochrome(await rasterizeHtml(html, PAPER_DOTS[job.paper], job.fonts));
+}
+
 export interface PrintedReceipt extends PreparedReceipt {
   readonly jobId: number;
 }

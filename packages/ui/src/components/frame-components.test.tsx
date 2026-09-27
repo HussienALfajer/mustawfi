@@ -351,6 +351,24 @@ describe("form keys", () => {
     expect(screen.getByLabelText("الأخير")).toHaveFocus();
   });
 
+  it("skips fields out of the tab order, such as a Select's hidden native select", async () => {
+    wrap(
+      <form onKeyDown={enterMovesToNextField}>
+        <input aria-label="الأول" />
+        <div aria-hidden="true">
+          <select tabIndex={-1} aria-label="مخفي">
+            <option>أ</option>
+          </select>
+        </div>
+        <input tabIndex={-1} aria-label="خارج الترتيب" />
+        <input aria-label="الأخير" />
+      </form>,
+    );
+    await userEvent.click(screen.getByLabelText("الأول"));
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByLabelText("الأخير")).toHaveFocus();
+  });
+
   it("submits a short form from its last field", async () => {
     wrap(<Form onKeyDown={enterMovesThenSubmits} />);
     await userEvent.click(screen.getByLabelText("الأول"));

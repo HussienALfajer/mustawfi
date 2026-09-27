@@ -12,6 +12,13 @@ const RELEASED = [
   "core.sync.0001_outbox",
   "inventory.0001_products",
   "sales.0001_cart_and_invoices",
+  "core.organization.0001_departments_and_profile",
+  "core.config.0001_bundle",
+  "core.tenancy.0001_license_guard",
+  "core.tenancy.0002_license_audit",
+  "core.access.0002_pin_sign_in",
+  "sales.0002_invoice_overrides",
+  "core.access.0003_device_credential_store",
 ];
 
 describe("local migrations", () => {

@@ -4,7 +4,10 @@ import {
   pinLocalMigrations,
 } from "@mustawfi/core-access/client";
 import { configLocalMigrations } from "@mustawfi/core-config/client";
-import { organizationLocalMigrations } from "@mustawfi/core-organization/client";
+import {
+  organizationLocalMigrations,
+  storeLogoLocalMigrations,
+} from "@mustawfi/core-organization/client";
 import { syncLocalMigrations } from "@mustawfi/core-sync/client";
 import { inventoryLocalMigrations } from "@mustawfi/inventory/client";
 import type { LocalMigration } from "@mustawfi/local-db";
@@ -27,4 +30,5 @@ export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   ...pinLocalMigrations,
   ...salesOverrideLocalMigrations,
   ...deviceCredentialLocalMigrations,
+  ...storeLogoLocalMigrations,
 ];

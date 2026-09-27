@@ -199,7 +199,7 @@ describe("completeCashSale", () => {
       exchangeRate: "1",
       // The store's default department (rule 32), and the receipt that prints the store's name.
       departmentId: shop.id,
-      templateVersion: "receipt.cash.2",
+      templateVersion: "receipt.cash.3",
       total: "25.34",
       lines: [
         { productId: charger, quantity: "2", unitPrice: "12.5", amount: "25" },

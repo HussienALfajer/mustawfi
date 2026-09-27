@@ -21,9 +21,9 @@ test("keyboard only: edit the store profile and add a department", async ({ page
   await page.keyboard.press("Enter");
   const phone = page.getByLabel("الهاتف 1");
   await expect(phone).toBeFocused();
-  await page.keyboard.type("هاتف");
+  await page.keyboard.type("1234");
   await page.keyboard.press("Control+S");
-  await expect(phone).toHaveAccessibleDescription(/اكتب رقم الهاتف بالأرقام/);
+  await expect(phone).toHaveAccessibleDescription(/ليس رقم هاتف صحيحًا في الدولة المختارة/);
   await expect(page.getByRole("status").filter({ hasText: "تغييرات غير محفوظة" })).toBeVisible();
   await phone.focus();
   await page.keyboard.press("Control+A");
@@ -35,7 +35,8 @@ test("keyboard only: edit the store profile and add a department", async ({ page
   await attachScreens(page, testInfo, "store-profile");
   await page.reload();
   await expect(page.getByLabel("اسم المتجر (مطلوب)")).toHaveValue("موبايلات الحلبي");
-  await expect(page.getByLabel("الهاتف 1")).toHaveValue("+963 11 222 3344");
+  // Stored in E.164 and opened in its country, grouped as it is written there.
+  await expect(page.getByLabel("الهاتف 1")).toHaveValue("011 222 3344");
 
   // Departments: the default one is listed; N opens a new one in the side panel.
   await tabTo(page, navigation.getByRole("link", { name: "الأقسام" }));
