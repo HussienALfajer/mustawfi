@@ -1,5 +1,6 @@
 import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
+import { VERTEX_SUPPORT_WHATSAPP } from "@mustawfi/core-config/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import {
   Badge,
@@ -13,6 +14,7 @@ import {
   SegmentedControl,
   Select,
   SidePanel,
+  SupportContact,
   TextArea,
   TextInput,
   useShortcut,
@@ -471,9 +473,13 @@ export function UserPanel({
         {deactivated ? <Note>{t("users.panel.deactivatedNote")}</Note> : null}
         {!viewer.canManage ? <Note>{t("users.panel.readOnlyNote")}</Note> : null}
         {failure === undefined ? null : (
-          <p role="alert" className="text-text-negative">
-            {t(`users.problem.${failure}`)}
-          </p>
+          <div className="flex flex-col gap-2">
+            <p role="alert" className="text-text-negative">
+              {t(`users.problem.${failure}`)}
+            </p>
+            {/* A larger plan comes from Vertex (M6 decision). */}
+            {failure === "limit" ? <SupportContact whatsapp={VERTEX_SUPPORT_WHATSAPP} /> : null}
+          </div>
         )}
       </form>
       {user !== null && editable && !isSelf ? (

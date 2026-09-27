@@ -7,6 +7,7 @@ import { Button, buttonClass, type ButtonVariant } from "../components/button.ts
 import { Checkbox, CheckboxGroup } from "../components/checkbox.tsx";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { CopyButton } from "../components/copy-button.tsx";
+import { SupportContact } from "../components/support-contact.tsx";
 import { cx } from "../components/cx.ts";
 import { DatePicker, DateRangePicker, type DateRangeValue } from "../components/date-picker.tsx";
 import { DataTable } from "../components/data-table.tsx";
@@ -79,6 +80,7 @@ export const GALLERY_COMPONENTS = [
   "Select",
   "SideNavigation",
   "SidePanel",
+  "SupportContact",
   "TextArea",
   "TextInput",
   "Toast",
@@ -252,6 +254,9 @@ function Specimens() {
             label={t("sample.registrationCode")}
           />
         </span>
+      </Specimen>
+      <Specimen name="SupportContact">
+        <SupportContact whatsapp="+963945739573" />
       </Specimen>
       <Specimen name="DatePicker">
         <DatePicker label={t("sample.date")} value={date} onChange={setDate} />

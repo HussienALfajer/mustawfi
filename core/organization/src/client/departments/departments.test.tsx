@@ -199,6 +199,9 @@ describe("DepartmentsScreen", () => {
     const again = await screen.findByRole("complementary", { name: "قسم جديد" });
     await userEvent.type(within(again).getByLabelText(/اسم القسم/), "الإكسسوارات{Enter}");
     expect(await within(again).findByRole("alert")).toHaveTextContent(/حد الأقسام في باقتك/);
+    // A larger plan comes from Vertex: its WhatsApp number, to copy (M6 decision).
+    expect(within(again).getByText("+963 945 739 573")).toHaveAttribute("dir", "ltr");
+    expect(within(again).getByRole("button", { name: /رقم واتساب الدعم/ })).toBeInTheDocument();
     expect(within(again).getByLabelText(/اسم القسم/)).toHaveValue("الإكسسوارات");
   });
 

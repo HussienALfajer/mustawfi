@@ -27,6 +27,10 @@ export const uiMessages = {
   passwordField: {
     reveal: "إظهار ما كُتب",
   },
+  support: {
+    whatsapp: "لباقة أكبر راسل دعم «فيرتكس» على واتساب:",
+    number: "رقم واتساب الدعم",
+  },
   copy: {
     action: "نسخ",
     done: "نُسخ",
