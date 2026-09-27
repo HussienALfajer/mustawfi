@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ACCESS_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-access/shared";
-import { auditLabelKey } from "@mustawfi/core-audit/client";
+import { ACCESS_DEVICE_AUDIT_ACTIONS, SESSION_END_REASONS } from "@mustawfi/core-access/shared";
+import { auditLabelKey, auditVariantLabelKey } from "@mustawfi/core-audit/client";
 import { TENANCY_DEVICE_AUDIT_ACTIONS } from "@mustawfi/core-tenancy/shared";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
@@ -24,6 +24,7 @@ import { moduleMessage } from "./module-messages.ts";
 /** Every audit action code; `device` for the events recorded through the device audit path. */
 const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] = [
   { action: "access.device.registered" },
+  { action: "access.device.renamed" },
   { action: "access.device.revoked" },
   { action: "access.device.wiped" },
   { action: "access.login.failed" },
@@ -40,6 +41,7 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "access.role.archived" },
   { action: "access.role.changed" },
   { action: "access.role.created" },
+  { action: "access.role.restored" },
   { action: "access.session.revoked" },
   { action: "access.twoFactor.cleared" },
   { action: "access.twoFactor.disabled" },
@@ -61,6 +63,7 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "organization.department.archived" },
   { action: "organization.department.created" },
   { action: "organization.department.renamed" },
+  { action: "organization.department.restored" },
   { action: "organization.numbering.gap" },
   { action: "organization.profile.changed" },
   { action: "organization.profile.created" },
@@ -128,13 +131,19 @@ const UNIT_EVENTS: readonly (
     ],
   },
   {
-    event: "role created, edited, archived",
-    actions: ["access.role.created", "access.role.changed", "access.role.archived"],
+    event: "role created, edited, archived (restored, slice 20)",
+    actions: [
+      "access.role.created",
+      "access.role.changed",
+      "access.role.archived",
+      "access.role.restored",
+    ],
   },
   {
     event: "device registered, revoked, wiped, registration code issued",
     actions: [
       "access.device.registered",
+      "access.device.renamed",
       "access.device.revoked",
       "access.device.wiped",
       "access.registrationCode.issued",
@@ -146,11 +155,12 @@ const UNIT_EVENTS: readonly (
     actions: ["organization.profile.created", "organization.profile.changed"],
   },
   {
-    event: "department created, renamed, archived",
+    event: "department created, renamed, archived (restored, slice 20)",
     actions: [
       "organization.department.created",
       "organization.department.renamed",
       "organization.department.archived",
+      "organization.department.restored",
     ],
   },
   { event: "license installed", actions: ["tenancy.license.installed"] },
@@ -305,6 +315,23 @@ describe("the audit catalogue", () => {
     for (const entry of UNIT_EVENTS) {
       if ("actions" in entry) expect(entry.actions.length, entry.event).toBeGreaterThan(0);
     }
+  });
+
+  it("labels each reason a session ends separately (slice 20)", () => {
+    const missing = SESSION_END_REASONS.map((reason) =>
+      auditVariantLabelKey("access.session.revoked", { reason }),
+    ).filter((label) => {
+      const text = label === undefined ? undefined : moduleMessage(label.ns, label.key);
+      return typeof text !== "string" || !/[؀-ۿ]/.test(text);
+    });
+    expect(missing).toEqual([]);
+    expect(auditVariantLabelKey("access.session.revoked", { reason: "signedOut" })).toEqual({
+      ns: "access",
+      key: "audit.session.revokedFor.signedOut",
+    });
+    // An entry without a reason, or with one that is not a code, reads as the action.
+    expect(auditVariantLabelKey("access.session.revoked", {})).toBeUndefined();
+    expect(auditVariantLabelKey("access.device.revoked", { reason: "سُرق" })).toBeUndefined();
   });
 
   it("maps an action to its module's namespace and key", () => {

@@ -12,6 +12,7 @@ import { Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import type { AuditLink } from "@mustawfi/core-audit/client";
 import type { UserView } from "../../shared/index.ts";
 import { ListLoadFailure } from "../list-load-failure.tsx";
 import { ACCESS_NAMESPACE } from "../messages.ts";
@@ -66,6 +67,8 @@ export interface UsersScreenProps {
    * the app); `undefined` while they load.
    */
   readonly departments: readonly DepartmentOption[] | undefined;
+  /** Links a panel's last line to the record's history; only for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
@@ -73,7 +76,12 @@ export interface UsersScreenProps {
  * changing, `access.users.manage`. While the store has one active department, no department
  * column, filter, or picker shows (rule 29).
  */
-export function UsersScreen({ filters, onFiltersChange, departments }: UsersScreenProps) {
+export function UsersScreen({
+  filters,
+  onFiltersChange,
+  departments,
+  auditLink,
+}: UsersScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const users = useQuery(usersQueryOptions());
   const roles = useQuery(rolesQueryOptions());
@@ -230,6 +238,7 @@ export function UsersScreen({ filters, onFiltersChange, departments }: UsersScre
           departments={departments}
           showDepartments={showDepartments}
           viewer={viewer}
+          auditLink={auditLink}
           onClose={closePanel}
           onSaved={(saved) => {
             if (filters.selected !== "new") return;

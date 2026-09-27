@@ -6,11 +6,12 @@ import {
   type RoleTemplate,
 } from "@mustawfi/core-config/shared";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
-import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   accessProblemCodes,
   type RoleHoldings,
   roleHoldings,
+  type RoleListItem,
   roleNameSchema,
   type RoleView,
   type StoredRole,
@@ -18,6 +19,7 @@ import {
 } from "../shared/index.ts";
 import { auditAs, checkGrantable, type Manager, type RoleActor, violates } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
+import { namedLastChanges } from "./last-change.ts";
 import { roleLimits, rolePermissions, roles, roleTemplateGrants, users } from "./schema.ts";
 
 export type { RoleActor } from "./actor.ts";
@@ -56,11 +58,44 @@ function roleArchived(): ProblemError {
   return new ProblemError(accessProblemCodes.roleArchived, 409, { title: "The role is archived" });
 }
 
-function nameTaken(error: unknown): unknown {
-  if (!violates(error, "roles_active_name_per_tenant")) return error;
+function nameTakenProblem(cause?: unknown): ProblemError {
   return new ProblemError(accessProblemCodes.roleNameTaken, 409, {
-    title: "Another active role has this name",
-    cause: error,
+    title: "Another role has this name",
+    cause,
+  });
+}
+
+/** A concurrent write that took the name after `checkNameFree` looked. */
+function nameTaken(error: unknown): unknown {
+  return violates(error, "roles_name_per_tenant") ? nameTakenProblem(error) : error;
+}
+
+/**
+ * Refuses `name` when a role of the tenant other than `exceptId` has it, compared
+ * case-insensitively over names stored with their spaces collapsed (`core-foundation` slice 20):
+ * 409 `access.role.nameArchived`, with the archived role's id as the detail, when that role is
+ * archived — the screen offers to restore it — else `access.role.nameTaken`. Checked before
+ * writing, since a unique violation would abort the transaction.
+ */
+async function checkNameFree(
+  tx: TenantTransaction,
+  name: string,
+  exceptId?: string,
+): Promise<void> {
+  const [holder] = await tx
+    .select({ id: roles.id, archivedAt: roles.archivedAt })
+    .from(roles)
+    .where(
+      and(
+        sql`lower(${roles.name}) = lower(${name})`,
+        exceptId === undefined ? undefined : ne(roles.id, exceptId),
+      ),
+    );
+  if (holder === undefined) return;
+  if (holder.archivedAt === null) throw nameTakenProblem();
+  throw new ProblemError(accessProblemCodes.roleNameArchived, 409, {
+    title: "An archived role has this name",
+    detail: holder.id,
   });
 }
 
@@ -170,7 +205,8 @@ async function recordTemplateGrants(
  * Creates an editable role in `tx`, a `withTenant` transaction, with its permissions and limit
  * values, audited `access.role.created`. Every permission and limit must be declared in
  * `catalogue` (rule 13); a malformed value or an unknown declaration is a 422
- * `access.role.invalid`, a name another active role has a 409 `access.role.nameTaken`. A role
+ * `access.role.invalid`, a name another role has a 409 `access.role.nameTaken` (or
+ * `access.role.nameArchived` when that role is archived). A role
  * seeded from a template records the template's grants as offered. The owner role is not
  * created here (`seedRoles`).
  */
@@ -201,6 +237,7 @@ async function insertRole(
   role: { readonly id: string; readonly name: string; readonly template: string | null },
   isOwner: boolean,
 ): Promise<void> {
+  await checkNameFree(tx, role.name);
   try {
     await tx.insert(roles).values({
       id: role.id,
@@ -460,6 +497,7 @@ export async function editRole(
   }
   let updated = row;
   if (name !== row.name) {
+    await checkNameFree(tx, name, row.id);
     try {
       const [renamed] = await tx
         .update(roles)
@@ -521,6 +559,68 @@ export async function archiveRole(
     after: { archivedAt: actor.at.toISOString() },
   });
   return toView(archived, await holdingsOf(tx, archived, catalogue), 0);
+}
+
+/**
+ * Restores an archived role (`core-foundation` slice 20), audited `access.role.restored`. Its
+ * name is still its own, since names are unique among archived roles too; it holds what it held
+ * when archived, plus any template grant declared since (slice 6). No confirmation: nothing is
+ * lost either way. A non-owner restores only a role within what they hold, as they would create
+ * it (403 `access.role.beyondOwnGrant`, slice 6 decision). 404 `access.role.notFound`, 409
+ * `access.role.notArchived`.
+ */
+export async function restoreRole(
+  tx: TenantTransaction,
+  actor: Manager,
+  id: string,
+  catalogue: PermissionCatalogue,
+  dependencies: AccessDependencies,
+): Promise<RoleView> {
+  const [row] = await tx.select().from(roles).where(eq(roles.id, id)).for("update");
+  if (row === undefined) throw roleNotFound();
+  if (row.archivedAt === null) {
+    throw new ProblemError(accessProblemCodes.roleNotArchived, 409, {
+      title: "The role is not archived",
+    });
+  }
+  checkGrantable(actor, await holdingsOf(tx, row, catalogue));
+  const [restored] = await tx
+    .update(roles)
+    .set({ archivedAt: null, archivedBy: null })
+    .where(eq(roles.id, row.id))
+    .returning();
+  if (restored === undefined) throw new Error("the role update returned no row");
+  await auditAs(tx, actor, dependencies, {
+    action: "access.role.restored",
+    entity: { type: "access.role", id: row.id },
+    before: { archivedAt: row.archivedAt.toISOString() },
+    after: { archivedAt: null },
+  });
+  const active = await activeUsersOf(tx, [row.id]);
+  return toView(restored, await holdingsOf(tx, restored, catalogue), active.get(row.id) ?? 0);
+}
+
+/** The actions that change a role, for its «last changed by … on …». */
+const ROLE_CHANGES = [
+  "access.role.created",
+  "access.role.changed",
+  "access.role.archived",
+  "access.role.restored",
+];
+
+/** `listRoles` with each role's last change, for the roles screen. */
+export async function listRoleItems(
+  tx: TenantTransaction,
+  catalogue: PermissionCatalogue,
+): Promise<RoleListItem[]> {
+  const items = await listRoles(tx, catalogue);
+  const changes = await namedLastChanges(
+    tx,
+    "access.role",
+    items.map((item) => item.id),
+    ROLE_CHANGES,
+  );
+  return items.map((item) => ({ ...item, lastChange: changes.get(item.id) ?? null }));
 }
 
 /**

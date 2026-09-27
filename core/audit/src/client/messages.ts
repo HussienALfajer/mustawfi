@@ -12,4 +12,10 @@ export const auditMessages = {
     view: "عرض سجل التدقيق",
   },
   log: auditLogMessages,
+  /** The last line of every details panel (`screen-patterns.md`). */
+  lastChange: {
+    by: "آخر تعديل بواسطة {name} في {at}",
+    at: "آخر تعديل في {at}",
+    bySupport: "آخر تعديل بواسطة الدعم الفني لـ«فيرتكس» في {at}",
+  },
 } satisfies Messages;

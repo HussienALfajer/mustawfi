@@ -1,11 +1,12 @@
 import { type RouteAccess, type Session, sessionOf } from "@mustawfi/core-access/server";
 import { ProblemError } from "@mustawfi/core-config/server";
 import { problemDetailsSchema } from "@mustawfi/core-config/shared";
-import { listDepartments, type TenantTransaction } from "@mustawfi/core-tenancy/server";
+import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
+  departmentListItemSchema,
   departmentRenameSchema,
   departmentSchema,
   licenseSummarySchema,
@@ -21,6 +22,8 @@ import {
   type Actor,
   addDepartment,
   changeDepartmentName,
+  listDepartmentItems,
+  reinstateDepartment,
   retireDepartment,
 } from "./departments.ts";
 import {
@@ -91,14 +94,14 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       schema: {
         tags,
         response: {
-          200: z.object({ items: z.array(departmentSchema) }),
+          200: z.object({ items: z.array(departmentListItemSchema) }),
           401: problemDetailsSchema,
         },
       },
     },
     async (request) => {
       const session = sessionOf(request);
-      const items = await asActor(session, (tx) => listDepartments(tx));
+      const items = await asActor(session, (tx) => listDepartmentItems(tx));
       return { items };
     },
   );
@@ -156,6 +159,24 @@ export function organizationRoutes(scope: FastifyInstance, context: Organization
       const session = sessionOf(request);
       return asActor(session, (tx, actor) =>
         retireDepartment(tx, actor, request.params.id, context),
+      );
+    },
+  );
+
+  app.post(
+    "/departments/:id/restore",
+    {
+      config: manageDepartments,
+      schema: {
+        tags,
+        params: departmentParamsSchema,
+        response: { 200: departmentSchema, ...refusals },
+      },
+    },
+    async (request) => {
+      const session = sessionOf(request);
+      return asActor(session, (tx, actor) =>
+        reinstateDepartment(tx, actor, request.params.id, context),
       );
     },
   );

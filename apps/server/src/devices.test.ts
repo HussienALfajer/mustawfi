@@ -1,4 +1,9 @@
-import { accessProblemCodes, type DeviceView } from "@mustawfi/core-access/shared";
+import {
+  accessProblemCodes,
+  type DeviceList,
+  type DeviceListItem,
+  type DeviceView,
+} from "@mustawfi/core-access/shared";
 import { DEVICE_CREDENTIAL_HEADER, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import type { PushResponse, SyncOperation } from "@mustawfi/core-sync/shared";
 import { openTenantDatabase, type TenantDatabase } from "@mustawfi/core-tenancy/server";
@@ -161,14 +166,27 @@ function revoke(store: Store, deviceId: string, reason: unknown = "سُرق ال
   });
 }
 
-async function listDevices(store: Store): Promise<DeviceView[]> {
+async function deviceList(store: Store): Promise<DeviceList> {
   const response = await server.inject({
     method: "GET",
     url: "/api/v1/access/devices",
     headers: bearer(store.token),
   });
   expect(response.statusCode).toBe(200);
-  return response.json<{ items: DeviceView[] }>().items;
+  return response.json<DeviceList>();
+}
+
+async function listDevices(store: Store): Promise<DeviceListItem[]> {
+  return (await deviceList(store)).items;
+}
+
+function rename(store: Store, deviceId: string, name: unknown, token?: string) {
+  return server.inject({
+    method: "PATCH",
+    url: `/api/v1/access/devices/${deviceId}`,
+    headers: bearer(token ?? store.token),
+    payload: { name },
+  });
 }
 
 async function flagsOf(tenantId: string, opIds: readonly string[]) {
@@ -196,15 +214,17 @@ async function auditOf(tenantId: string, action: string) {
 }
 
 describe("the devices list (flow 9)", () => {
-  it("lists every device with its type, prefix, registration, last sync, and status", async () => {
-    const store = await newStore("متجر القائمة");
+  it("lists every device with its type, platform, prefix, registration, last sync, status, and last change", async () => {
+    const store = await newStore("متجر القائمة", 3);
     const till = await newDevice(store, "الصندوق");
     const registeredAt = clock.now().toISOString();
-    expect(await listDevices(store)).toEqual([
+    const list = await deviceList(store);
+    expect(list.items).toEqual([
       {
         id: till.deviceId,
         name: "الصندوق",
         type: "mainPos",
+        platform: "windows",
         prefix: till.prefix,
         registeredAt,
         lastSyncAt: null,
@@ -213,8 +233,45 @@ describe("the devices list (flow 9)", () => {
         revokedBy: null,
         revokeReason: null,
         wipedAt: null,
+        // Registered with a code the owner issued: the owner is who added it.
+        lastChange: {
+          entryId: expect.any(String) as string,
+          at: registeredAt,
+          by: { id: store.tenant.ownerId, name: "أحمد" },
+          bySupport: false,
+        },
       },
     ]);
+    // Each limit as used of allowed: the list, a panel, and the registration panel say it.
+    expect(list.limits).toEqual({
+      mainPos: { used: 1, allowed: 3 },
+      companion: { used: 0, allowed: expect.any(Number) as number },
+    });
+
+    // A browser registers as a companion and says so.
+    const issued = await server.inject({
+      method: "POST",
+      url: "/api/v1/access/registration-codes",
+      headers: bearer(store.token),
+    });
+    const phone = await server.inject({
+      method: "POST",
+      url: "/api/v1/access/devices",
+      payload: {
+        storeCode: store.tenant.storeCode,
+        registrationCode: issued.json<{ code: string }>().code,
+        type: "companion",
+        platform: "browser",
+        name: "متصفح المالك",
+      },
+    });
+    expect(phone.statusCode).toBe(201);
+    const both = await deviceList(store);
+    expect(both.items.map((item) => [item.type, item.platform])).toEqual([
+      ["mainPos", "windows"],
+      ["companion", "browser"],
+    ]);
+    expect(both.limits.companion.used).toBe(1);
 
     // Each pull and push records the server's time.
     clock.advance(60_000);
@@ -248,6 +305,78 @@ describe("the devices list (flow 9)", () => {
       await revoke(store, till.deviceId, "سبب", viewer),
       403,
       accessProblemCodes.permissionDenied,
+    );
+  });
+});
+
+describe("renaming a device (slice 20)", () => {
+  it("renames an active device, audited, and never changes its prefix", async () => {
+    const store = await newStore("متجر التسمية");
+    const till = await newDevice(store, "الصندوق");
+    clock.advance(60_000);
+    const response = await rename(store, till.deviceId, "  صندوق   المدخل ");
+    expect(response.statusCode).toBe(200);
+    expect(response.json<DeviceView>()).toMatchObject({
+      id: till.deviceId,
+      name: "صندوق   المدخل",
+      prefix: till.prefix,
+    });
+    expect(await auditOf(store.tenant.tenantId, "access.device.renamed")).toEqual([
+      {
+        created_by: store.tenant.ownerId,
+        device_id: null,
+        entity_id: till.deviceId,
+        before: { name: "الصندوق" },
+        after: { name: "صندوق   المدخل" },
+        reason: null,
+      },
+    ]);
+    // The device learns its new name from its own view; the prefix its numbers carry stays.
+    const current = await server.inject({
+      method: "GET",
+      url: "/api/v1/access/devices/current",
+      headers: bearer(till.credential),
+    });
+    expect(current.json()).toMatchObject({ name: "صندوق   المدخل", prefix: till.prefix });
+    expect((await listDevices(store))[0]?.lastChange).toMatchObject({
+      at: clock.now().toISOString(),
+      by: { id: store.tenant.ownerId },
+    });
+    // The same name again changes nothing and audits nothing.
+    expect((await rename(store, till.deviceId, "صندوق   المدخل")).statusCode).toBe(200);
+    expect(await auditOf(store.tenant.tenantId, "access.device.renamed")).toHaveLength(1);
+  });
+
+  it("refuses a revoked device, an unknown one, another store's, a bad name, and no permission", async () => {
+    const store = await newStore("متجر رفض التسمية");
+    const other = await newStore("متجر آخر للتسمية");
+    const till = await newDevice(store);
+    const theirs = await newDevice(other);
+    expectProblem(
+      await rename(store, theirs.deviceId, "لي"),
+      404,
+      accessProblemCodes.deviceNotFound,
+    );
+    expectProblem(await rename(store, newId(), "لي"), 404, accessProblemCodes.deviceNotFound);
+    expect((await rename(store, till.deviceId, "  ")).statusCode).toBe(400);
+    expect((await rename(store, till.deviceId, "x".repeat(101))).statusCode).toBe(400);
+    await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "viewer", permissions: ["access.users.view"] },
+      dependencies,
+    );
+    const viewer = await signInAs(server, store.tenant, "viewer");
+    expectProblem(
+      await rename(store, till.deviceId, "اسم", viewer),
+      403,
+      accessProblemCodes.permissionDenied,
+    );
+    expect((await revoke(store, till.deviceId)).statusCode).toBe(200);
+    expectProblem(
+      await rename(store, till.deviceId, "اسم جديد"),
+      409,
+      accessProblemCodes.deviceAlreadyRevoked,
     );
   });
 });
@@ -288,6 +417,13 @@ describe("revoking a device (rule 23)", () => {
         after: { status: "revoked", sessionsRevoked: 1 },
         reason: "سُرق الجهاز",
       },
+    ]);
+    // The session it ended says why (slice 20).
+    expect(await auditOf(store.tenant.tenantId, "access.session.revoked")).toEqual([
+      expect.objectContaining({
+        created_by: store.tenant.ownerId,
+        after: { userId: store.tenant.ownerId, deviceId: till.deviceId, reason: "deviceRevoked" },
+      }),
     ]);
 
     // Its session ended with it; the owner's own session in the browser did not.

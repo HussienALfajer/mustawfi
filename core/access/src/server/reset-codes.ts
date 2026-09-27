@@ -225,7 +225,7 @@ export async function resetPasswordWithCode(
           after: { twoFactor: false, clearedBy: "support", resetCodeId: used.id },
         });
       }
-      await revokeUserSessions(tx, actor, user.id, dependencies);
+      await revokeUserSessions(tx, actor, user.id, dependencies, "supportReset");
       await clearLoginFailures(tx, login.data);
     });
   });

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
 import { createI18n } from "@mustawfi/i18n";
 import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
@@ -14,7 +15,11 @@ import { type CurrentSession, sessionQueryKey } from "../session.ts";
 import type { DepartmentOption } from "./user-form.tsx";
 import { filterUsers, type UserFilters, userFiltersSchema, UsersScreen } from "./users-screen.tsx";
 
-const i18n = createI18n({ [UI_NAMESPACE]: uiMessages, [ACCESS_NAMESPACE]: accessMessages });
+const i18n = createI18n({
+  [UI_NAMESPACE]: uiMessages,
+  [ACCESS_NAMESPACE]: accessMessages,
+  [AUDIT_NAMESPACE]: auditMessages,
+});
 
 const STORE: DepartmentOption = {
   id: "0190a000-0000-7000-8000-00000000d001",
@@ -150,9 +155,18 @@ function fakeApi(users: UserView[], answers: Record<string, () => Response> = {}
     const answer = answers[`${method} ${url}`];
     if (answer !== undefined) return Promise.resolve(answer());
     if (url.endsWith("/roles")) {
-      return Promise.resolve(Response.json({ items: [OWNER_ROLE, CASHIER_ROLE, ACCOUNTANT_ROLE] }));
+      return Promise.resolve(
+        Response.json({
+          items: [OWNER_ROLE, CASHIER_ROLE, ACCOUNTANT_ROLE].map((item) => ({
+            lastChange: null,
+            ...item,
+          })),
+        }),
+      );
     }
-    return Promise.resolve(Response.json({ items: users }));
+    return Promise.resolve(
+      Response.json({ items: users.map((item) => ({ lastChange: null, ...item })) }),
+    );
   });
   return calls;
 }

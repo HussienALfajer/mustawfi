@@ -10,6 +10,7 @@ import {
   accessProblemCodes,
   type AccessGrant,
   sessionUserSchema,
+  type SignOutReason,
 } from "../shared/index.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { devices, sessions, users } from "./schema.ts";
@@ -153,11 +154,16 @@ export async function authenticateSession(
   });
 }
 
-/** Ends `session` now, as its own user signing out; audited. */
+/**
+ * Ends `session` now, as its own user signing out, audited `access.session.revoked` with the
+ * reason the client gave: `signedOut` unless it locked, switched user, or found the session idle
+ * at start-up (`core-foundation` slice 20).
+ */
 export async function revokeSession(
   tenants: TenantDatabase,
   session: Session,
   dependencies: AccessDependencies,
+  reason: SignOutReason = "signedOut",
 ): Promise<void> {
   const now = dependencies.clock.now();
   const userId = session.user.id;
@@ -177,6 +183,7 @@ export async function revokeSession(
       ...(session.deviceId === null ? {} : { deviceId: session.deviceId }),
       action: "access.session.revoked",
       entity: { type: "access.session", id: session.sessionId },
+      after: { userId, reason },
     });
   });
 }

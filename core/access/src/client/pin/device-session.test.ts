@@ -527,11 +527,13 @@ describe("the device's session at start-up and at a lock (rules 24–25)", () =>
       ),
     );
     answer = () => new Response(null, { status: 204 });
-    await lockDevice(db);
+    await lockDevice(db, "locked");
     expect(await localSession(db)).toBeUndefined();
     expect(hasSessionCredential()).toBe(false);
     expect(requests.map((request) => [request.url, request.init.credentials])).toEqual([
       ["/api/v1/access/logout", "same-origin"],
     ]);
+    // The server's audit entry says why the session ended (slice 20).
+    expect(JSON.parse(requests[0]?.init.body as string)).toEqual({ reason: "locked" });
   });
 });

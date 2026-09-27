@@ -5,5 +5,7 @@ export {
   type AuditDirectory,
   auditActions,
   type AuditFilters,
+  type LastChangeEntry,
+  lastChanges,
   listAuditEntries,
 } from "./entries.ts";

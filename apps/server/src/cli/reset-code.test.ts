@@ -252,6 +252,19 @@ describe("password reset with a support code", () => {
         (entry) => entry.created_by === tenant.ownerId,
       ),
     ).toBe(true);
+
+    // The users panel's last line says support made the change, not the owner it acted for
+    // (slice 20).
+    const token = (await logIn(tenant, NEW_PASSWORD)).json<{ token: string }>().token;
+    const users = await server.inject({
+      method: "GET",
+      url: "/api/v1/access/users",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const owner = users
+      .json<{ items: { id: string; lastChange: unknown }[] }>()
+      .items.find((user) => user.id === tenant.ownerId);
+    expect(owner?.lastChange).toMatchObject({ by: null, bySupport: true });
   });
 
   it("expires after thirty minutes", async () => {

@@ -12,13 +12,20 @@ import { randomIndex, UNAMBIGUOUS_ALPHABET } from "@mustawfi/kernel";
 import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import {
   accessProblemCodes,
+  deviceLimitOf,
+  type DeviceLimitUse,
+  type DeviceList,
   deviceNameSchema,
+  type DevicePlatform,
+  devicePlatformSchema,
   deviceTypeSchema,
   type DeviceType,
   type DeviceView,
+  platformOfType,
 } from "../shared/index.ts";
 import { auditAs, type RoleActor } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
+import { namedLastChanges } from "./last-change.ts";
 import { devices, registrationCodes, sessions, users } from "./schema.ts";
 import { bearerToken } from "./sessions.ts";
 import { issueBearer, issueOneTimeCode, readBearer, oneTimeCodeHash } from "./secrets.ts";
@@ -75,6 +82,8 @@ export interface NewDevice {
   /** As typed on the device. */
   readonly registrationCode: string;
   readonly type: DeviceType;
+  /** What it runs on; a client built before slice 20 says nothing, and its type tells it. */
+  readonly platform?: DevicePlatform | undefined;
   readonly name: string;
 }
 
@@ -112,6 +121,7 @@ export async function registerDevice(
   dependencies: AccessDependencies,
 ): Promise<RegisteredDevice> {
   const type = deviceTypeSchema.parse(device.type);
+  const platform = devicePlatformSchema.parse(device.platform ?? platformOfType(type));
   const name = deviceNameSchema.parse(device.name);
   const codeHash = oneTimeCodeHash(device.registrationCode);
   if (codeHash === undefined) throw registrationFailed();
@@ -167,6 +177,7 @@ export async function registerDevice(
     createdBy: code.issuedBy,
     name,
     type,
+    platform,
     prefix,
     credentialHash,
     registrationCodeId: code.id,
@@ -180,7 +191,7 @@ export async function registerDevice(
     deviceId,
     action: "access.device.registered",
     entity: { type: "access.device", id: deviceId },
-    after: { name, type, prefix, registrationCodeId: code.id },
+    after: { name, type, platform, prefix, registrationCodeId: code.id },
   });
   const tenant = await currentTenant(tx);
   if (tenant === undefined) throw new Error("a device registered outside its tenant");
@@ -204,19 +215,33 @@ export async function activeDeviceCount(tx: TenantTransaction, type: DeviceType)
 }
 
 /**
+ * The license limit devices of `type` count against, as used (devices not revoked) of allowed
+ * (rule 4); a downgrade can leave more used than allowed.
+ */
+export async function deviceLimitUse(
+  tx: TenantTransaction,
+  type: DeviceType,
+): Promise<DeviceLimitUse> {
+  const license = await currentLicense(tx);
+  if (license === undefined) throw new Error("the tenant has no license");
+  return {
+    used: await activeDeviceCount(tx, type),
+    allowed: license.claims.limits[deviceLimitOf(type)],
+  };
+}
+
+/**
  * Refuses one more device of `type` beyond the license's limit (rule 4); run under the
  * registration lock. A lower limit after a downgrade removes no device; revoked devices do not
  * count.
  */
 async function checkDeviceLimit(tx: TenantTransaction, type: DeviceType): Promise<void> {
-  const license = await currentLicense(tx);
-  if (license === undefined) throw new Error("the tenant has no license");
-  const { limits } = license.claims;
-  const [allowed, code] =
+  const { used, allowed } = await deviceLimitUse(tx, type);
+  const code =
     type === "mainPos"
-      ? [limits.mainPosDevices, tenancyProblemCodes.mainPosDeviceLimit]
-      : [limits.companionDevices, tenancyProblemCodes.companionDeviceLimit];
-  if ((await activeDeviceCount(tx, type)) >= allowed) {
+      ? tenancyProblemCodes.mainPosDeviceLimit
+      : tenancyProblemCodes.companionDeviceLimit;
+  if (used >= allowed) {
     throw new ProblemError(code, 409, {
       title: "The license's device limit is reached",
       detail: `the license allows ${String(allowed)} ${type} devices`,
@@ -231,6 +256,7 @@ export interface Device {
   readonly branchId: string;
   readonly prefix: string;
   readonly type: DeviceType;
+  readonly platform: DevicePlatform;
   readonly name: string;
   /** Set once the device is revoked: its credential then opens push alone (rule 23). */
   readonly revokedAt: Date | null;
@@ -254,13 +280,20 @@ export async function authenticateDevice(
         branchId: devices.branchId,
         prefix: devices.prefix,
         type: devices.type,
+        platform: devices.platform,
         name: devices.name,
         revokedAt: devices.revokedAt,
       })
       .from(devices)
       .where(eq(devices.credentialHash, bearer.hash)),
   );
-  return row === undefined ? undefined : { ...row, type: deviceTypeSchema.parse(row.type) };
+  return row === undefined
+    ? undefined
+    : {
+        ...row,
+        type: deviceTypeSchema.parse(row.type),
+        platform: devicePlatformSchema.parse(row.platform),
+      };
 }
 
 /**
@@ -307,6 +340,7 @@ interface DeviceRow {
   readonly id: string;
   readonly name: string;
   readonly type: string;
+  readonly platform: string;
   readonly prefix: string;
   readonly createdAt: Date;
   readonly lastSyncAt: Date | null;
@@ -322,6 +356,7 @@ function deviceView(row: DeviceRow): DeviceView {
     id: row.id,
     name: row.name,
     type: deviceTypeSchema.parse(row.type),
+    platform: devicePlatformSchema.parse(row.platform),
     prefix: row.prefix,
     registeredAt: row.createdAt.toISOString(),
     lastSyncAt: row.lastSyncAt?.toISOString() ?? null,
@@ -341,6 +376,7 @@ function selectDevices(tx: TenantTransaction) {
       id: devices.id,
       name: devices.name,
       type: devices.type,
+      platform: devices.platform,
       prefix: devices.prefix,
       createdAt: devices.createdAt,
       lastSyncAt: devices.lastSyncAt,
@@ -392,7 +428,7 @@ export async function revokeDevice(
     .update(sessions)
     .set({ revokedAt: actor.at, revokedBy: actor.userId })
     .where(and(eq(sessions.deviceId, change.deviceId), isNull(sessions.revokedAt)))
-    .returning({ id: sessions.id });
+    .returning({ id: sessions.id, userId: sessions.userId });
   await auditAs(tx, actor, dependencies, {
     action: "access.device.revoked",
     entity: { type: "access.device", id: change.deviceId },
@@ -400,9 +436,83 @@ export async function revokeDevice(
     after: { status: "revoked", sessionsRevoked: ended.length },
     reason: change.reason,
   });
+  for (const session of ended) {
+    await auditAs(tx, actor, dependencies, {
+      action: "access.session.revoked",
+      entity: { type: "access.session", id: session.id },
+      after: { userId: session.userId, deviceId: change.deviceId, reason: "deviceRevoked" },
+    });
+  }
   const [view] = await selectDevices(tx).where(eq(devices.id, change.deviceId));
   if (view === undefined) throw new Error(`device ${change.deviceId} vanished while revoked`);
   return deviceView(view);
+}
+
+/**
+ * Renames a device (`core-foundation` slice 20) by `actor`, who holds `access.devices.manage`,
+ * audited `access.device.renamed` with both names. Only the name changes: the prefix never does
+ * (rule 30, non-negotiable 8). A revoked device keeps the name it was revoked under: 409
+ * `access.device.alreadyRevoked`; 404 `access.device.notFound`. An unchanged name audits nothing.
+ */
+export async function renameDevice(
+  tx: TenantTransaction,
+  actor: RoleActor,
+  change: { readonly deviceId: string; readonly name: string },
+  dependencies: Pick<AccessDependencies, "newId">,
+): Promise<DeviceView> {
+  const name = deviceNameSchema.parse(change.name);
+  const [device] = await tx
+    .select({ id: devices.id, name: devices.name, revokedAt: devices.revokedAt })
+    .from(devices)
+    .where(eq(devices.id, change.deviceId))
+    .for("update");
+  if (device === undefined) throw deviceNotFound();
+  if (device.revokedAt !== null) {
+    throw new ProblemError(accessProblemCodes.deviceAlreadyRevoked, 409, {
+      title: "This device is revoked",
+    });
+  }
+  if (name !== device.name) {
+    await tx.update(devices).set({ name }).where(eq(devices.id, change.deviceId));
+    await auditAs(tx, actor, dependencies, {
+      action: "access.device.renamed",
+      entity: { type: "access.device", id: change.deviceId },
+      before: { name: device.name },
+      after: { name },
+    });
+  }
+  const [view] = await selectDevices(tx).where(eq(devices.id, change.deviceId));
+  if (view === undefined) throw new Error(`device ${change.deviceId} vanished while renamed`);
+  return deviceView(view);
+}
+
+/** The actions that change a device, for its «last changed by … on …». */
+const DEVICE_CHANGES = [
+  "access.device.registered",
+  "access.device.renamed",
+  "access.device.revoked",
+  "access.device.wiped",
+];
+
+/**
+ * Every device with its last change, and each device limit as used of allowed (rule 4), for
+ * the devices screen.
+ */
+export async function listDeviceItems(tx: TenantTransaction): Promise<DeviceList> {
+  const views = await listDevices(tx);
+  const changes = await namedLastChanges(
+    tx,
+    "access.device",
+    views.map((view) => view.id),
+    DEVICE_CHANGES,
+  );
+  return {
+    items: views.map((view) => ({ ...view, lastChange: changes.get(view.id) ?? null })),
+    limits: {
+      mainPos: await deviceLimitUse(tx, "mainPos"),
+      companion: await deviceLimitUse(tx, "companion"),
+    },
+  };
 }
 
 /**

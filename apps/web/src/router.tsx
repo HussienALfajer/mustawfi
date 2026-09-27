@@ -1,4 +1,4 @@
-import { type DeviceType, IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
+import { type DevicePlatform, type DeviceType, IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
 import {
   AccountScreen,
   beginDeviceSession,
@@ -44,7 +44,7 @@ import {
   StoreSuspendedScreen,
   suspendedFor,
 } from "@mustawfi/core-organization/client";
-import { AuditLogScreen, auditLogFiltersSchema } from "@mustawfi/core-audit/client";
+import { type AuditLink, AuditLogScreen, auditLogFiltersSchema } from "@mustawfi/core-audit/client";
 import type { DeviceLicenseAudit } from "@mustawfi/core-tenancy/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
@@ -98,6 +98,8 @@ export interface RouterContext {
   readonly queryClient: QueryClient;
   /** What this client registers as: the Windows app is the main POS (ADR-0022). */
   readonly deviceType: DeviceType;
+  /** What this client runs on, recorded at registration (`core-foundation` slice 20). */
+  readonly devicePlatform: DevicePlatform;
   /** The local database, which says who is signed in on a registered device. */
   readonly db: LocalDb;
 }
@@ -252,7 +254,7 @@ function PinPage() {
           void navigate({ to: "/pos" });
         }}
         onPasswordInstead={() => {
-          void lockDevice(db).then(() => {
+          void lockDevice(db, "switchedUser").then(() => {
             queryClient.clear();
             return navigate({ to: "/login" });
           });
@@ -438,6 +440,30 @@ function useSignedIn(): SignedIn | null | undefined {
 }
 
 /**
+ * The link from a details panel's last line to that record's history in the audit log, with its
+ * last change open — only for users who may read the log (`screen-patterns.md`); others get
+ * the line as plain text.
+ */
+function useAuditLink(): AuditLink | undefined {
+  const canRead = useSignedIn()?.grant.permissions.includes("audit.view") === true;
+  return useMemo(
+    () =>
+      canRead
+        ? (target, children) => (
+            <Link
+              to="/admin/audit"
+              search={{ entity: target.entity, selected: target.entry }}
+              className={TEXT_LINK}
+            >
+              {children}
+            </Link>
+          )
+        : undefined,
+    [canRead],
+  );
+}
+
+/**
  * Who audits what the device's license readings notice (`core-foundation` rule 33): the user
  * signed in on this device, through the app's outbox sink — only on a device registered to that
  * user's store, so no event is queued under another store's user.
@@ -480,12 +506,12 @@ function useLicenseNotice(): LicenseNotice | undefined {
  * and an unsaved administration form is left without asking: those screens work online and keep
  * nothing on the device.
  */
-function useLockDevice(): (returnTo?: string) => Promise<void> {
+function useLockDevice(): (reason: "switchedUser" | "locked", returnTo?: string) => Promise<void> {
   const db = useLocalDb();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  return async (returnTo) => {
-    await lockDevice(db);
+  return async (reason, returnTo) => {
+    await lockDevice(db, reason);
     // Before the PIN screen mounts: a query cleared under a mounted screen never answers it.
     queryClient.clear();
     await navigate({
@@ -509,7 +535,7 @@ function StoreSuspendedPage(props: {
   const lock = useLockDevice();
   const leave = useMutation({
     mutationFn: async () => {
-      if (props.onDevice === true) await lock();
+      if (props.onDevice === true) await lock("switchedUser");
       else await signOut();
     },
     onSettled: () => {
@@ -568,7 +594,7 @@ function AppShell() {
     idleMs: IDLE_LOCK_MS,
     enabled: onDevice,
     onLock: () => {
-      void lock(`${window.location.pathname}${window.location.search}`);
+      void lock("locked", `${window.location.pathname}${window.location.search}`);
     },
   });
   if (signedIn === undefined || signedIn === null) return null;
@@ -636,7 +662,7 @@ function AppShell() {
                 void navigate({ to: "/login" });
               }}
               onSwitchUser={() => {
-                void lock();
+                void lock("switchedUser");
               }}
             />
           </div>
@@ -773,6 +799,7 @@ function DepartmentsPage() {
   return (
     <DepartmentsScreen
       filters={filters}
+      auditLink={useAuditLink()}
       onFiltersChange={(next) => {
         void navigate({ search: next, replace: true });
       }}
@@ -797,6 +824,7 @@ function UsersPage() {
     <UsersScreen
       filters={filters}
       departments={departments}
+      auditLink={useAuditLink()}
       onFiltersChange={(next) => {
         void navigate({ search: next, replace: true });
       }}
@@ -818,6 +846,7 @@ function RolesPage() {
   return (
     <RolesScreen
       filters={filters}
+      auditLink={useAuditLink()}
       onFiltersChange={(next) => {
         void navigate({ search: next, replace: true });
       }}
@@ -843,6 +872,7 @@ function DevicesPage() {
     <DevicesScreen
       filters={filters}
       currentDeviceId={current?.deviceId ?? null}
+      auditLink={useAuditLink()}
       onRevoked={(device) => {
         // This device was revoked: it sends what it holds and wipes now, not at the next tick.
         if (device.id === current?.deviceId) void sync.syncNow();
@@ -956,8 +986,14 @@ const licenseRoute = createRoute({
 });
 
 function DevicePage() {
-  const { deviceType } = deviceRoute.useRouteContext();
-  return <DeviceScreen deviceType={deviceType} bundleVerifier={bundleVerifier()} />;
+  const { deviceType, devicePlatform } = deviceRoute.useRouteContext();
+  return (
+    <DeviceScreen
+      deviceType={deviceType}
+      devicePlatform={devicePlatform}
+      bundleVerifier={bundleVerifier()}
+    />
+  );
 }
 
 const deviceRoute = createRoute({
@@ -1006,10 +1042,19 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export function createAppRouter(queryClient: QueryClient, deviceType: DeviceType, db: LocalDb) {
+export function createAppRouter(
+  queryClient: QueryClient,
+  client: { readonly deviceType: DeviceType; readonly devicePlatform: DevicePlatform },
+  db: LocalDb,
+) {
   return createRouter({
     routeTree,
-    context: { queryClient, deviceType, db },
+    context: {
+      queryClient,
+      deviceType: client.deviceType,
+      devicePlatform: client.devicePlatform,
+      db,
+    },
     defaultPreload: "intent",
   });
 }

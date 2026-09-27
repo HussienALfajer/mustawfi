@@ -14,7 +14,7 @@ import { type ReactNode, type Ref, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { auditActionSchema, type AuditEntryView, type AuditFacets } from "../../shared/index.ts";
-import { auditLabelKey } from "../labels.ts";
+import { auditLabelKey, auditVariantLabelKey } from "../labels.ts";
 import { AUDIT_NAMESPACE } from "../messages.ts";
 import { auditEntriesQueryOptions, auditFacetsQueryOptions } from "./queries.ts";
 
@@ -23,6 +23,8 @@ export const auditLogFiltersSchema = z.object({
   user: z.uuid().optional().catch(undefined),
   action: auditActionSchema.optional().catch(undefined),
   device: z.uuid().optional().catch(undefined),
+  /** One record's history, opened from the last line of its details panel. */
+  entity: z.uuid().optional().catch(undefined),
   /** Business dates, both included. */
   from: z.iso.date().optional().catch(undefined),
   to: z.iso.date().optional().catch(undefined),
@@ -43,10 +45,21 @@ export function formatAuditInstant(iso: string): string {
   return INSTANT.format(new Date(iso));
 }
 
-/** An action's Arabic label (rule 34), or the code itself when this client has no label. */
-export function useActionLabel(): (action: string) => string {
+/**
+ * An action's Arabic label (rule 34), or the code itself when this client has no label. Given
+ * the entry's `after`, an action recorded with a reason gets that reason's own label (slice 20:
+ * each way a session ends reads differently).
+ */
+export function useActionLabel(): (
+  action: string,
+  after?: Readonly<Record<string, unknown>> | null,
+) => string {
   const { t, i18n } = useTranslation(AUDIT_NAMESPACE);
-  return (action) => {
+  return (action, after) => {
+    const variant = auditVariantLabelKey(action, after);
+    if (variant !== undefined && i18n.exists(variant.key, { ns: variant.ns })) {
+      return t(variant.key, { ns: variant.ns });
+    }
     const { ns, key } = auditLabelKey(action);
     return i18n.exists(key, { ns }) ? t(key, { ns }) : t("log.unknownAction", { action });
   };
@@ -60,6 +73,8 @@ export function formatAuditValue(value: unknown): string | undefined {
 }
 
 const ALL = "__all";
+
+type ActionLabel = ReturnType<typeof useActionLabel>;
 
 export interface AuditLogScreenProps {
   readonly filters: AuditLogFilters;
@@ -93,6 +108,7 @@ export function AuditLogScreen({ filters, onFiltersChange }: AuditLogScreenProps
     if (closing !== undefined) focusDataTableRow(tableRef.current, closing);
   };
   const filtering =
+    filters.entity !== undefined ||
     filters.user !== undefined ||
     filters.action !== undefined ||
     filters.device !== undefined ||
@@ -110,6 +126,11 @@ export function AuditLogScreen({ filters, onFiltersChange }: AuditLogScreenProps
           rangeReversed={rangeReversed}
           canClear={filtering}
         />
+        {filters.entity === undefined ? null : (
+          <p className="text-text-secondary" data-testid="audit-entity-filter">
+            {t("log.filter.entity")}
+          </p>
+        )}
         {rangeReversed ? null : entries.isError ? (
           <LoadFailure
             error={entries.error}
@@ -165,7 +186,7 @@ function AuditLogFilterBar({
 }: {
   readonly filters: AuditLogFilters;
   readonly facets: AuditFacets | undefined;
-  readonly actionLabel: (action: string) => string;
+  readonly actionLabel: ActionLabel;
   readonly onFiltersChange: (next: AuditLogFilters) => void;
   readonly rangeReversed: boolean;
   readonly canClear: boolean;
@@ -321,7 +342,7 @@ function AuditTable({
   tableRef,
 }: {
   readonly entries: readonly AuditEntryView[];
-  readonly actionLabel: (action: string) => string;
+  readonly actionLabel: ActionLabel;
   readonly selectedId: string | null;
   readonly onSelect: (id: string | null) => void;
   readonly tableRef: Ref<HTMLTableElement>;
@@ -356,7 +377,7 @@ function AuditTable({
       id: "action",
       header: t("log.column.action"),
       isRowHeader: true,
-      cell: (row) => actionLabel(row.action),
+      cell: (row) => actionLabel(row.action, row.after),
     },
     {
       id: "device",
@@ -394,14 +415,14 @@ export function AuditEntryPanel({
   onClose,
 }: {
   readonly entry: AuditEntryView;
-  readonly actionLabel: (action: string) => string;
+  readonly actionLabel: ActionLabel;
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation(AUDIT_NAMESPACE);
   const fromDevice = entry.source === "device";
   return (
     <SidePanel
-      title={actionLabel(entry.action)}
+      title={actionLabel(entry.action, entry.after)}
       closeLabel={t("log.panel.close")}
       onClose={onClose}
     >

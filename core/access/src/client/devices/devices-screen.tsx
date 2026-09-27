@@ -11,6 +11,7 @@ import { Plus } from "lucide-react";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import type { AuditLink } from "@mustawfi/core-audit/client";
 import type { DeviceView } from "../../shared/index.ts";
 import { ListLoadFailure } from "../list-load-failure.tsx";
 import { ACCESS_NAMESPACE } from "../messages.ts";
@@ -55,18 +56,22 @@ export interface DevicesScreenProps {
    * it holds and wipes at once.
    */
   readonly onRevoked?: (device: DeviceView) => void;
+  /** Links a panel's last line to the record's history; only for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
  * Devices (flow 9, list with side panel), online only, for holders of `access.devices.manage`:
- * each device's type, prefix, last sync, and status; «New» (`N`) issues a registration code;
- * a device's panel revokes it with a reason.
+ * each device's type in words with its platform, prefix, last sync, and status; «New» (`N`)
+ * issues a registration code; a device's panel renames it, says which license limit it counts
+ * against, and revokes it with a reason.
  */
 export function DevicesScreen({
   filters,
   onFiltersChange,
   currentDeviceId,
   onRevoked,
+  auditLink,
 }: DevicesScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const devices = useQuery(devicesQueryOptions());
@@ -83,9 +88,10 @@ export function DevicesScreen({
     if (canManage) select("new");
   });
 
-  const visible = filterDevices(devices.data ?? [], filters);
+  const items = devices.data?.items;
+  const visible = filterDevices(items ?? [], filters);
   const selected =
-    filters.selected === "new" ? null : devices.data?.find((d) => d.id === filters.selected);
+    filters.selected === "new" ? null : items?.find((d) => d.id === filters.selected);
   const closePanel = () => {
     const closing = filters.selected;
     select(undefined);
@@ -163,14 +169,16 @@ export function DevicesScreen({
       </div>
       {filters.selected === undefined || selected === undefined ? null : selected === null ? (
         canManage ? (
-          <NewDevicePanel onClose={closePanel} />
+          <NewDevicePanel limits={devices.data?.limits} onClose={closePanel} />
         ) : null
       ) : (
         <DevicePanel
           // A new panel for each device: its dialog and notice start afresh.
           key={selected.id}
           device={selected}
+          limits={devices.data?.limits}
           isCurrent={selected.id === currentDeviceId}
+          auditLink={auditLink}
           onClose={closePanel}
           {...(onRevoked === undefined ? {} : { onRevoked })}
         />

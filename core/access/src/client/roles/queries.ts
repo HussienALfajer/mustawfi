@@ -3,6 +3,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   permissionCatalogueSchema,
+  roleListItemSchema,
   type RoleRequest,
   roleViewSchema,
   type RoleView,
@@ -25,14 +26,14 @@ export function catalogueQueryOptions() {
   });
 }
 
-/** Every role of the store, archived ones included (online). */
+/** Every role of the store, archived ones included, each with its last change (online). */
 export function rolesQueryOptions() {
   return queryOptions({
     queryKey: rolesQueryKey,
     queryFn: async ({ signal }) =>
       (
         await apiRequest(`${BASE}/roles`, {
-          schema: z.object({ items: z.array(roleViewSchema) }),
+          schema: z.object({ items: z.array(roleListItemSchema) }),
           signal,
         })
       ).items,
@@ -50,4 +51,9 @@ export function updateRole(id: string, role: RoleRequest): Promise<RoleView> {
 
 export function archiveRole(id: string): Promise<RoleView> {
   return apiRequest(`${BASE}/roles/${id}/archive`, { method: "POST", schema: roleViewSchema });
+}
+
+/** Restores an archived role (`core-foundation` slice 20). */
+export function restoreRole(id: string): Promise<RoleView> {
+  return apiRequest(`${BASE}/roles/${id}/restore`, { method: "POST", schema: roleViewSchema });
 }

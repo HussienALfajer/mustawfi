@@ -4,17 +4,20 @@ export type { AccessContext, AccessDependencies } from "./dependencies.ts";
 export {
   activeDeviceCount,
   authenticateDevice,
+  deviceLimitUse,
   deviceRevokedAt,
   DEVICE_PREFIXES,
   type Device,
   issueRegistrationCode,
   type IssuedRegistrationCode,
+  listDeviceItems,
   listDevices,
   type NewDevice,
   recordDeviceSync,
   REGISTRATION_CODE_LIFETIME_MS,
   registerDevice,
   type RegisteredDevice,
+  renameDevice,
   reportDeviceWiped,
   revokeDevice,
 } from "./devices.ts";
@@ -55,7 +58,9 @@ export {
   copyRole,
   createRole,
   editRole,
+  listRoleItems,
   listRoles,
+  restoreRole,
   type NewRole,
   type RoleActor,
   SEEDED_ROLE_NAMES,
@@ -95,6 +100,7 @@ export {
   clearUserTwoFactor,
   createUser,
   deactivateUser,
+  listUserItems,
   listUsers,
   type NewUser,
   reactivateUser,
@@ -102,5 +108,7 @@ export {
   setUserPin,
   userAccess,
   type UserAccess,
+  usersListingDepartment,
 } from "./users.ts";
+export { namedLastChanges } from "./last-change.ts";
 export { type CheckedOverrides, checkOverrides, type RefusedOverride } from "./overrides.ts";

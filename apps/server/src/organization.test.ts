@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import {
+  type DepartmentListItem,
   type DepartmentView,
   LOGO_MAX_BYTES,
   organizationProblemCodes,
@@ -111,10 +112,10 @@ function expectProblem(
   expect(response.json()).toMatchObject({ status, code });
 }
 
-async function departments(store: Store): Promise<DepartmentView[]> {
+async function departments(store: Store): Promise<DepartmentListItem[]> {
   const response = await call(store, "GET", "/departments");
   expect(response.statusCode).toBe(200);
-  return response.json<{ items: DepartmentView[] }>().items;
+  return response.json<{ items: DepartmentListItem[] }>().items;
 }
 
 async function addDepartment(store: Store, name: string): Promise<DepartmentView> {
@@ -147,6 +148,13 @@ describe("a new tenant", () => {
         isDefault: true,
         sortOrder: 0,
         archivedAt: null,
+        // The panel's «last changed by … on …»: its creation with the tenant, by the owner.
+        lastChange: {
+          entryId: expect.any(String) as string,
+          at: clock.now().toISOString(),
+          by: { id: store.tenant.ownerId, name: "أحمد" },
+          bySupport: false,
+        },
       },
     ]);
     const profile = await call(store, "GET", "/profile");
@@ -187,14 +195,14 @@ describe("departments", () => {
       id: repairs.id,
       archivedAt: clock.now().toISOString(),
     });
-    // Archiving freed a place and the name: an archived department's name can be reused.
-    const again = await addDepartment(store, "الصيانة");
+    // Archiving freed a place, but not the name (slice 20): that one is restored instead.
+    const again = await addDepartment(store, "التحويلات");
     expect(again.sortOrder).toBe(3);
     expect((await departments(store)).map((d) => [d.name, d.archivedAt === null])).toEqual([
       [DEFAULT_DEPARTMENT_NAME, true],
       ["الصيانة", false],
       ["الإكسسوارات", true],
-      ["الصيانة", true],
+      ["التحويلات", true],
     ]);
 
     const [created] = await auditOf(store.tenant.tenantId, "organization.department.archived");
@@ -205,21 +213,121 @@ describe("departments", () => {
     });
   });
 
-  it("refuses a second active department with the same name", async () => {
-    const store = await newStore("متجر الأسماء");
-    await addDepartment(store, "الصيانة");
+  it("refuses a name another department has: trimmed, spaces collapsed, any case", async () => {
+    const store = await newStore("متجر الأسماء", 5);
+    const repairs = await addDepartment(store, "  قسم   الصيانة ");
+    // Stored the way it is compared, so people see one spelling.
+    expect(repairs.name).toBe("قسم الصيانة");
     expectProblem(
-      await call(store, "POST", "/departments", { name: " الصيانة " }),
+      await call(store, "POST", "/departments", { name: "قسم\tالصيانة" }),
       409,
       tenancyProblemCodes.departmentNameTaken,
     );
     expectProblem(
       await call(store, "PATCH", `/departments/${store.tenant.defaultDepartmentId}`, {
-        name: "الصيانة",
+        name: " قسم الصيانة",
       }),
       409,
       tenancyProblemCodes.departmentNameTaken,
     );
+    const phones = await addDepartment(store, "Phones");
+    expectProblem(
+      await call(store, "POST", "/departments", { name: "PHONES" }),
+      409,
+      tenancyProblemCodes.departmentNameTaken,
+    );
+    // Its own name in another case is a rename, not a clash.
+    const recased = await call(store, "PATCH", `/departments/${phones.id}`, { name: "phones" });
+    expect(recased.statusCode).toBe(200);
+
+    // An archived department keeps its name: typing it is answered with that department's id,
+    // so the screen can offer to restore it.
+    await call(store, "POST", `/departments/${repairs.id}/archive`);
+    for (const response of [
+      await call(store, "POST", "/departments", { name: "قسم الصيانة" }),
+      await call(store, "PATCH", `/departments/${phones.id}`, { name: "قسم  الصيانة" }),
+    ]) {
+      expectProblem(response, 409, tenancyProblemCodes.departmentNameArchived);
+      expect(response.json()).toMatchObject({ detail: repairs.id });
+    }
+    // The database holds the rule too, whatever the application checks.
+    await expect(
+      superuser.query(
+        `insert into core_tenancy.departments
+           (id, tenant_id, branch_id, created_at, created_by, name, is_default, sort_order)
+         select gen_random_uuid(), tenant_id, branch_id, now(), created_by, 'PHONES', false, 9
+           from core_tenancy.departments where id = $1`,
+        [phones.id],
+      ),
+    ).rejects.toThrow(/departments_name_per_tenant/);
+  });
+
+  it("restores an archived department within the license's limit, audited", async () => {
+    const store = await newStore("متجر الاستعادة", 2);
+    const repairs = await addDepartment(store, "الصيانة");
+    await call(store, "POST", `/departments/${repairs.id}/archive`);
+    const other = await addDepartment(store, "الإكسسوارات");
+    // Two active of two: the archived one cannot come back until a place is free.
+    expectProblem(
+      await call(store, "POST", `/departments/${repairs.id}/restore`),
+      409,
+      tenancyProblemCodes.departmentLimit,
+    );
+    await call(store, "POST", `/departments/${other.id}/archive`);
+    clock.advance(60_000);
+    const restored = await call(store, "POST", `/departments/${repairs.id}/restore`);
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toMatchObject({ id: repairs.id, name: "الصيانة", archivedAt: null });
+    expectProblem(
+      await call(store, "POST", `/departments/${repairs.id}/restore`),
+      409,
+      tenancyProblemCodes.departmentNotArchived,
+    );
+    expectProblem(
+      await call(store, "POST", `/departments/${store.tenant.tenantId}/restore`),
+      404,
+      tenancyProblemCodes.departmentNotFound,
+    );
+    const [entry] = await auditOf(store.tenant.tenantId, "organization.department.restored");
+    expect(entry).toMatchObject({
+      entity_id: repairs.id,
+      created_by: store.tenant.ownerId,
+      before: { archivedAt: expect.any(String) as string },
+      after: { archivedAt: null, usersInScope: [] },
+    });
+    // The panel's last line names the restore.
+    const listed = (await departments(store)).find((d) => d.id === repairs.id);
+    expect(listed?.lastChange).toMatchObject({
+      at: clock.now().toISOString(),
+      by: { id: store.tenant.ownerId, name: "أحمد" },
+    });
+  });
+
+  it("gives a restored department back to the users whose scope listed it", async () => {
+    const store = await newStore("متجر النطاق", 3);
+    const repairs = await addDepartment(store, "الصيانة");
+    const cashier = await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "cashier", permissions: [], departments: [repairs.id] },
+      dependencies,
+    );
+    await call(store, "POST", `/departments/${repairs.id}/archive`);
+    const scopeOf = async () => {
+      const users = await server.inject({
+        method: "GET",
+        url: "/api/v1/access/users",
+        headers: { authorization: `Bearer ${store.token}` },
+      });
+      return users
+        .json<{ items: { id: string; departments: string[] }[] }>()
+        .items.find((user) => user.id === cashier.userId)?.departments;
+    };
+    expect(await scopeOf()).toEqual([]);
+    expect((await call(store, "POST", `/departments/${repairs.id}/restore`)).statusCode).toBe(200);
+    expect(await scopeOf()).toEqual([repairs.id]);
+    const [entry] = await auditOf(store.tenant.tenantId, "organization.department.restored");
+    expect(entry).toMatchObject({ after: { usersInScope: [cashier.userId] } });
   });
 
   it("renames active departments, the default included, audited with before and after", async () => {
@@ -296,6 +404,13 @@ describe("departments", () => {
       404,
       tenancyProblemCodes.departmentNotFound,
     );
+    expectProblem(
+      await call(mine, "POST", `/departments/${their.id}/restore`),
+      404,
+      tenancyProblemCodes.departmentNotFound,
+    );
+    // Names are unique per tenant: another store's department takes nothing from this one.
+    expect((await addDepartment(mine, "الصيانة")).name).toBe("الصيانة");
   });
 
   it("are changed only with organization.departments.manage and organization.profile.edit", async () => {
@@ -310,6 +425,7 @@ describe("departments", () => {
       call(store, "POST", "/departments", { name: "الإكسسوارات" }),
       call(store, "PATCH", `/departments/${repairs.id}`, { name: "الورشة" }),
       call(store, "POST", `/departments/${repairs.id}/archive`),
+      call(store, "POST", `/departments/${repairs.id}/restore`),
     ];
     const profileWrites = (store: Store) => [
       call(store, "PUT", "/profile", { name: "متجر" }),
@@ -475,12 +591,19 @@ describe("pull", () => {
       changes: { entity: string; id: string; row: Record<string, unknown> | null }[];
     }>();
 
-    // Each change carries the full row as the API shows it; archived departments included.
+    // Each change carries the full row as the API shows it, archived departments included,
+    // without the list's last change, which only the screen shows.
     const latest = new Map(changes.map((c) => [c.id, c]));
     const profile = (await call(store, "GET", "/profile")).json<StoreProfileView>();
     expect(
       [...latest.values()].filter((c) => c.entity === "organization.department").map((c) => c.row),
-    ).toEqual(await departments(store));
+    ).toEqual(
+      (await departments(store)).map((department) => {
+        const { lastChange, ...row } = department;
+        expect(lastChange).not.toBeUndefined();
+        return row;
+      }),
+    );
     expect(latest.get(profile.id)).toEqual({
       entity: "organization.storeProfile",
       id: profile.id,

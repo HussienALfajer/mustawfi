@@ -22,14 +22,20 @@ import {
   currentDeviceSchema,
   currentSessionSchema,
   deactivateUserRequestSchema,
+  deviceListSchema,
   deviceViewSchema,
+  logoutRequestSchema,
+  signOutReasonSchema,
   newUserRequestSchema,
   permissionCatalogueSchema,
+  renameDeviceRequestSchema,
+  roleListItemSchema,
   roleRequestSchema,
   roleViewSchema,
   setPasswordRequestSchema,
   setPinRequestSchema,
   userChangeRequestSchema,
+  userListItemSchema,
   userViewSchema,
   loginRequestSchema,
   loginResponseSchema,
@@ -43,16 +49,18 @@ import {
 import type { Manager } from "./actor.ts";
 import type { AccessContext } from "./dependencies.ts";
 import {
+  deviceLimitUse,
   issueRegistrationCode,
-  listDevices,
+  listDeviceItems,
   registerDevice,
   registrationFailed,
+  renameDevice,
   reportDeviceWiped,
   revokeDevice,
 } from "./devices.ts";
 import { type LoggedIn, logIn, logInWithPin, type SignInSource } from "./login.ts";
 import { resetPasswordWithCode } from "./reset-codes.ts";
-import { archiveRole, copyRole, editRole, listRoles } from "./roles.ts";
+import { archiveRole, copyRole, editRole, listRoleItems, restoreRole } from "./roles.ts";
 import { deviceOf, type RouteAccess, type RouteConfig, sessionOf } from "./route-access.ts";
 import {
   CLEARED_SESSION_COOKIE,
@@ -72,7 +80,7 @@ import {
   changeUser,
   clearUserTwoFactor,
   deactivateUser,
-  listUsers,
+  listUserItems,
   reactivateUser,
   setUserPassword,
   setUserPin,
@@ -226,12 +234,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: { access: "session", allowedWhenReadOnly: true },
       schema: {
         tags,
+        body: logoutRequestSchema,
         response: { 204: z.null(), 401: problemDetailsSchema, 403: problemDetailsSchema },
       },
     },
     async (request, reply) => {
       const session = sessionOf(request);
-      await revokeSession(context.tenants, session, context);
+      const reason = signOutReasonSchema.safeParse(request.body?.reason).data ?? "signedOut";
+      await revokeSession(context.tenants, session, context, reason);
       return reply.status(204).header("set-cookie", CLEARED_SESSION_COOKIE).send(null);
     },
   );
@@ -305,11 +315,11 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       },
     },
     async (request, reply) => {
-      const { storeCode, registrationCode, type, name } = request.body;
+      const { storeCode, registrationCode, type, platform, name } = request.body;
       const tenantId = await context.tenants.resolveStoreCode(storeCode);
       if (tenantId === undefined) throw registrationFailed();
       const registered = await context.tenants.withTenant({ tenantId }, (tx) =>
-        registerDevice(tx, { tenantId, registrationCode, type, name }, context),
+        registerDevice(tx, { tenantId, registrationCode, type, platform, name }, context),
       );
       return reply.status(201).send(registered);
     },
@@ -321,14 +331,20 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: { access: "device" },
       schema: { tags, response: { 200: currentDeviceSchema, 401: problemDetailsSchema } },
     },
-    (request) => {
+    async (request) => {
       const device = deviceOf(request);
+      const limit = await context.tenants.withTenant(
+        { tenantId: device.tenantId, deviceId: device.deviceId },
+        (tx) => deviceLimitUse(tx, device.type),
+      );
       return {
         deviceId: device.deviceId,
         tenantId: device.tenantId,
         prefix: device.prefix,
         type: device.type,
+        platform: device.platform,
         name: device.name,
+        limit,
       };
     },
   );
@@ -355,17 +371,38 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: manageDevices,
       schema: {
         tags,
-        response: { 200: z.object({ items: z.array(deviceViewSchema) }), ...refusals },
+        response: { 200: deviceListSchema, ...refusals },
       },
     },
     async (request) => {
       const session = sessionOf(request);
-      const items = await context.tenants.withTenant(
+      return context.tenants.withTenant(
         { tenantId: session.tenantId, userId: session.user.id },
-        (tx) => listDevices(tx),
+        (tx) => listDeviceItems(tx),
       );
-      return { items };
     },
+  );
+
+  app.patch(
+    "/devices/:id",
+    {
+      config: manageDevices,
+      schema: {
+        tags,
+        params: idParamsSchema,
+        body: renameDeviceRequestSchema,
+        response: { 200: deviceViewSchema, ...refusals },
+      },
+    },
+    (request) =>
+      asManager(sessionOf(request), (tx, manager) =>
+        renameDevice(
+          tx,
+          manager,
+          { deviceId: request.params.id, name: request.body.name },
+          context,
+        ),
+      ),
   );
 
   app.post(
@@ -419,12 +456,12 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: viewUsers,
       schema: {
         tags,
-        response: { 200: z.object({ items: z.array(roleViewSchema) }), ...refusals },
+        response: { 200: z.object({ items: z.array(roleListItemSchema) }), ...refusals },
       },
     },
     async (request) => {
       const items = await asManager(sessionOf(request), (tx) =>
-        listRoles(tx, context.permissionCatalogue),
+        listRoleItems(tx, context.permissionCatalogue),
       );
       return { items };
     },
@@ -479,17 +516,29 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       ),
   );
 
+  app.post(
+    "/roles/:id/restore",
+    {
+      config: manageRoles,
+      schema: { tags, params: idParamsSchema, response: { 200: roleViewSchema, ...refusals } },
+    },
+    async (request) =>
+      asManager(sessionOf(request), (tx, manager) =>
+        restoreRole(tx, manager, request.params.id, context.permissionCatalogue, context),
+      ),
+  );
+
   app.get(
     "/users",
     {
       config: viewUsers,
       schema: {
         tags,
-        response: { 200: z.object({ items: z.array(userViewSchema) }), ...refusals },
+        response: { 200: z.object({ items: z.array(userListItemSchema) }), ...refusals },
       },
     },
     async (request) => {
-      const items = await asManager(sessionOf(request), (tx) => listUsers(tx));
+      const items = await asManager(sessionOf(request), (tx) => listUserItems(tx));
       return { items };
     },
   );

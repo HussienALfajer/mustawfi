@@ -108,9 +108,9 @@ export const departments = coreTenancy.table(
     uniqueIndex("departments_one_default_per_tenant")
       .on(t.tenantId)
       .where(sql`${t.isDefault}`),
-    uniqueIndex("departments_active_name_per_tenant")
-      .on(t.tenantId, t.name)
-      .where(sql`${t.archivedAt} is null`),
+    // Archived ones included, case-insensitive: typing an archived one's name offers to restore
+    // it (`core-foundation` slice 20). Names are stored with their spaces collapsed.
+    uniqueIndex("departments_name_per_tenant").on(t.tenantId, sql`lower(${t.name})`),
     // Target of tenant-scoped foreign keys (user scopes, journal lines, documents).
     unique("departments_id_per_tenant").on(t.tenantId, t.id),
     check(

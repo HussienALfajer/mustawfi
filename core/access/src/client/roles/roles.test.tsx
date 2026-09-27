@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
 import { createI18n } from "@mustawfi/i18n";
 import { ToastProvider, UI_NAMESPACE, uiMessages } from "@mustawfi/ui";
 import "@testing-library/jest-dom/vitest";
@@ -25,6 +26,7 @@ const salesFixture = {
 const i18n = createI18n({
   [UI_NAMESPACE]: uiMessages,
   [ACCESS_NAMESPACE]: accessMessages,
+  [AUDIT_NAMESPACE]: auditMessages,
   sales: salesFixture,
 });
 
@@ -137,7 +139,9 @@ function fakeApi(roles: RoleView[], answers: Record<string, () => Response> = {}
     const answer = answers[`${method} ${url}`];
     if (answer !== undefined) return Promise.resolve(answer());
     if (url.endsWith("/catalogue")) return Promise.resolve(Response.json(CATALOGUE));
-    return Promise.resolve(Response.json({ items: roles }));
+    return Promise.resolve(
+      Response.json({ items: roles.map((item) => ({ lastChange: null, ...item })) }),
+    );
   });
   return calls;
 }
@@ -290,6 +294,44 @@ describe("RolesScreen", () => {
     const dialog = screen.getByRole("alertdialog", { name: /أرشفة الدور «كاشير القسم»/ });
     await userEvent.click(within(dialog).getByRole("button", { name: "أرشفة" }));
     expect(await within(panel).findByRole("alert")).toHaveTextContent(/يحمل هذا الدور مستخدمون/);
+  });
+
+  it("restores an archived role from its panel with no confirmation", async () => {
+    const calls = fakeApi([OWNER, CASHIER, OLD], {
+      [`POST /api/v1/access/roles/${OLD.id}/restore`]: () =>
+        Response.json({ ...OLD, archivedAt: null }),
+    });
+    renderScreen({ status: "archived", selected: OLD.id });
+    const panel = await screen.findByRole("complementary", { name: "مؤقت" });
+    await userEvent.click(within(panel).getByRole("button", { name: "استعادة الدور" }));
+    expect(
+      await within(screen.getByRole("region", { name: uiMessages.toast.region })).findByRole(
+        "list",
+      ),
+    ).toHaveTextContent("استُعيد الدور «مؤقت»");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(calls.filter((call) => call.url.endsWith("/restore"))).toHaveLength(1);
+    expect(JSON.parse(screen.getByTestId("filters").textContent ?? "")).toMatchObject({
+      status: "all",
+      selected: OLD.id,
+    });
+  });
+
+  it("offers to restore an archived role whose name is typed for a new one", async () => {
+    const calls = fakeApi([OWNER, CASHIER, OLD], {
+      [`POST /api/v1/access/roles/${OLD.id}/restore`]: () =>
+        Response.json({ ...OLD, archivedAt: null }),
+    });
+    renderScreen({ selected: "new" });
+    const panel = await screen.findByRole("complementary", { name: "دور جديد" });
+    await userEvent.type(within(panel).getByLabelText(/اسم الدور/), "مؤقت ");
+    const offer = within(panel).getByRole("status");
+    expect(offer).toHaveTextContent("يوجد دور مؤرشف باسم «مؤقت»");
+    await userEvent.click(within(offer).getByRole("button", { name: "استعادة «مؤقت»" }));
+    expect(await screen.findByRole("complementary", { name: "مؤقت" })).toBeVisible();
+    expect(calls.filter((call) => call.method === "POST").map((call) => call.url)).toEqual([
+      `/api/v1/access/roles/${OLD.id}/restore`,
+    ]);
   });
 
   it("shows roles read-only to a role that may only view them", async () => {

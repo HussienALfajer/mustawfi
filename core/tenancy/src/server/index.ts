@@ -25,6 +25,7 @@ export {
   listDepartments,
   type NewDepartment,
   renameDepartment,
+  restoreDepartment,
 } from "./departments.ts";
 export {
   currentLicense,

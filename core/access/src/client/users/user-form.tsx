@@ -1,3 +1,4 @@
+import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import {
@@ -29,6 +30,7 @@ import {
   type RoleView,
   type UserChangeRequest,
   userNameSchema,
+  type UserListItem,
   type UserView,
 } from "../../shared/index.ts";
 import { ACCESS_NAMESPACE } from "../messages.ts";
@@ -146,7 +148,7 @@ export function checkUserDraft(
 
 export interface UserPanelProps {
   /** The user shown, or `null` for a new one. */
-  readonly user: UserView | null;
+  readonly user: UserListItem | null;
   readonly roles: readonly RoleView[];
   /** The store's departments, archived ones included. */
   readonly departments: readonly DepartmentOption[];
@@ -156,6 +158,8 @@ export interface UserPanelProps {
   readonly viewer: { readonly id: string; readonly isOwner: boolean; readonly canManage: boolean };
   readonly onClose: () => void;
   readonly onSaved: (user: UserView) => void;
+  /** The last line's link to the record's history, for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
@@ -172,6 +176,7 @@ export function UserPanel({
   viewer,
   onClose,
   onSaved,
+  auditLink,
 }: UserPanelProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const queryClient = useQueryClient();
@@ -472,6 +477,11 @@ export function UserPanel({
       {user !== null && editable && !isSelf ? (
         <SecretsSection user={user} viewerIsOwner={viewer.isOwner} onSaved={settle} />
       ) : null}
+      {user === null ? null : (
+        <div className="mt-4">
+          <LastChangeLine entityId={user.id} lastChange={user.lastChange} auditLink={auditLink} />
+        </div>
+      )}
       {user === null ? null : (
         <ConfirmDialog
           isOpen={confirming}

@@ -186,6 +186,7 @@ describe("the device credential moves to the OS secure store (ADR-0022)", () => 
     const store = memorySecureStore();
     const input: RegisterThisDeviceInput = {
       type: "mainPos",
+      platform: "windows",
       storeCode: "AB2CD3",
       registrationCode: "R1",
       name: "الصندوق",
@@ -220,6 +221,7 @@ describe("the device credential moves to the OS secure store (ADR-0022)", () => 
     };
     const input: RegisterThisDeviceInput = {
       type: "mainPos",
+      platform: "windows",
       storeCode: "AB2CD3",
       registrationCode: "R1",
       name: "الصندوق",

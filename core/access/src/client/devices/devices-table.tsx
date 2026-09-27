@@ -4,6 +4,7 @@ import type { Ref } from "react";
 import { useTranslation } from "react-i18next";
 import type { DeviceView } from "../../shared/index.ts";
 import { ACCESS_NAMESPACE } from "../messages.ts";
+import { useDeviceKind } from "./device-kind.tsx";
 
 const INSTANT = new Intl.DateTimeFormat(`${LOCALE}-u-nu-latn`, {
   dateStyle: "medium",
@@ -36,7 +37,7 @@ export interface DevicesTableProps {
   readonly tableRef?: Ref<HTMLTableElement>;
 }
 
-/** The devices list: name, type, prefix, last sync, and the status as a word. */
+/** The devices list: name, type in words with its platform, prefix, last sync, and status. */
 export function DevicesTable({
   devices,
   currentDeviceId,
@@ -45,6 +46,7 @@ export function DevicesTable({
   tableRef,
 }: DevicesTableProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
+  const kind = useDeviceKind();
   const columns: DataColumn<DeviceView>[] = [
     {
       id: "name",
@@ -57,7 +59,11 @@ export function DevicesTable({
         </span>
       ),
     },
-    { id: "type", header: t("devices.column.type"), cell: (row) => t(`device.types.${row.type}`) },
+    {
+      id: "type",
+      header: t("devices.column.type"),
+      cell: (row) => kind(row.type, row.platform),
+    },
     {
       id: "prefix",
       header: t("devices.column.prefix"),

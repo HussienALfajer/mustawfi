@@ -26,6 +26,7 @@ import {
   permissionCatalogueSchema,
   sessionUserAccess,
   type sessionUserSchema,
+  type SignOutReason,
 } from "../../shared/index.ts";
 import { ACCESS_DEVICE_TABLE, localDevice } from "../device.ts";
 import {
@@ -236,7 +237,7 @@ export async function restoreDeviceSession(
   if (device === undefined) return;
   const session = await localSession(db);
   if (session !== undefined && isIdle(await lastActivityAt(db), clock.now(), idleMs)) {
-    await lockDevice(db);
+    await lockDevice(db, "idle");
     return;
   }
   if (session === undefined || !session.serverSession) forgetSession();
@@ -268,16 +269,20 @@ export async function beginDeviceSession(
 }
 
 /**
- * Ends the session on this device — auto-lock, switching user, or signing out (rules 24–25):
- * the local session goes, and the server session with it, told to the server when it can be;
- * offline, the token is forgotten and a cookie is no longer sent.
+ * Ends the session on this device — auto-lock, switching user, or an idle session found at
+ * start-up (rules 24–25): the local session goes, and the server session with it, told to the
+ * server with `reason` when it can be; offline, the token is forgotten and a cookie is no
+ * longer sent.
  */
-export async function lockDevice(db: LocalDb): Promise<void> {
+export async function lockDevice(
+  db: LocalDb,
+  reason: Exclude<SignOutReason, "signedOut">,
+): Promise<void> {
   const session = await localSession(db);
   await endLocalSession(db);
   if (session?.serverSession === true && hasSessionCredential()) {
     // Built with the session before it is forgotten below.
-    endServerSessionInBackground(PIN_SERVER_TIMEOUT_MS);
+    endServerSessionInBackground(PIN_SERVER_TIMEOUT_MS, reason);
   }
   forgetSession();
 }

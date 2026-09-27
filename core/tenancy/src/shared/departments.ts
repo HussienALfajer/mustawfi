@@ -1,9 +1,14 @@
+import { recordNameSchema } from "@mustawfi/core-config/shared";
 import { z } from "zod";
 
 /** The name of the default department seeded with every tenant (`core-foundation` rule 28). */
 export const DEFAULT_DEPARTMENT_NAME = "المتجر";
 
-export const departmentNameSchema = z.string().trim().min(1).max(100);
+/**
+ * A department's name: stored with its spaces collapsed, and unique among all of the tenant's
+ * departments, archived ones included, compared case-insensitively (`core-foundation` slice 20).
+ */
+export const departmentNameSchema = recordNameSchema;
 
 /** A department as its managers and devices see it. */
 export const departmentSchema = z.object({
@@ -34,8 +39,12 @@ export const tenancyProblemCodes = {
   licenseReadOnly: "tenancy.license.readOnly",
   /** The license is suspended: only owners' sessions are accepted (rule 5). */
   licenseSuspended: "tenancy.license.suspended",
-  /** Another active department has this name. */
+  /** Another active department has this name (compared as `nameKey` does). */
   departmentNameTaken: "tenancy.department.nameTaken",
+  /** An archived department has this name: restore it instead of adding another. */
+  departmentNameArchived: "tenancy.department.nameArchived",
+  /** Only an archived department is restored. */
+  departmentNotArchived: "tenancy.department.notArchived",
   /** No department with this id in the tenant. */
   departmentNotFound: "tenancy.department.notFound",
   /** The department is archived: it cannot be renamed or archived again. */

@@ -18,6 +18,8 @@ import { and, eq } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
 import {
+  currentDeviceSchema,
+  type DevicePlatform,
   type DeviceType,
   registeredDeviceSchema,
   registrationCodeResponseSchema,
@@ -126,6 +128,28 @@ export function localDeviceQueryOptions(db: LocalDb) {
     queryFn: async () => (await localDevice(db)) ?? null,
     networkMode: "always",
     meta: { localTables: [ACCESS_DEVICE_TABLE] },
+  });
+}
+
+/**
+ * This device as the server knows it (online): its name — an owner may have renamed it — and the
+ * license limit its type counts against, as used of allowed (`core-foundation` slice 20). Out of
+ * reach, or before registration, the query fails or answers `null` and «This device» shows what
+ * the local database holds.
+ */
+export function currentDeviceQueryOptions(db: LocalDb) {
+  return queryOptions({
+    queryKey: ["access", "devices", "current"] as const,
+    queryFn: async ({ signal }) => {
+      const credential = await localDeviceCredential(db);
+      if (credential === undefined) return null;
+      return apiRequest("/api/v1/access/devices/current", {
+        schema: currentDeviceSchema,
+        bearer: credential,
+        signal,
+      });
+    },
+    retry: false,
   });
 }
 
@@ -267,6 +291,8 @@ export interface RegisterThisDeviceInput {
    * browser, a limited client (ADR-0010, ADR-0019), as a companion.
    */
   readonly type: DeviceType;
+  /** What it runs on, recorded with the type (`core-foundation` slice 20). */
+  readonly platform: DevicePlatform;
   readonly storeCode: string;
   readonly registrationCode: string;
   readonly name: string;

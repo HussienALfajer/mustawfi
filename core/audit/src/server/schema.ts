@@ -36,5 +36,9 @@ export const entries = coreAudit.table(
     /** Why, as the person who acted typed it, when the action asks (deactivating a user). */
     reason: text(),
   },
-  (t) => [index("entries_by_time").on(t.tenantId, t.createdAt)],
+  (t) => [
+    index("entries_by_time").on(t.tenantId, t.createdAt),
+    // A record's history and its last change (`core-foundation` slice 20).
+    index("entries_by_entity").on(t.tenantId, t.entityId, t.createdAt),
+  ],
 );

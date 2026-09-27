@@ -1,5 +1,6 @@
+import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
-import { limitValueSchema } from "@mustawfi/core-config/shared";
+import { limitValueSchema, nameKey } from "@mustawfi/core-config/shared";
 import {
   Badge,
   Button,
@@ -15,13 +16,19 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { accessProblemCodes, roleNameSchema, type RoleView } from "../../shared/index.ts";
+import {
+  accessProblemCodes,
+  type RoleListItem,
+  roleNameSchema,
+  type RoleView,
+} from "../../shared/index.ts";
 import { ACCESS_NAMESPACE } from "../messages.ts";
 import { limitLabelKey, moduleNamespace, permissionLabelKey } from "../permission-labels.ts";
 import {
   archiveRole,
   createRole,
   type PermissionCatalogueView,
+  restoreRole,
   rolesQueryKey,
   updateRole,
 } from "./queries.ts";
@@ -33,6 +40,10 @@ export function roleProblem(error: unknown): string {
   switch (error.code) {
     case accessProblemCodes.roleNameTaken:
       return "nameTaken";
+    case accessProblemCodes.roleNameArchived:
+      return "nameArchived";
+    case accessProblemCodes.roleNotArchived:
+      return "notArchived";
     case accessProblemCodes.roleInvalid:
       return "roleInvalid";
     case accessProblemCodes.ownerRoleFixed:
@@ -93,9 +104,14 @@ function draftOf(role: RoleView | null, copyName?: string): RoleDraft {
   };
 }
 
+/** Refusals said on the name field rather than under the form. */
+const NAME_PROBLEMS = new Set(["nameTaken", "nameArchived"]);
+
 export interface RolePanelProps {
   /** The role shown, or `null` for a new one. */
-  readonly role: RoleView | null;
+  readonly role: RoleListItem | null;
+  /** Every role of the store, archived ones included: a new name is checked against them. */
+  readonly roles: readonly RoleListItem[];
   /** A new role starts as a copy of this one (its permissions and limits). */
   readonly source?: RoleView | undefined;
   readonly catalogue: PermissionCatalogueView;
@@ -103,23 +119,33 @@ export interface RolePanelProps {
   readonly canManage: boolean;
   readonly onClose: () => void;
   readonly onSaved: (role: RoleView) => void;
+  /** After a restore — of this role, or of the archived one a new name matched. */
+  readonly onRestored: (role: RoleView) => void;
   /** Opens a new panel that copies `role`. */
   readonly onCopy: (role: RoleView) => void;
+  /** The last line's link to the record's history, for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
  * A role in the side panel: its name and the permission matrix, grouped by the module that
  * declares each permission, with the limits under their module. The owner role and archived
- * roles are shown read-only; a role is copied into a new panel, then saved as a new role.
+ * roles are shown read-only; a role is copied into a new panel, then saved as a new role. An
+ * archived role is restored with no confirmation, and typing an archived role's name for a new
+ * one offers to restore that one instead (`core-foundation` slice 20). The panel ends with its
+ * last change.
  */
 export function RolePanel({
   role,
+  roles,
   source,
   catalogue,
   canManage,
   onClose,
   onSaved,
+  onRestored,
   onCopy,
+  auditLink,
 }: RolePanelProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const queryClient = useQueryClient();
@@ -155,7 +181,16 @@ export function RolePanel({
       onSaved(saved);
     },
     onError: (error) => {
-      if (roleProblem(error) === "nameTaken") setNameError(t("roles.problem.nameTaken"));
+      const problem = roleProblem(error);
+      if (NAME_PROBLEMS.has(problem)) setNameError(t(`roles.problem.${problem}`));
+    },
+  });
+  const restore = useMutation({
+    mutationFn: (id: string) => restoreRole(id),
+    onSuccess: async (restored) => {
+      toast.show(t("roles.restore.done", { name: restored.name }));
+      await queryClient.invalidateQueries({ queryKey: rolesQueryKey });
+      onRestored(restored);
     },
   });
   const archive = useMutation({
@@ -176,6 +211,7 @@ export function RolePanel({
   const submit = () => {
     save.reset();
     archive.reset();
+    restore.reset();
     const name = roleNameSchema.safeParse(draft.name);
     setNameError(
       name.success
@@ -207,10 +243,15 @@ export function RolePanel({
     if (!readOnly) submit();
   });
 
-  const failure = [save.error, archive.error]
+  const failure = [save.error, archive.error, restore.error]
     .filter((error) => error !== null)
     .map((error) => roleProblem(error))
-    .find((problem) => problem !== "nameTaken");
+    .find((problem) => !NAME_PROBLEMS.has(problem));
+  // An archived role with the name typed for a new one: restoring it is offered instead.
+  const archivedMatch =
+    role === null && canManage && nameKey(draft.name) !== ""
+      ? roles.find((r) => r.archivedAt !== null && nameKey(r.name) === nameKey(draft.name))
+      : undefined;
   const title =
     role?.name ??
     (source === undefined
@@ -223,7 +264,26 @@ export function RolePanel({
       closeLabel={t("roles.panel.close")}
       onClose={onClose}
       footer={
-        !canManage || archived ? undefined : (
+        !canManage ? undefined : archived ? (
+          <>
+            <Button
+              isPending={restore.isPending}
+              onPress={() => {
+                restore.mutate(role.id);
+              }}
+            >
+              {t("roles.panel.restore")}
+            </Button>
+            <Button
+              variant="secondary"
+              onPress={() => {
+                onCopy(role);
+              }}
+            >
+              {t("roles.panel.copy")}
+            </Button>
+          </>
+        ) : (
           <>
             {role?.isOwner === true ? null : (
               <Button aria-keyshortcuts="Control+S" isPending={save.isPending} onPress={submit}>
@@ -291,6 +351,25 @@ export function RolePanel({
           autoFocus={role === null}
           autoComplete="off"
         />
+        <div role="status">
+          {archivedMatch === undefined ? null : (
+            <div className="flex flex-col items-start gap-2 rounded-sm bg-sunken px-3 py-2">
+              <p className="text-sm text-text">
+                {t("roles.restore.offer", { name: archivedMatch.name })}
+              </p>
+              <Button
+                variant="secondary"
+                isPending={restore.isPending}
+                onPress={() => {
+                  save.reset();
+                  restore.mutate(archivedMatch.id);
+                }}
+              >
+                {t("roles.restore.action", { name: archivedMatch.name })}
+              </Button>
+            </div>
+          )}
+        </div>
         {role?.isOwner === true ? <Note>{t("roles.panel.ownerNote")}</Note> : null}
         {role !== null && role.template !== null && !role.isOwner ? (
           <Note>{t("roles.panel.templateNote")}</Note>
@@ -308,6 +387,9 @@ export function RolePanel({
           <p role="alert" className="text-text-negative">
             {t(`roles.problem.${failure}`)}
           </p>
+        )}
+        {role === null ? null : (
+          <LastChangeLine entityId={role.id} lastChange={role.lastChange} auditLink={auditLink} />
         )}
       </form>
       {role === null ? null : (

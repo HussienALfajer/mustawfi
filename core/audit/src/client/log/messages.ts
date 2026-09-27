@@ -11,6 +11,7 @@ export const auditLogMessages = {
     dates: "الفترة",
     clear: "مسح التصفية",
     rangeReversed: "تاريخ البداية بعد تاريخ النهاية",
+    entity: "يعرض سجل عنصر واحد، من سطر «آخر تعديل» في لوحته. امسح التصفية لرؤية السجل كله.",
   },
   column: {
     occurredAt: "وقت الحدث",

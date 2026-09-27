@@ -1,3 +1,4 @@
+import type { AuditLink } from "@mustawfi/core-audit/client";
 import { ApiUnreachable } from "@mustawfi/core-config/client";
 import {
   Button,
@@ -46,6 +47,8 @@ export interface DepartmentsScreenProps {
   readonly filters: DepartmentFilters;
   /** Replaces the filters (in the URL); unchanged keys are passed through. */
   readonly onFiltersChange: (next: DepartmentFilters) => void;
+  /** Links a panel's last line to the record's history; only for readers of the audit log. */
+  readonly auditLink?: AuditLink | undefined;
 }
 
 /**
@@ -53,7 +56,7 @@ export interface DepartmentsScreenProps {
  * The arrow keys move the selection and the panel follows; `N` opens a new one; `Esc` closes
  * the panel and gives focus back to the list.
  */
-export function DepartmentsScreen({ filters, onFiltersChange }: DepartmentsScreenProps) {
+export function DepartmentsScreen({ filters, onFiltersChange, auditLink }: DepartmentsScreenProps) {
   const { t } = useTranslation(ORGANIZATION_NAMESPACE);
   const departments = useQuery(departmentsQueryOptions());
   const tableRef = useRef<HTMLTableElement>(null);
@@ -161,7 +164,18 @@ export function DepartmentsScreen({ filters, onFiltersChange }: DepartmentsScree
           // A new panel for each department: its form starts from that department.
           key={selected === null || selected.id === added ? "new" : selected.id}
           department={selected}
+          departments={departments.data ?? []}
+          auditLink={auditLink}
           onClose={closePanel}
+          onRestored={(restored) => {
+            setAdded(undefined);
+            // The restored department stays open, whatever the filter hid.
+            onFiltersChange({
+              status: filters.status === "archived" ? "all" : filters.status,
+              q: filters.selected === "new" ? "" : filters.q,
+              selected: restored.id,
+            });
+          }}
           onSaved={(saved) => {
             if (filters.selected !== "new") return;
             setAdded(saved.id);
