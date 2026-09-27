@@ -1,8 +1,8 @@
 import { type AuditEntry, recordAudit } from "@mustawfi/core-audit/server";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import { ProblemError } from "@mustawfi/core-config/server";
-import { Decimal, type IdGenerator } from "@mustawfi/kernel";
-import { accessProblemCodes, type RoleHoldings } from "../shared/index.ts";
+import type { IdGenerator } from "@mustawfi/kernel";
+import { accessProblemCodes, beyondGrant, type RoleHoldings } from "../shared/index.ts";
 
 /** Who changes roles or users, where, and when. */
 export interface RoleActor {
@@ -26,8 +26,6 @@ export interface Manager extends RoleActor {
   readonly limits: Readonly<Record<string, string>>;
 }
 
-const NOTHING: RoleHoldings = { permissions: [], limits: {} };
-
 /**
  * A non-owner grants nothing they do not hold (`core-foundation` slice 6, user decision
  * 2026-09-26): every permission `holdings` adds to `before` must be one `manager` holds, and
@@ -38,24 +36,13 @@ const NOTHING: RoleHoldings = { permissions: [], limits: {} };
 export function checkGrantable(
   manager: Manager,
   holdings: RoleHoldings,
-  before: RoleHoldings = NOTHING,
+  before?: RoleHoldings,
 ): void {
-  if (manager.isOwner) return;
-  const held = new Set(manager.permissions);
-  const permissions = holdings.permissions.filter(
-    (permission) => !before.permissions.includes(permission) && !held.has(permission),
-  );
-  const limits = Object.entries(holdings.limits)
-    .filter(([limit, value]) => {
-      const prior = before.limits[limit];
-      if (prior !== undefined && !Decimal.of(value).greaterThan(Decimal.of(prior))) return false;
-      return Decimal.of(value).greaterThan(Decimal.of(manager.limits[limit] ?? "0"));
-    })
-    .map(([limit]) => limit);
-  if (permissions.length > 0 || limits.length > 0) {
+  const beyond = beyondGrant(manager, holdings, before);
+  if (beyond.length > 0) {
     throw new ProblemError(accessProblemCodes.beyondOwnGrant, 403, {
       title: "You cannot grant what your own role does not hold",
-      detail: [...permissions, ...limits].join(", "),
+      detail: beyond.join(", "),
     });
   }
 }

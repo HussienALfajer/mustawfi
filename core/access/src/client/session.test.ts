@@ -1,10 +1,11 @@
-import { configureApi } from "@mustawfi/core-config/client";
+import { ApiProblem, configureApi } from "@mustawfi/core-config/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { accessProblemCodes } from "../shared/index.ts";
 import {
   endServerSessionInBackground,
   fetchSession,
   serverSessionEnded,
+  sessionEndNotice,
   signIn,
   signOut,
 } from "./session.ts";
@@ -172,5 +173,21 @@ describe("a sign-in after a session ended in the background", () => {
       "logout answered",
       "sent /api/v1/access/login",
     ]);
+  });
+});
+
+describe("what sign-in says when a session ends (QA slice 26)", () => {
+  const required = (detail?: string) =>
+    new ApiProblem(accessProblemCodes.sessionRequired, 401, undefined, detail);
+
+  it("names the fifth wrong current secret when the answer says so, signed in or not", () => {
+    expect(sessionEndNotice(required("currentSecretFailures"), true)).toBe("currentSecret");
+    expect(sessionEndNotice(required("currentSecretFailures"), false)).toBe("currentSecret");
+  });
+
+  it("says a session ended only to a user who was signed in, whatever else the answer says", () => {
+    expect(sessionEndNotice(required(), true)).toBe("ended");
+    expect(sessionEndNotice(required("something else"), true)).toBe("ended");
+    expect(sessionEndNotice(required(), false)).toBeUndefined();
   });
 });

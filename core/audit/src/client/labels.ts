@@ -24,3 +24,30 @@ export function auditVariantLabelKey(
   const { ns, key } = auditLabelKey(action);
   return { ns, key: `${key}For.${reason}` };
 }
+
+/**
+ * Where the audit log finds the name of a record type (`access.user` → `access:auditEntity.user`),
+ * in the writing module's namespace like its action labels (`core-foundation` QA slice 26).
+ */
+export function auditEntityLabelKey(type: string): { readonly ns: string; readonly key: string } {
+  const [ns = type, ...rest] = type.split(".");
+  return { ns, key: `auditEntity.${rest.join(".")}` };
+}
+
+/**
+ * Where the audit log finds the name of a snapshot field of `action`'s entries, in the writing
+ * module's namespace: `organization.profile.changed`, `logoPrint` →
+ * `organization:auditField.logoPrint`; and of one of its coded values, under `auditValue.`
+ * (`organization:auditValue.logoPrint.dither`).
+ */
+export function auditFieldLabelKey(
+  action: string,
+  field: string,
+  value?: string,
+): { readonly ns: string; readonly key: string } {
+  const [ns = action] = action.split(".");
+  return {
+    ns,
+    key: value === undefined ? `auditField.${field}` : `auditValue.${field}.${value}`,
+  };
+}

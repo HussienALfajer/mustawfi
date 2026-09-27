@@ -21,6 +21,7 @@ export const departmentsMessages = {
   },
   default: "الافتراضي",
   new: "قسم جديد",
+  limitUse: "الأقسام النشطة: {used} من {allowed} في باقتك",
   empty: "لا أقسام تطابق البحث",
   loading: "جارٍ تحميل الأقسام…",
   loadFailed: "تعذّر تحميل الأقسام.",

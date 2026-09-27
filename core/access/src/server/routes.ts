@@ -11,6 +11,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
   accessProblemCodes,
+  CURRENT_SECRET_FAILURES,
   catalogueView,
   accountViewSchema,
   changeOwnPasswordRequestSchema,
@@ -37,7 +38,7 @@ import {
   setPasswordRequestSchema,
   setPinRequestSchema,
   userChangeRequestSchema,
-  userListItemSchema,
+  userListSchema,
   userViewSchema,
   loginRequestSchema,
   loginResponseSchema,
@@ -200,9 +201,11 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       }
       attempt.fail();
       if (proofs.throttledUntil(session.sessionId, now) === undefined) throw error;
-      await revokeSession(context.tenants, session, context, "currentSecretFailures");
+      await revokeSession(context.tenants, session, context, CURRENT_SECRET_FAILURES);
       throw new ProblemError(accessProblemCodes.sessionRequired, 401, {
         title: "Too many wrong current PINs or passwords: sign in again",
+        // Why, so sign-in says it (QA slice 26): the one end reason this answer knows.
+        detail: CURRENT_SECRET_FAILURES,
       });
     }
     attempt.release();
@@ -581,12 +584,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       config: viewUsers,
       schema: {
         tags,
-        response: { 200: z.object({ items: z.array(userListItemSchema) }), ...refusals },
+        response: { 200: userListSchema, ...refusals },
       },
     },
     async (request) => {
-      const items = await asManager(sessionOf(request), (tx) => listUserItems(tx));
-      return { items };
+      const session = sessionOf(request);
+      const list = await asManager(session, (tx) => listUserItems(tx));
+      // The limit only for those who add users (the list is every viewer's).
+      return session.grant.can("access.users.manage") ? list : { items: list.items };
     },
   );
 

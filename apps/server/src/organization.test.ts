@@ -12,6 +12,7 @@ import { openTenantDatabase, type TenantDatabase } from "@mustawfi/core-tenancy/
 import { hostProblemCodes } from "@mustawfi/core-config/shared";
 import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { createTestDatabase, type TestDatabase } from "@mustawfi/testing";
+import { issueTestLicense, testLicenseKeys } from "@mustawfi/tools-license/testing";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -21,6 +22,7 @@ import { migrationSets } from "./db/migration-sets.ts";
 import { createServerRegistry } from "./modules.ts";
 import type { CreatedTenant } from "./tenants/create-tenant.ts";
 import { createStaffUser, signInAs } from "./staff.test-helpers.ts";
+import { installTenantLicense } from "./tenants/install-license.ts";
 import { createLicensedTenant } from "./tenants/licensed-tenant.test-helpers.ts";
 import { testBundleKey } from "./bundle-key.test-helpers.ts";
 import { testTotpKeys } from "./totp-keys.test-helpers.ts";
@@ -179,6 +181,60 @@ describe("a new tenant", () => {
 });
 
 describe("departments", () => {
+  it("archive nothing when a lower department limit arrives, and refuse new ones beyond it (rule 4)", async () => {
+    const store = await newStore("متجر التخفيض", 3);
+    await addDepartment(store, "الصيانة");
+    await addDepartment(store, "الإكسسوارات");
+    clock.advance(60_000);
+    const { jws } = await issueTestLicense({
+      tenant: store.tenant.tenantId,
+      issuedAt: clock.now(),
+      limits: { departments: 1 },
+    });
+    await installTenantLicense(
+      tenants,
+      { storeCode: store.tenant.storeCode, license: jws },
+      { ...dependencies, licenseKeys: await testLicenseKeys() },
+    );
+    const list = (await call(store, "GET", "/departments")).json<{
+      items: DepartmentListItem[];
+      limit: unknown;
+    }>();
+    expect(list.items.filter((d) => d.archivedAt === null)).toHaveLength(3);
+    expect(list.limit).toEqual({ used: 3, allowed: 1 });
+    expectProblem(
+      await call(store, "POST", "/departments", { name: "التحويلات" }),
+      409,
+      tenancyProblemCodes.departmentLimit,
+    );
+  });
+
+  it("list with the department limit as used of allowed (QA slice 26)", async () => {
+    const store = await newStore("متجر حد الأقسام", 2);
+    const limit = async () =>
+      (await call(store, "GET", "/departments")).json<{ limit: unknown }>().limit;
+    expect(await limit()).toEqual({ used: 1, allowed: 2 });
+    const repairs = await addDepartment(store, "الصيانة");
+    expect(await limit()).toEqual({ used: 2, allowed: 2 });
+    expect((await call(store, "POST", `/departments/${repairs.id}/archive`)).statusCode).toBe(200);
+    expect(await limit()).toEqual({ used: 1, allowed: 2 });
+
+    // A role that adds no departments reads the list without the license's figures.
+    await createStaffUser(
+      tenants,
+      store.tenant,
+      { login: "reader", permissions: [] },
+      dependencies,
+    );
+    const reader: Store = {
+      tenant: store.tenant,
+      token: await signInAs(server, store.tenant, "reader"),
+    };
+    const read = (await call(reader, "GET", "/departments")).json<{ items: unknown[] }>();
+    expect(read.items).toHaveLength(2);
+    expect(read).not.toHaveProperty("limit");
+  });
+
   it("are created in order within the license's limit; archived ones do not count", async () => {
     const store = await newStore("متجر الأقسام", 3);
     const repairs = await addDepartment(store, "الصيانة");

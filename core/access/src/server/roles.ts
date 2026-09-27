@@ -1,5 +1,6 @@
 import { ProblemError } from "@mustawfi/core-config/server";
 import {
+  limitValueFitsKind,
   limitValueSchema,
   type PermissionCatalogue,
   ROLE_TEMPLATES,
@@ -120,6 +121,13 @@ function checkedHoldings(
     if (!limitValueSchema.safeParse(value).success) {
       throw new ProblemError(accessProblemCodes.roleInvalid, 422, {
         title: "A limit value is not a non-negative decimal",
+        detail: `${limit} = ${value}`,
+      });
+    }
+    const { kind } = catalogue.limits.get(limit) ?? { kind: "amount" };
+    if (!limitValueFitsKind(kind, value)) {
+      throw new ProblemError(accessProblemCodes.roleInvalid, 422, {
+        title: `A limit value is not a ${kind}: a percent is at most 100, a count is whole`,
         detail: `${limit} = ${value}`,
       });
     }

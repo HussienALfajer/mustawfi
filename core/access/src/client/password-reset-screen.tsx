@@ -170,12 +170,15 @@ export function PasswordResetScreen({ onReset, backLink }: PasswordResetScreenPr
           secret: "text",
           autoComplete: "new-password",
         })}
-        {field("pin", {
-          label: t("recovery.pin"),
-          description: t("recovery.pinHelp"),
-          secret: "pin",
-          autoComplete: "off",
-        })}
+        {/* Optional: Enter in the confirmation submits while it is empty. */}
+        <div data-enter-optional>
+          {field("pin", {
+            label: t("recovery.pin"),
+            description: t("recovery.pinHelp"),
+            secret: "pin",
+            autoComplete: "off",
+          })}
+        </div>
         {mutation.isError ? (
           <p
             role="alert"

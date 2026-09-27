@@ -38,6 +38,26 @@ export const limitValueSchema = z
   .string()
   .regex(/^\d{1,16}(\.\d{1,4})?$/, "a limit value is a non-negative decimal");
 
+/**
+ * Whether `value` (a `limitValueSchema` string) is a value of `kind` (rule 16): a percent is at
+ * most 100, a count is whole, an amount is any non-negative decimal (QA slice 26).
+ */
+export function limitValueFitsKind(kind: LimitKind, value: string): boolean {
+  if (!limitValueSchema.safeParse(value).success) return false;
+  // Read by its digits: the schema takes spellings such as `05.5` that `Decimal` does not.
+  const [whole = "", fraction = ""] = value.split(".");
+  const units = whole.replace(/^0+(?=\d)/, "");
+  const fractional = /[1-9]/.test(fraction);
+  switch (kind) {
+    case "percent":
+      return units.length < 3 || (units === "100" && !fractional);
+    case "count":
+      return !fractional;
+    case "amount":
+      return true;
+  }
+}
+
 /** A permission as a module declares it in its manifest. */
 export interface PermissionDeclaration {
   readonly id: string;

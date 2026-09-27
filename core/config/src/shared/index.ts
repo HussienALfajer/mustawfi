@@ -9,6 +9,7 @@ export {
   limitIdSchema,
   type LimitKind,
   limitKindSchema,
+  limitValueFitsKind,
   limitValueSchema,
   type PermissionCatalogue,
   type PermissionDeclaration,

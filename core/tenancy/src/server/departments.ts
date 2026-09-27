@@ -1,6 +1,11 @@
 import { ProblemError } from "@mustawfi/core-config/server";
 import { and, asc, count, eq, inArray, isNull, max, ne, sql } from "drizzle-orm";
-import { departmentNameSchema, type DepartmentView, tenancyProblemCodes } from "../shared/index.ts";
+import {
+  departmentNameSchema,
+  type DepartmentView,
+  type LicenseLimitUse,
+  tenancyProblemCodes,
+} from "../shared/index.ts";
 import { currentLicense } from "./licenses.ts";
 import { departments, tenants } from "./schema.ts";
 import type { TenantTransaction } from "./tenant-database.ts";
@@ -73,10 +78,8 @@ async function checkNameFree(
  * `tenancy.limit.departments`. Run under the tenant lock; archived departments do not count.
  */
 async function checkDepartmentLimit(tx: TenantTransaction): Promise<void> {
-  const license = await currentLicense(tx);
-  if (license === undefined) throw new Error("the tenant has no license");
-  const allowed = license.claims.limits.departments;
-  if ((await activeDepartmentCount(tx)) >= allowed) {
+  const { used, allowed } = await departmentLimitUse(tx);
+  if (used >= allowed) {
     throw new ProblemError(tenancyProblemCodes.departmentLimit, 409, {
       title: "The license's department limit is reached",
       detail: `the license allows ${String(allowed)} active departments`,
@@ -105,6 +108,16 @@ export async function activeDepartmentCount(tx: TenantTransaction): Promise<numb
     .from(departments)
     .where(isNull(departments.archivedAt));
   return row?.active ?? 0;
+}
+
+/**
+ * The department limit as used (active departments) of allowed (rule 4), so the departments
+ * screen says a reached limit before an owner tries (`core-foundation` slice 26).
+ */
+export async function departmentLimitUse(tx: TenantTransaction): Promise<LicenseLimitUse> {
+  const license = await currentLicense(tx);
+  if (license === undefined) throw new Error("the tenant has no license");
+  return { used: await activeDepartmentCount(tx), allowed: license.claims.limits.departments };
 }
 
 async function locked(tx: TenantTransaction, id: string): Promise<DepartmentRow> {

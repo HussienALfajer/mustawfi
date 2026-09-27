@@ -260,6 +260,30 @@ describe("apiBlob", () => {
     expect(authorization(sent[0])).toBe("Bearer s1.token");
   });
 
+  it("keeps a refusal's detail, which says what its code alone does not (QA slice 26)", async () => {
+    const fake = () =>
+      Promise.resolve(
+        Response.json(
+          {
+            type: "about:blank",
+            title: "sign in again",
+            status: 401,
+            code: "access.session.required",
+            detail: "currentSecretFailures",
+          },
+          { status: 401 },
+        ),
+      );
+    await expect(
+      apiRequest("/api/v1/access/me/pin", {
+        method: "PUT",
+        body: {},
+        schema: okSchema,
+        fetch: fake,
+      }),
+    ).rejects.toMatchObject({ code: "access.session.required", detail: "currentSecretFailures" });
+  });
+
   it("throws the problem of a refusal", async () => {
     const fake = () =>
       Promise.resolve(

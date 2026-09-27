@@ -1,7 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { accessLocalMigrations, type LocalDevice } from "@mustawfi/core-access/client";
+import {
+  accessLocalMigrations,
+  deviceStoreCodeLocalMigrations,
+  type LocalDevice,
+} from "@mustawfi/core-access/client";
 import {
   departmentPullApplier,
   organizationLocalMigrations,
@@ -49,6 +53,7 @@ const device: LocalDevice = {
   type: "mainPos",
   baseCurrency: "SYP",
   registeredAt: clock.now().toISOString(),
+  storeCode: "K7M3QX",
 };
 const userId = newId();
 /** A seller who may sell everywhere, as the store's cashiers of every department. */
@@ -63,6 +68,7 @@ const shop: DepartmentView = {
 
 const migrations = [
   ...accessLocalMigrations,
+  ...deviceStoreCodeLocalMigrations,
   ...syncLocalMigrations,
   ...inventoryLocalMigrations,
   ...salesLocalMigrations,

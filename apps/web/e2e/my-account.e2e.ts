@@ -145,12 +145,14 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/recover$/);
   await expect(page.getByLabel("رمز المتجر")).toBeFocused();
-  for (const text of [store.storeCode, LOGIN, issued.code, THIRD_PASSWORD, THIRD_PASSWORD]) {
+  for (const text of [store.storeCode, LOGIN, issued.code, THIRD_PASSWORD]) {
     await page.keyboard.type(text);
     await page.keyboard.press("Enter");
   }
-  await expect(page.getByLabel("رمز سري جديد (اختياري)")).toBeFocused();
+  await expect(page.getByLabel("أعد كتابة كلمة المرور الجديدة")).toBeFocused();
+  await page.keyboard.type(THIRD_PASSWORD);
   await attachScreens(page, testInfo, "recovery");
+  // The new PIN is optional: Enter in the confirmation submits while it is empty (QA slice 26).
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/login\?reset=true$/);
   await expect(page.getByRole("status")).toHaveText("عُيّنت كلمة المرور الجديدة. ادخل بها الآن");

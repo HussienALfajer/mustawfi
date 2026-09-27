@@ -9,7 +9,7 @@ import { z } from "zod";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { accessProblemCodes } from "../shared/index.ts";
 import { ACCESS_NAMESPACE } from "./messages.ts";
-import { type CurrentSession, sessionQueryKey, signIn } from "./session.ts";
+import { type CurrentSession, type SessionEndNotice, sessionQueryKey, signIn } from "./session.ts";
 import { storeCodeFieldSchema } from "./store-code-field.ts";
 import { throttleWaitMinutes } from "./throttle.ts";
 
@@ -80,6 +80,16 @@ export interface LoginScreenProps {
   readonly recoveryLink?: (label: string) => ReactNode;
   /** Set after a support reset: the owner signs in with the password they just set. */
   readonly passwordWasReset?: boolean;
+  /**
+   * The store code of the registered device this runs on: shown, not asked for again
+   * (`core-foundation` QA slice 26; an unregistered browser keeps asking, ADR-0029).
+   */
+  readonly knownStoreCode?: string | undefined;
+  /**
+   * Why the user is back at sign-in, when the app knows: their session ended while they were
+   * signed in (`ended`), or after five wrong current secrets in «حسابي» (`currentSecret`).
+   */
+  readonly sessionEnded?: SessionEndNotice | undefined;
 }
 
 /**
@@ -88,10 +98,20 @@ export interface LoginScreenProps {
  * or a recovery code. Keyboard first: the first field has focus on arrival and Enter submits.
  * A failure is shown as text in an alert, never a toast.
  */
-export function LoginScreen({ onSignedIn, recoveryLink, passwordWasReset }: LoginScreenProps) {
+export function LoginScreen({
+  onSignedIn,
+  recoveryLink,
+  passwordWasReset,
+  knownStoreCode,
+  sessionEnded,
+}: LoginScreenProps) {
   const [pending, setPending] = useState<SignInForm | undefined>();
   // Back from the second step: the store code and login stay, the password is typed again.
-  const [typed, setTyped] = useState<SignInForm>({ storeCode: "", login: "", password: "" });
+  const [typed, setTyped] = useState<SignInForm>({
+    storeCode: knownStoreCode ?? "",
+    login: "",
+    password: "",
+  });
   if (pending !== undefined) {
     return (
       <SecondFactorStep
@@ -111,6 +131,8 @@ export function LoginScreen({ onSignedIn, recoveryLink, passwordWasReset }: Logi
       onSecondFactor={setPending}
       recoveryLink={recoveryLink}
       passwordWasReset={passwordWasReset === true}
+      storeCodeKnown={knownStoreCode !== undefined}
+      sessionEnded={sessionEnded}
     />
   );
 }
@@ -121,12 +143,16 @@ function PasswordStep({
   onSecondFactor,
   recoveryLink,
   passwordWasReset,
+  storeCodeKnown,
+  sessionEnded,
 }: {
   readonly initial: SignInForm;
   readonly onSignedIn: (session: CurrentSession) => void;
   readonly onSecondFactor: (credentials: SignInForm) => void;
   readonly recoveryLink: ((label: string) => ReactNode) | undefined;
   readonly passwordWasReset: boolean;
+  readonly storeCodeKnown: boolean;
+  readonly sessionEnded: SessionEndNotice | undefined;
 }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const queryClient = useQueryClient();
@@ -170,23 +196,30 @@ function PasswordStep({
             {t("login.passwordWasReset")}
           </p>
         ) : null}
+        {/* Until the first try: after it, the try's own answer is what matters. */}
+        {sessionEnded === undefined || passwordWasReset || !mutation.isIdle ? null : (
+          <p role="status" className="rounded-sm bg-sunken px-pad-inline py-pad-block text-text">
+            {t(`login.sessionEnded.${sessionEnded}`)}
+          </p>
+        )}
         <Controller
           control={form.control}
           name="storeCode"
           render={({ field, fieldState }) => (
             <TextInput
               label={t("login.storeCode")}
-              description={t("login.storeCodeHelp")}
+              description={t(storeCodeKnown ? "login.storeCodeKnown" : "login.storeCodeHelp")}
               errorMessage={fieldError(fieldState.error?.message)}
               value={field.value}
               onChange={field.onChange}
               onBlur={field.onBlur}
               inputRef={field.ref}
               name={field.name}
+              isReadOnly={storeCodeKnown}
               dir="ltr"
               autoComplete="organization"
               spellCheck="false"
-              autoFocus
+              autoFocus={!storeCodeKnown}
             />
           )}
         />
@@ -205,6 +238,7 @@ function PasswordStep({
               dir="ltr"
               autoComplete="username"
               spellCheck="false"
+              autoFocus={storeCodeKnown}
             />
           )}
         />

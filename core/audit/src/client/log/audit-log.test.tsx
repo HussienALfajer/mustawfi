@@ -15,6 +15,7 @@ import {
   auditLogFiltersSchema,
   AuditLogScreen,
   formatAuditInstant,
+  type AuditWords,
   formatAuditValue,
 } from "./audit-log-screen.tsx";
 
@@ -22,7 +23,15 @@ import {
 const i18n = createI18n({
   [UI_NAMESPACE]: uiMessages,
   [AUDIT_NAMESPACE]: auditMessages,
-  organization: { audit: { department: { renamed: "تغيير اسم قسم" } } },
+  organization: {
+    audit: {
+      department: { renamed: "تغيير اسم قسم" },
+      profile: { changed: "تعديل بيانات المتجر" },
+    },
+    auditEntity: { department: "قسم", storeProfile: "بيانات المتجر" },
+    auditField: { name: "الاسم", logo: "الشعار", logoPrint: "طباعة الشعار", phones: "الهواتف" },
+    auditValue: { logoPrint: { threshold: "شعار خطّي", dither: "صورة" } },
+  },
   access: {
     audit: {
       pin: { failed: "رمز PIN خاطئ على الجهاز" },
@@ -150,12 +159,41 @@ describe("audit log filters", () => {
     ).toEqual({ user: CASHIER.id, from: "2026-09-01", selected: RENAMED.id });
   });
 
-  it("show snapshot values as text: strings as they are, the rest as JSON", () => {
-    expect(formatAuditValue("الملحقات")).toBe("الملحقات");
-    expect(formatAuditValue(2)).toBe("2");
-    expect(formatAuditValue(null)).toBe("null");
-    expect(formatAuditValue(["a", "b"])).toBe('["a","b"]');
-    expect(formatAuditValue(undefined)).toBeUndefined();
+  it("show snapshot values in words, not codes or JSON (QA slice 26)", () => {
+    const words: AuditWords = {
+      field: (field) => ({ users: "المستخدمون" })[field],
+      coded: (field, value) => (field === "logoPrint" && value === "dither" ? "صورة" : undefined),
+      yes: "نعم",
+      no: "لا",
+      image: (type, kilobytes) => `صورة ${type} (${kilobytes} ك.ب)`,
+      list: (items) => items.join("، "),
+      named: (name, code) => `${name} (${code})`,
+      pair: (field, value) => `${field}: ${value}`,
+    };
+    expect(formatAuditValue("الملحقات", "name", words)).toBe("الملحقات");
+    expect(formatAuditValue("dither", "logoPrint", words)).toBe("صورة");
+    expect(formatAuditValue(2, "failures", words)).toBe("2");
+    expect(formatAuditValue(true, "hasPin", words)).toBe("نعم");
+    expect(formatAuditValue(null, "address", words)).toBeUndefined();
+    expect(formatAuditValue(undefined, "address", words)).toBeUndefined();
+    expect(formatAuditValue([], "phones", words)).toBeUndefined();
+    expect(formatAuditValue(["+963944123456", "+963933000111"], "phones", words)).toBe(
+      "+963944123456، +963933000111",
+    );
+    expect(formatAuditValue("2026-09-26T08:00:00.000Z", "expiresAt", words)).toBe(
+      formatAuditInstant("2026-09-26T08:00:00.000Z"),
+    );
+    expect(formatAuditValue("2026-09-26", "businessDate", words)).toBe("26/09/2026");
+    expect(
+      formatAuditValue({ size: 227686, type: "image/png", sha256: "4812" }, "logo", words),
+    ).toBe("صورة PNG (222 ك.ب)");
+    expect(formatAuditValue({ amount: "50", currency: "SYP" }, "total", words)).toBe("50 SYP");
+    expect(formatAuditValue([{ code: "1100", name: "الصندوق" }], "accounts", words)).toBe(
+      "الصندوق (1100)",
+    );
+    expect(formatAuditValue({ users: 6, other: 2 }, "limits", words)).toBe(
+      "المستخدمون: 6، other: 2",
+    );
   });
 });
 
@@ -285,10 +323,52 @@ describe("AuditLogScreen", () => {
     const panel = await screen.findByRole("complementary", { name: "تغيير اسم قسم" });
     expect(panel).toHaveTextContent("سامر");
     const values = within(panel).getByRole("table", { name: "القيم قبل التغيير وبعده" });
-    const name = within(values).getByRole("row", { name: /name/ });
+    const name = within(values).getByRole("row", { name: /الاسم/ });
     expect(name).toHaveTextContent("الإكسسوارات");
     expect(name).toHaveTextContent("الملحقات");
     expect(name).toHaveAttribute("data-changed", "true");
+    // The record in words, its id kept for tracing.
+    expect(panel).toHaveTextContent(`السجل المعنيقسم «الملحقات»${RENAMED.entity?.id ?? ""}`);
+  });
+
+  it("names fields and coded values, and folds away the fields that did not change (QA slice 26)", async () => {
+    const changed = entry("0190a000-0000-7000-8000-00000000e021", {
+      action: "organization.profile.changed",
+      entity: { type: "organization.storeProfile", id: "0190a000-0000-7000-8000-0000000b0001" },
+      before: { name: "متجر النور", logoPrint: "threshold", logo: null, phones: [] },
+      after: {
+        name: "متجر النور",
+        logoPrint: "dither",
+        logo: { size: 20480, type: "image/png", sha256: "ab" },
+        phones: [],
+      },
+    });
+    fakeApi({ first: { items: [changed], next: null } });
+    renderScreen({ selected: changed.id });
+    const panel = await screen.findByRole("complementary", { name: "تعديل بيانات المتجر" });
+    const values = within(panel).getByRole("table", { name: "القيم قبل التغيير وبعده" });
+    expect(
+      within(values)
+        .getAllByRole("row")
+        .map((row) => row.textContent),
+    ).toEqual(["الحقلقبلبعد", "طباعة الشعارشعار خطّيصورة", "الشعار—صورة PNG (20 ك.ب)"]);
+    expect(panel).not.toHaveTextContent("logoPrint");
+    // The unchanged ones wait behind their summary.
+    const folded = within(panel).getByText("حقلان لم يتغيرا");
+    expect(folded.closest("details")).not.toHaveAttribute("open");
+    expect(
+      within(panel).getByRole("table", { name: "الحقول التي لم تتغير", hidden: true }),
+    ).toHaveTextContent("الاسممتجر النورمتجر النور");
+  });
+
+  it("says when the entry a link names is not in the store's log (QA slice 26)", async () => {
+    fakeApi({ first: { items: [RENAMED], next: null } });
+    renderScreen({ selected: "0190a000-0000-7000-8000-00000000eeee" });
+    expect(
+      await screen.findByText("لا يوجد في سجل هذا المتجر إدخال بهذا الرابط."),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "إخفاء" }));
+    expect(screen.getByTestId("filters")).toHaveTextContent("{}");
   });
 
   it("reopens from the URL an entry beyond the loaded pages, asking for it alone (QA slice 25)", async () => {

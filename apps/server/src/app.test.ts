@@ -346,6 +346,12 @@ describe("OpenAPI", () => {
         "201": {
           content: { "application/json": { schema: { $ref: "#/components/schemas/Widget" } } },
         },
+        // Added to every route with a request schema: its invalid request (QA slice 26).
+        "400": {
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/ProblemDetails" } },
+          },
+        },
         "409": {
           content: {
             "application/json": { schema: { $ref: "#/components/schemas/ProblemDetails" } },

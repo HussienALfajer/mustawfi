@@ -142,8 +142,11 @@ describe("user filters", () => {
   });
 });
 
-/** A fake API: the users and roles lists, and each write answered from `answers`. */
-function fakeApi(users: UserView[], answers: Record<string, () => Response> = {}) {
+/**
+ * A fake API: the users and roles lists — the users with the user limit, `allowed` of the
+ * license — and each write answered from `answers`.
+ */
+function fakeApi(users: UserView[], answers: Record<string, () => Response> = {}, allowed = 6) {
   const calls: { method: string; url: string; body: unknown }[] = [];
   vi.stubGlobal("fetch", (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -165,7 +168,10 @@ function fakeApi(users: UserView[], answers: Record<string, () => Response> = {}
       );
     }
     return Promise.resolve(
-      Response.json({ items: users.map((item) => ({ lastChange: null, ...item })) }),
+      Response.json({
+        items: users.map((item) => ({ lastChange: null, ...item })),
+        limit: { used: users.filter((item) => item.status === "active").length, allowed },
+      }),
     );
   });
   return calls;
@@ -454,6 +460,81 @@ describe("UsersScreen", () => {
     const listbox = await screen.findByRole("listbox");
     expect(within(listbox).queryByRole("option", { name: "المالك" })).toBeNull();
     expect(within(listbox).getByRole("option", { name: "المحاسب" })).toBeInTheDocument();
+  });
+
+  it("says the user limit as used of allowed, and a reached one before anything is typed (QA slice 26)", async () => {
+    fakeApi([SAMER, OMAR, OLD], {}, 2);
+    renderScreen({ departments: [STORE] });
+    const add = await screen.findByRole("button", { name: /مستخدم جديد/ });
+    expect(await screen.findByText("المستخدمون النشطون: 2 من 2 في باقتك")).toBeInTheDocument();
+    expect(add).toHaveAccessibleDescription("المستخدمون النشطون: 2 من 2 في باقتك");
+    await userEvent.click(add);
+    const panel = await screen.findByRole("complementary", { name: "مستخدم جديد" });
+    expect(panel).toHaveTextContent(/وصلت إلى حد المستخدمين في باقتك/);
+    expect(within(panel).getByText("+963 945 739 573")).toBeInTheDocument();
+    // A deactivated user's reactivation counts the same way.
+    await userEvent.click(within(panel).getByRole("button", { name: "إغلاق" }));
+    await userEvent.click(screen.getByRole("radio", { name: "الموقوفون" }));
+    await userEvent.click(await screen.findByText("خالد"));
+    expect(await screen.findByRole("complementary", { name: "خالد" })).toHaveTextContent(
+      /وصلت إلى حد المستخدمين في باقتك/,
+    );
+    cleanup();
+
+    // A role that may only view users is told nothing about a reactivation it cannot make.
+    fakeApi([SAMER, OMAR, OLD], {}, 2);
+    renderScreen({
+      initial: { status: "deactivated", selected: OLD.id },
+      permissions: ["access.users.view"],
+    });
+    expect(await screen.findByRole("complementary", { name: "خالد" })).not.toHaveTextContent(
+      /حد المستخدمين/,
+    );
+    cleanup();
+
+    fakeApi([SAMER, OMAR], {}, 6);
+    renderScreen({ initial: { selected: "new" }, departments: [STORE] });
+    const room = await screen.findByRole("complementary", { name: "مستخدم جديد" });
+    expect(await screen.findByText("المستخدمون النشطون: 2 من 6 في باقتك")).toBeInTheDocument();
+    expect(room).not.toHaveTextContent(/حد المستخدمين/);
+  });
+
+  it("gives a non-owner manager no way to set what the server would refuse them (QA slice 26)", async () => {
+    // The manager's role holds no `sales.invoice.create`, which the cashier's role holds.
+    fakeApi([SAMER, RANA, OMAR]);
+    renderScreen({ initial: { selected: RANA.id }, isOwner: false });
+    const broader = await screen.findByRole("complementary", { name: "رنا" });
+    expect(broader).toHaveTextContent(/دور هذا المستخدم فيه صلاحيات ليست لديك/);
+    expect(within(broader).queryByLabelText(/رمز سري جديد/)).toBeNull();
+    expect(within(broader).queryByLabelText(/كلمة مرور جديدة/)).toBeNull();
+    expect(within(broader).getByLabelText(/اسم الدخول/)).toHaveAttribute("readonly");
+    // Their name and deactivation stay theirs to manage.
+    expect(within(broader).getByLabelText(/^الاسم/)).not.toHaveAttribute("readonly");
+    cleanup();
+
+    fakeApi([SAMER, RANA, OMAR]);
+    renderScreen({ initial: { selected: OMAR.id }, isOwner: false });
+    const within_ = await screen.findByRole("complementary", { name: "عمر" });
+    expect(within(within_).getByLabelText(/رمز سري جديد/)).toBeInTheDocument();
+    expect(within(within_).getByLabelText(/اسم الدخول/)).not.toHaveAttribute("readonly");
+    await userEvent.click(within(within_).getByRole("button", { name: /الدور/ }));
+    const listbox = await screen.findByRole("listbox");
+    expect(within(listbox).queryByRole("option", { name: "كاشير القسم" })).toBeNull();
+    expect(within(listbox).getByRole("option", { name: "المحاسب" })).toBeInTheDocument();
+  });
+
+  it("names a role that is gone and an owner given departments (QA slice 26)", async () => {
+    fakeApi([SAMER], { "POST /api/v1/access/users": problem(404, "access.role.notFound") });
+    renderScreen({ initial: { selected: "new" }, departments: [STORE] });
+    const panel = await screen.findByRole("complementary", { name: "مستخدم جديد" });
+    await userEvent.type(within(panel).getByLabelText(/^الاسم/), "ليلى");
+    await userEvent.click(within(panel).getByRole("button", { name: /الدور/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "المحاسب" }));
+    await userEvent.type(within(panel).getByLabelText(/الرمز السري الأول/), "2580");
+    await userEvent.click(within(panel).getByRole("button", { name: /إضافة/ }));
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(
+      "لم يعد هذا الدور موجودًا. حدّث الصفحة واختر دورًا آخر",
+    );
   });
 
   it("says when the list needs the server and the device is offline", async () => {

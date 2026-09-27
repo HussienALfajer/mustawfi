@@ -41,14 +41,15 @@ export const licenseMessages = {
     limit: "الحد",
     usage: "المستخدم من المسموح",
     manage: "إدارة",
+    state: "حالة الحد",
     usedOfAllowed: "{used} من {allowed}",
     reached: "مكتمل",
     over: "متجاوز",
     name: {
       users: "المستخدمون النشطون",
       departments: "الأقسام النشطة",
-      mainPosDevices: "الأجهزة الرئيسية (كاشير)",
-      companionDevices: "الأجهزة المساعدة (موبايل)",
+      mainPosDevices: "أجهزة البيع الرئيسية",
+      companionDevices: "الأجهزة المساعدة",
     },
   },
   /** The top bar: a warning to owners, a restriction to everyone (`core-foundation` rule 10). */

@@ -25,6 +25,8 @@ import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   accessProblemCodes,
+  beyondGrant,
+  type Grantor,
   type DepartmentScope,
   loginSchema,
   passwordSchema,
@@ -70,7 +72,9 @@ export function userProblem(error: unknown): string {
     case accessProblemCodes.roleArchived:
       return "roleArchived";
     case accessProblemCodes.roleNotFound:
-      return "roleArchived";
+      return "roleNotFound";
+    case accessProblemCodes.roleInvalid:
+      return "ownerScope";
     case accessProblemCodes.ownersOnly:
       return "ownersOnly";
     case accessProblemCodes.lastOwner:
@@ -162,12 +166,21 @@ export interface UserPanelProps {
   readonly departments: readonly DepartmentOption[];
   /** Whether a department is asked for (more than one active department, rule 29). */
   readonly showDepartments: boolean;
-  /** The signed-in user: their id, whether they are an owner, and `access.users.manage`. */
-  readonly viewer: { readonly id: string; readonly isOwner: boolean; readonly canManage: boolean };
+  /**
+   * The signed-in user: their id, whether they are an owner, `access.users.manage`, and what
+   * their role holds (a non-owner gives no role beyond it, and sets no PIN, password, or login
+   * of a user whose role holds more).
+   */
+  readonly viewer: Grantor & { readonly id: string; readonly canManage: boolean };
   readonly onClose: () => void;
   readonly onSaved: (user: UserView) => void;
   /** The last line's link to the record's history, for readers of the audit log. */
   readonly auditLink?: AuditLink | undefined;
+  /**
+   * The license's user limit is reached: a new user's panel, and a deactivated user's, say so
+   * before anything is tried (the server still refuses, rule 4).
+   */
+  readonly limitReached?: boolean | undefined;
 }
 
 /**
@@ -185,6 +198,7 @@ export function UserPanel({
   onClose,
   onSaved,
   auditLink,
+  limitReached = false,
 }: UserPanelProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const queryClient = useQueryClient();
@@ -204,16 +218,29 @@ export function UserPanel({
   const editable =
     viewer.canManage && !deactivated && (user?.role.isOwner !== true || viewer.isOwner);
   const accessEditable = editable && (!isSelf || viewer.isOwner);
+  // Who may reactivate this deactivated user: a manager, and an owner for an owner (rule 14).
+  const reactivatable =
+    deactivated && viewer.canManage && (user?.role.isOwner !== true || viewer.isOwner);
   const role = roles.find((candidate) => candidate.id === draft.roleId);
   const ownerRole = role?.isOwner === true;
+  // What a role holds beyond the viewer's own: they may not give it (slice 6), nor set the
+  // PIN, password, or login of a user who holds it (QA slice 24) — the server refuses both.
+  const beyondViewer = (candidate: RoleView | undefined) =>
+    candidate !== undefined && !candidate.isOwner && beyondGrant(viewer, candidate).length > 0;
   const roleOptions = roles
     .filter(
       (candidate) =>
         candidate.id === user?.role.id ||
-        (candidate.archivedAt === null && (!candidate.isOwner || viewer.isOwner)),
+        (candidate.archivedAt === null &&
+          (!candidate.isOwner || viewer.isOwner) &&
+          !beyondViewer(candidate)),
     )
     .map((candidate) => ({ id: candidate.id, label: candidate.name }));
   const activeDepartments = departments.filter((department) => department.archivedAt === null);
+  // Another user whose role (after this change, for the login) holds more than the viewer's.
+  const broaderNow =
+    user !== null && !isSelf && beyondViewer(roles.find((r) => r.id === user.role.id));
+  const loginEditable = editable && (user === null || isSelf || !beyondViewer(role));
 
   const roleIsOwner = (roleId: string | null) =>
     roles.find((candidate) => candidate.id === roleId)?.isOwner === true;
@@ -416,7 +443,7 @@ export function UserPanel({
             onChange={(login) => {
               change({ login });
             }}
-            isReadOnly={!editable}
+            isReadOnly={!loginEditable}
             dir="ltr"
             autoComplete="off"
           />
@@ -476,6 +503,14 @@ export function UserPanel({
         {user?.role.isOwner === true ? <Note>{t("users.panel.ownerNote")}</Note> : null}
         {deactivated ? <Note>{t("users.panel.deactivatedNote")}</Note> : null}
         {!viewer.canManage ? <Note>{t("users.panel.readOnlyNote")}</Note> : null}
+        {editable && broaderNow ? <Note>{t("users.panel.broaderNote")}</Note> : null}
+        {failure === undefined && limitReached && (isNew || (deactivated && reactivatable)) ? (
+          // Said before anything is tried; the server still refuses (rule 4).
+          <div className="flex flex-col gap-2">
+            <p className="text-text">{t("users.problem.limit")}</p>
+            <SupportContact whatsapp={VERTEX_SUPPORT_WHATSAPP} />
+          </div>
+        ) : null}
         {failure === undefined ? null : (
           <div className="flex flex-col gap-2">
             <p role="alert" className="text-text-negative">
@@ -487,7 +522,12 @@ export function UserPanel({
         )}
       </form>
       {user !== null && editable && !isSelf ? (
-        <SecretsSection user={user} viewerIsOwner={viewer.isOwner} onSaved={settle} />
+        <SecretsSection
+          user={user}
+          viewerIsOwner={viewer.isOwner}
+          canSetSecrets={!broaderNow}
+          onSaved={settle}
+        />
       ) : null}
       {user === null ? null : (
         <div className="mt-4">
@@ -598,10 +638,13 @@ function ScopeFields({
 function SecretsSection({
   user,
   viewerIsOwner,
+  canSetSecrets,
   onSaved,
 }: {
   readonly user: UserView;
   readonly viewerIsOwner: boolean;
+  /** Off for a user whose role holds more than the viewer's: only their 2FA state shows. */
+  readonly canSetSecrets: boolean;
   readonly onSaved: (user: UserView, message: string) => Promise<void>;
 }) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
@@ -638,65 +681,69 @@ function SecretsSection({
       <h3 id={headingId} className="text-base font-semibold">
         {t("users.panel.secrets")}
       </h3>
-      <form
-        noValidate
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!pinSchema.safeParse(pin).success) {
-            setPinError(t("users.problem.pinInvalid"));
-            return;
-          }
-          setPinError(undefined);
-          pinMutation.mutate(pin);
-        }}
-      >
-        <PasswordField
-          className="flex-1"
-          label={t("users.panel.newPin")}
-          errorMessage={pinError}
-          inputMode="numeric"
-          maxLength={6}
-          value={pin}
-          onChange={setPin}
-          autoComplete="off"
-        />
-        <Button type="submit" variant="secondary" isPending={pinMutation.isPending}>
-          {t("users.panel.setPin")}
-        </Button>
-      </form>
-      <form
-        noValidate
-        className="flex items-end gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const parsed = passwordSchema.safeParse(password);
-          if (!parsed.success) {
-            setPasswordError(
-              t(
-                parsed.error.issues[0]?.code === "too_big"
-                  ? "users.problem.passwordTooLong"
-                  : "users.problem.passwordTooShort",
-              ),
-            );
-            return;
-          }
-          setPasswordError(undefined);
-          passwordMutation.mutate(password);
-        }}
-      >
-        <PasswordField
-          className="flex-1"
-          label={t("users.panel.newPassword")}
-          errorMessage={passwordError}
-          value={password}
-          onChange={setPassword}
-          autoComplete="new-password"
-        />
-        <Button type="submit" variant="secondary" isPending={passwordMutation.isPending}>
-          {t("users.panel.setPassword")}
-        </Button>
-      </form>
+      {canSetSecrets ? (
+        <>
+          <form
+            noValidate
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!pinSchema.safeParse(pin).success) {
+                setPinError(t("users.problem.pinInvalid"));
+                return;
+              }
+              setPinError(undefined);
+              pinMutation.mutate(pin);
+            }}
+          >
+            <PasswordField
+              className="flex-1"
+              label={t("users.panel.newPin")}
+              errorMessage={pinError}
+              inputMode="numeric"
+              maxLength={6}
+              value={pin}
+              onChange={setPin}
+              autoComplete="off"
+            />
+            <Button type="submit" variant="secondary" isPending={pinMutation.isPending}>
+              {t("users.panel.setPin")}
+            </Button>
+          </form>
+          <form
+            noValidate
+            className="flex items-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const parsed = passwordSchema.safeParse(password);
+              if (!parsed.success) {
+                setPasswordError(
+                  t(
+                    parsed.error.issues[0]?.code === "too_big"
+                      ? "users.problem.passwordTooLong"
+                      : "users.problem.passwordTooShort",
+                  ),
+                );
+                return;
+              }
+              setPasswordError(undefined);
+              passwordMutation.mutate(password);
+            }}
+          >
+            <PasswordField
+              className="flex-1"
+              label={t("users.panel.newPassword")}
+              errorMessage={passwordError}
+              value={password}
+              onChange={setPassword}
+              autoComplete="new-password"
+            />
+            <Button type="submit" variant="secondary" isPending={passwordMutation.isPending}>
+              {t("users.panel.setPassword")}
+            </Button>
+          </form>
+        </>
+      ) : null}
       <TwoFactorRow user={user} canClear={viewerIsOwner} onSaved={onSaved} />
     </section>
   );

@@ -15,6 +15,7 @@ import {
   accessLocalMigrations,
   DeviceCredentialMissing,
   deviceCredentialLocalMigrations,
+  deviceStoreCodeLocalMigrations,
   holdLocalDeviceCredential,
   localDevice,
   localDeviceCredential,
@@ -95,7 +96,11 @@ async function registeredByEarlierVersion(db: LocalDb): Promise<void> {
     await db.run("INSERT INTO filler VALUES (?)", ["x".repeat(900)]);
 }
 
-const MIGRATIONS = [...accessLocalMigrations, ...deviceCredentialLocalMigrations];
+const MIGRATIONS = [
+  ...accessLocalMigrations,
+  ...deviceCredentialLocalMigrations,
+  ...deviceStoreCodeLocalMigrations,
+];
 
 describe("the device credential moves to the OS secure store (ADR-0022)", () => {
   it("leaves no copy of an earlier version's credential in the database file, its log, or its copies", async () => {
@@ -193,9 +198,11 @@ describe("the device credential moves to the OS secure store (ADR-0022)", () => 
       registrationCode: "R1",
       name: "الصندوق",
     };
-    await registerThisDevice(db, input, clock, store);
+    await registerThisDevice(db, { ...input, storeCode: "ab2-cd3" }, clock, store);
 
     expect(await db.query("SELECT credential FROM access_device")).toEqual([{ credential: null }]);
+    // The store code, as the server read it, for the password sign-in (QA slice 26).
+    expect((await localDevice(db))?.storeCode).toBe("AB2CD3");
     expect(filesHold("registered", CREDENTIAL)).toBe(false);
     expect(await localDeviceCredential(db, store)).toBe(CREDENTIAL);
     await db.close();

@@ -17,6 +17,11 @@ function send(reply: FastifyReply, problem: ProblemDetails): FastifyReply {
  * a business refusal (`ProblemError`) with its own code and status; an invalid request as
  * `core.request.invalid` with the failing fields; any other client error Fastify raises as
  * `core.request.rejected`; everything else as a 500 that is logged and says nothing more.
+ *
+ * The statuses (settled in `core-foundation` QA slice 26): 400 for a request its route's schema
+ * refuses — shape, format, bounds; 401 and 403 for access; 404 for a record the tenant does not
+ * have; 409 for a conflict with the current state (a taken name, a reached limit); 422 for a
+ * well-formed request a business rule refuses.
  */
 export function problemErrorHandler(
   error: FastifyError,

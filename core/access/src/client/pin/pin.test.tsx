@@ -30,7 +30,7 @@ import { I18nextProvider } from "react-i18next";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccessPart } from "../../shared/index.ts";
 import { accessBundlePart } from "../bundle-part.ts";
-import { accessLocalMigrations } from "../device.ts";
+import { accessLocalMigrations, deviceStoreCodeLocalMigrations } from "../device.ts";
 import { ACCESS_NAMESPACE, accessMessages } from "../messages.ts";
 import { useAutoLock } from "./auto-lock.ts";
 import { lastActivityAt, localSession, pinLocalMigrations } from "./local-sign-in.ts";
@@ -115,6 +115,7 @@ beforeEach(async () => {
   db = openNodeLocalDb(":memory:");
   await migrateLocalDb(db, [
     ...accessLocalMigrations,
+    ...deviceStoreCodeLocalMigrations,
     ...configLocalMigrations,
     ...pinLocalMigrations,
   ]);

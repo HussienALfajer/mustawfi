@@ -379,6 +379,38 @@ describe("form keys", () => {
     expect(submitted).toHaveBeenCalledOnce();
   });
 
+  it("submits before optional fields at the end while they are empty (QA slice 26)", async () => {
+    wrap(
+      <form
+        onKeyDown={enterMovesThenSubmits}
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitted();
+        }}
+      >
+        <input aria-label="الأول" />
+        <input aria-label="التأكيد" />
+        <div data-enter-optional>
+          <input aria-label="اختياري" />
+        </div>
+      </form>,
+    );
+    await userEvent.click(screen.getByLabelText("الأول"));
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByLabelText("التأكيد")).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(submitted).toHaveBeenCalledOnce();
+    // Typed in, the optional field is part of the form again: Enter moves to it.
+    submitted.mockReset();
+    await userEvent.type(screen.getByLabelText("اختياري"), "2580");
+    await userEvent.click(screen.getByLabelText("التأكيد"));
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByLabelText("اختياري")).toHaveFocus();
+    expect(submitted).not.toHaveBeenCalled();
+    await userEvent.keyboard("{Enter}");
+    expect(submitted).toHaveBeenCalledOnce();
+  });
+
   it("saves with Ctrl+S from inside the form", async () => {
     wrap(<Form onKeyDown={saveShortcutSubmits} />);
     await userEvent.click(screen.getByLabelText("الأول"));

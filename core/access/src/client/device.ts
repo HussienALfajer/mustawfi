@@ -4,6 +4,7 @@ import {
   type SecureStore,
   secureStore,
 } from "@mustawfi/core-config/client";
+import { storeCodeSchema } from "@mustawfi/core-tenancy/shared";
 import type { Clock } from "@mustawfi/kernel";
 import {
   compactLocalDb,
@@ -40,6 +41,8 @@ const accessDevice = sqliteTable("access_device", {
   credential: text(),
   baseCurrency: text("base_currency").notNull(),
   registeredAt: text("registered_at").notNull(),
+  /** The store code typed at registration; null on devices registered before slice 26. */
+  storeCode: text("store_code"),
 });
 
 export const ACCESS_DEVICE_TABLE = "access_device";
@@ -93,6 +96,17 @@ export const deviceCredentialLocalMigrations: readonly LocalMigration[] = [
   },
 ];
 
+/**
+ * `core-foundation` QA slice 26: the device keeps its store's code, so a password sign-in on it
+ * does not ask for it again. Devices registered earlier have none and keep asking.
+ */
+export const deviceStoreCodeLocalMigrations: readonly LocalMigration[] = [
+  {
+    id: "core.access.0004_device_store_code",
+    statements: ["ALTER TABLE access_device ADD COLUMN store_code TEXT"],
+  },
+];
+
 export interface LocalDevice {
   readonly deviceId: string;
   readonly tenantId: string;
@@ -103,6 +117,8 @@ export interface LocalDevice {
   /** What this device sells in until multi-currency sales (`core-money`). */
   readonly baseCurrency: string;
   readonly registeredAt: string;
+  /** Its store's code (ADR-0029), when it was registered by a client that keeps it. */
+  readonly storeCode: string | null;
 }
 
 /** This client's registration, or `undefined` while it is not registered. */
@@ -117,6 +133,7 @@ export async function localDevice(executor: LocalExecutor): Promise<LocalDevice 
     type: row.type as DeviceType,
     baseCurrency: row.baseCurrency,
     registeredAt: row.registeredAt,
+    storeCode: row.storeCode,
   };
 }
 
@@ -326,6 +343,8 @@ export async function registerThisDevice(
     type: input.type,
     baseCurrency: registered.baseCurrency,
     registeredAt: clock.now().toISOString(),
+    // As the server read it: without spaces or dashes, in capitals.
+    storeCode: storeCodeSchema.safeParse(input.storeCode).data ?? null,
   };
   // Never in the database file where the store takes it. If the store fails, the database keeps
   // it rather than lose the registration, and the next start moves it.
@@ -347,6 +366,7 @@ export async function registerThisDevice(
         credential: inStore ? null : registered.credential,
         baseCurrency: device.baseCurrency,
         registeredAt: device.registeredAt,
+        storeCode: device.storeCode,
       });
   });
   return device;

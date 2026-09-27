@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import { accessLocalMigrations, type LocalDevice } from "@mustawfi/core-access/client";
+import {
+  accessLocalMigrations,
+  deviceStoreCodeLocalMigrations,
+  type LocalDevice,
+} from "@mustawfi/core-access/client";
 import {
   departmentPullApplier,
   organizationLocalMigrations,
@@ -39,6 +43,7 @@ const device: LocalDevice = {
   type: "mainPos",
   baseCurrency: "SYP",
   registeredAt: clock.now().toISOString(),
+  storeCode: "K7M3QX",
 };
 
 const format: ReceiptFormat = {
@@ -62,6 +67,7 @@ beforeEach(async () => {
   db = openNodeLocalDb(":memory:");
   await migrateLocalDb(db, [
     ...accessLocalMigrations,
+    ...deviceStoreCodeLocalMigrations,
     ...syncLocalMigrations,
     ...inventoryLocalMigrations,
     ...salesLocalMigrations,

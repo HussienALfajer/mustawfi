@@ -10,6 +10,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
 import {
   accessProblemCodes,
+  CURRENT_SECRET_FAILURES,
   currentSessionSchema,
   loginResponseSchema,
   type SignOutReason,
@@ -18,6 +19,22 @@ import {
 export type CurrentSession = z.infer<typeof currentSessionSchema>;
 
 export const sessionQueryKey = ["access", "session"] as const;
+
+/** What sign-in says about a session that ended while the user was signed in. */
+export type SessionEndNotice = "ended" | "currentSecret";
+
+/**
+ * What sign-in says after a 401 `access.session.required` (`core-foundation` QA slice 26): the
+ * fifth wrong current PIN or password in «حسابي» when the answer says so (its `detail`), that
+ * the session ended when the user was signed in, and nothing when they were not.
+ */
+export function sessionEndNotice(
+  problem: ApiProblem,
+  wasSignedIn: boolean,
+): SessionEndNotice | undefined {
+  if (problem.detail === CURRENT_SECRET_FAILURES) return "currentSecret";
+  return wasSignedIn ? "ended" : undefined;
+}
 
 /** The signed-in session, or `null` when there is none (a 401, or no token held). */
 export async function fetchSession(signal?: AbortSignal): Promise<CurrentSession | null> {

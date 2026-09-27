@@ -154,13 +154,22 @@ function sectionKeys(event: KeyboardEvent<HTMLFormElement>): void {
 
 /**
  * What a section reports when its action fails, on the screen until the next try; success is
- * a toast (`screen-patterns.md`).
+ * a toast (`screen-patterns.md`). A wrong current secret is named: the PIN or the password
+ * the section asked for.
  */
-function Failure({ error }: { readonly error: unknown }) {
+function Failure({
+  error,
+  proof = "password",
+}: {
+  readonly error: unknown;
+  readonly proof?: "pin" | "password";
+}) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
-  return error === null || error === undefined ? null : (
+  if (error === null || error === undefined) return null;
+  const key = refusalKey(error);
+  return (
     <p role="alert" className="text-text-negative">
-      {t(`account.problem.${refusalKey(error)}`)}
+      {t(`account.problem.${key === "currentWrong" ? `currentWrong.${proof}` : key}`)}
     </p>
   );
 }
@@ -229,7 +238,7 @@ function PinSection({ account }: { readonly account: AccountView }) {
             {t("account.pin.submit")}
           </Button>
         </div>
-        <Failure error={change.error} />
+        <Failure error={change.error} proof={byPin ? "pin" : "password"} />
       </form>
     </FormSection>
   );
@@ -300,7 +309,7 @@ function PasswordSection({ account }: { readonly account: AccountView }) {
             {t("account.password.submit")}
           </Button>
         </div>
-        <Failure error={change.error} />
+        <Failure error={change.error} proof={byPassword ? "password" : "pin"} />
       </form>
     </FormSection>
   );

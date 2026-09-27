@@ -21,6 +21,7 @@
 import {
   accessBundlePart,
   accessLocalMigrations,
+  deviceStoreCodeLocalMigrations,
   type LocalDevice,
   localDevice,
   registerThisDevice,
@@ -285,6 +286,7 @@ async function openDevice(
   const db = openNodeLocalDb(":memory:");
   const migrations = [
     ...accessLocalMigrations,
+    ...deviceStoreCodeLocalMigrations,
     ...syncLocalMigrations,
     ...inventoryLocalMigrations,
     ...salesLocalMigrations,

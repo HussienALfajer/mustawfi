@@ -4,6 +4,7 @@ import {
   type LimitDeclaration,
   limitIdSchema,
   limitKindSchema,
+  limitValueFitsKind,
   limitValueSchema,
   type PermissionDeclaration,
   permissionIdSchema,
@@ -96,6 +97,9 @@ export function checkAccessDeclarations(
       }
       if (!limitValueSchema.safeParse(value).success) {
         throw new TypeError(`limit ${limit.id} grants ${template} the malformed value "${value}"`);
+      }
+      if (!limitValueFitsKind(limit.kind, value)) {
+        throw new TypeError(`limit ${limit.id} grants ${template} "${value}", not a ${limit.kind}`);
       }
     }
   }

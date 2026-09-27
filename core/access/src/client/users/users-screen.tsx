@@ -9,7 +9,7 @@ import {
 } from "@mustawfi/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import type { AuditLink } from "@mustawfi/core-audit/client";
@@ -18,7 +18,7 @@ import { ListLoadFailure } from "../list-load-failure.tsx";
 import { ACCESS_NAMESPACE } from "../messages.ts";
 import { rolesQueryOptions } from "../roles/queries.ts";
 import { sessionQueryOptions } from "../session.ts";
-import { usersQueryOptions } from "./queries.ts";
+import { userListQueryOptions, usersQueryOptions } from "./queries.ts";
 import { type DepartmentOption, UserPanel } from "./user-form.tsx";
 import { UsersTable } from "./users-table.tsx";
 
@@ -84,12 +84,18 @@ export function UsersScreen({
 }: UsersScreenProps) {
   const { t } = useTranslation(ACCESS_NAMESPACE);
   const users = useQuery(usersQueryOptions());
+  // The same answer as the list: the user limit as used of allowed (rule 4).
+  const limit = useQuery(userListQueryOptions()).data?.limit;
+  const limitReached = limit !== undefined && limit.used >= limit.allowed;
+  const limitId = useId();
   const roles = useQuery(rolesQueryOptions());
   const session = useQuery(sessionQueryOptions()).data;
   const viewer = {
     id: session?.user.id ?? "",
     isOwner: session?.user.role.isOwner === true,
     canManage: session?.user.permissions.includes("access.users.manage") === true,
+    permissions: session?.user.permissions ?? [],
+    limits: session?.user.limits ?? {},
   };
   const tableRef = useRef<HTMLTableElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
@@ -184,10 +190,16 @@ export function UsersScreen({
             </span>
           )}
           {viewer.canManage ? (
-            <div className="ms-auto" data-density="comfortable">
+            <div className="ms-auto flex items-center gap-3" data-density="comfortable">
+              {limit === undefined ? null : (
+                <span id={limitId} className="text-sm whitespace-nowrap text-text-secondary">
+                  {t("users.limitUse", limit)}
+                </span>
+              )}
               <Button
                 ref={newButtonRef}
                 aria-keyshortcuts="N"
+                {...(limit === undefined ? {} : { "aria-describedby": limitId })}
                 onPress={() => {
                   select("new");
                 }}
@@ -239,6 +251,7 @@ export function UsersScreen({
           showDepartments={showDepartments}
           viewer={viewer}
           auditLink={auditLink}
+          limitReached={limitReached}
           onClose={closePanel}
           onSaved={(saved) => {
             if (filters.selected !== "new") return;

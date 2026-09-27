@@ -1,4 +1,7 @@
-import { accessLocalMigrations } from "@mustawfi/core-access/client";
+import {
+  accessLocalMigrations,
+  deviceStoreCodeLocalMigrations,
+} from "@mustawfi/core-access/client";
 import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { type LocalDb, migrateLocalDb } from "@mustawfi/local-db";
 import { openNodeLocalDb } from "@mustawfi/local-db/node";
@@ -18,7 +21,11 @@ let db: LocalDb;
 
 beforeEach(async () => {
   db = openNodeLocalDb(":memory:");
-  await migrateLocalDb(db, [...accessLocalMigrations, ...syncLocalMigrations]);
+  await migrateLocalDb(db, [
+    ...accessLocalMigrations,
+    ...deviceStoreCodeLocalMigrations,
+    ...syncLocalMigrations,
+  ]);
 });
 
 afterEach(async () => {

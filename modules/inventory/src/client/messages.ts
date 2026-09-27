@@ -10,6 +10,19 @@ export const inventoryMessages = {
   permission: {
     products: { view: "عرض المنتجات", manage: "إضافة المنتجات وتعديلها" },
   },
+  /**
+   * The audit log's names for this module's records (`auditEntity`), the fields of their
+   * before and after snapshots (`auditField`), and coded values of those fields
+   * (`auditValue`), so the log reads in words (`core-foundation` QA slice 26).
+   */
+  auditEntity: {
+    product: "منتج",
+  },
+  auditField: {
+    name: "الاسم",
+    barcode: "الباركود",
+    price: "السعر",
+  },
   /** Labels of this module's audit actions: `inventory.product.created` → `audit.product.created`. */
   audit: {
     product: { created: "إضافة منتج" },

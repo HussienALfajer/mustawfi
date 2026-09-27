@@ -2,6 +2,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import {
   accessLocalMigrations,
   deviceCredentialLocalMigrations,
+  deviceStoreCodeLocalMigrations,
 } from "@mustawfi/core-access/client";
 import {
   ApiProblem,
@@ -219,6 +220,7 @@ const MIGRATIONS = [
   ...configLocalMigrations,
   ...tenancyLocalMigrations,
   ...deviceCredentialLocalMigrations,
+  ...deviceStoreCodeLocalMigrations,
   { id: "test.0001_items", statements: ["CREATE TABLE test_items (id TEXT PRIMARY KEY)"] },
 ];
 
