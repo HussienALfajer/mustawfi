@@ -33,3 +33,7 @@ Every tenant-owned table is behind row-level security (ADR-0017): nothing is vis
 - **The tenant UUID in the request** — no exception to row-level security, but no person can type it.
 - **A `BYPASSRLS` role owning the lookup function** — works on the `tenants` table directly, but adds a privileged role to provision and audit.
 - **Looking up sessions by token hash across tenants** — needs the same kind of exception for every request instead of once at sign-in.
+
+## Amendments
+
+- 2026-09-27 (`core-foundation`, the user's decision after QA slice 22): an unregistered browser does not remember the store code — it is typed at every sign-in there, which the sign-in form's shape check (`storeCodeFieldSchema`) makes quick to get right. The Decision's «the client remembers the store code after the first sign-in» and the matching Consequence no longer hold for such a browser. Whether a registered device fills in the store it belongs to is left to `core-foundation` slice 26.
