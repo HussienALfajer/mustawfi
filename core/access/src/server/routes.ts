@@ -646,7 +646,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request) =>
       asManager(sessionOf(request), (tx, manager) =>
-        deactivateUser(tx, manager, request.params.id, request.body.reason, context),
+        deactivateUser(
+          tx,
+          manager,
+          request.params.id,
+          request.body.reason,
+          context.permissionCatalogue,
+          context,
+        ),
       ),
   );
 
@@ -658,7 +665,7 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request) =>
       asManager(sessionOf(request), (tx, manager) =>
-        reactivateUser(tx, manager, request.params.id, context),
+        reactivateUser(tx, manager, request.params.id, context.permissionCatalogue, context),
       ),
   );
 
