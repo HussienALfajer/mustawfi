@@ -83,4 +83,24 @@ describe("ProductsScreen", () => {
     );
     expect(posts).toEqual([]);
   });
+
+  it("says the store is read-only when the license stops a new product (QA slice 24)", async () => {
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit = {}) =>
+      Promise.resolve(
+        init.method === "POST"
+          ? Response.json(
+              { type: "about:blank", title: "no", status: 403, code: "tenancy.license.readOnly" },
+              { status: 403 },
+            )
+          : Response.json({ items: [CHARGER], next: null }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderScreen(true);
+    await user.type(await screen.findByRole("textbox", { name: "اسم المنتج" }), "كتاب");
+    await user.type(screen.getByRole("textbox", { name: "سعر البيع" }), "12{Enter}");
+    expect(
+      await screen.findByText(/المتجر للقراءة فقط لأن الترخيص لم يُجدَّد، فلا يُضاف منتج/),
+    ).toBeInTheDocument();
+  });
 });

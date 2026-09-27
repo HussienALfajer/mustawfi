@@ -10,11 +10,13 @@ export class ProblemError extends Error {
   readonly status: number;
   readonly title: string;
   readonly detail: string | undefined;
+  /** Seconds to wait before trying again, sent as `Retry-After` (a 429's, RFC 9110). */
+  readonly retryAfterSeconds: number | undefined;
 
   constructor(
     code: string,
     status: number,
-    options: { title?: string; detail?: string; cause?: unknown } = {},
+    options: { title?: string; detail?: string; cause?: unknown; retryAfterSeconds?: number } = {},
   ) {
     super(options.detail ?? options.title ?? code, { cause: options.cause });
     problemCodeSchema.parse(code);
@@ -25,5 +27,10 @@ export class ProblemError extends Error {
     this.status = status;
     this.title = options.title ?? code;
     this.detail = options.detail;
+    const wait = options.retryAfterSeconds;
+    if (wait !== undefined && (!Number.isInteger(wait) || wait < 1)) {
+      throw new RangeError(`Retry-After is a whole number of seconds from 1, got ${String(wait)}`);
+    }
+    this.retryAfterSeconds = wait;
   }
 }

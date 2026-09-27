@@ -43,6 +43,8 @@ function refusalKey(error: unknown): string {
   switch (error.code) {
     case accessProblemCodes.currentSecretWrong:
       return "currentWrong";
+    case accessProblemCodes.loginThrottled:
+      return "busy";
     case accessProblemCodes.loginRequired:
       return "loginRequired";
     case accessProblemCodes.twoFactorCodeInvalid:

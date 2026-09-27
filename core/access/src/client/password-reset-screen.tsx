@@ -11,6 +11,7 @@ import { accessProblemCodes, passwordSchema, pinSchema } from "../shared/index.t
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { resetPasswordWithCode } from "./session.ts";
 import { storeCodeFieldSchema } from "./store-code-field.ts";
+import { throttleWaitMinutes } from "./throttle.ts";
 
 /**
  * The form's values, on the server's own rules: the password as `passwordSchema`, the PIN, when
@@ -180,7 +181,11 @@ export function PasswordResetScreen({ onReset, backLink }: PasswordResetScreenPr
             role="alert"
             className="rounded-sm bg-negative-tint px-pad-inline py-pad-block text-text-negative"
           >
-            {t(`recovery.problem.${refusalKey(mutation.error)}`)}
+            {t(`recovery.problem.${refusalKey(mutation.error)}`, {
+              minutes: throttleWaitMinutes(
+                mutation.error instanceof ApiProblem ? mutation.error.retryAfterSeconds : undefined,
+              ),
+            })}
           </p>
         ) : null}
         <Button type="submit" isPending={mutation.isPending}>

@@ -60,7 +60,13 @@ export const shellMessages = {
   signedInAs: "{name}",
   sessionFailed: "تعذّر التحقق من الجلسة. تحقّق من الاتصال ثم أعد تحميل الصفحة",
   notFound: "الصفحة غير موجودة",
-  home: "العودة إلى المنتجات",
+  home: "العودة إلى الصفحة الأولى",
+  /** A screen opened by its address that the user's role does not allow (notice pattern). */
+  notAllowed: {
+    title: "لا يسمح لك دورك بفتح «{screen}»",
+    body: "تحتاج هذه الشاشة صلاحية لا يملكها دورك. يمنحها المالك أو من يدير الأدوار من «الأدوار والصلاحيات».",
+    action: "الانتقال إلى «{screen}»",
+  },
   printing: {
     title: "طابعة الإيصالات",
     browserOnly:

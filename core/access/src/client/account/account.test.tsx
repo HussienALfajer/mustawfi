@@ -153,6 +153,38 @@ describe("sign-in with two-factor authentication (core-foundation rule 26)", () 
     expect(screen.getByLabelText("كلمة المرور")).toHaveValue("");
   });
 
+  it("says how long a throttled sign-in waits, from the answer's Retry-After (QA slice 24)", async () => {
+    const throttled = (seconds?: number) => () =>
+      Response.json(
+        {
+          type: "about:blank",
+          title: "wait",
+          status: 429,
+          code: accessProblemCodes.loginThrottled,
+        },
+        {
+          status: 429,
+          ...(seconds === undefined ? {} : { headers: { "retry-after": String(seconds) } }),
+        },
+      );
+    fakeApi({
+      "POST /api/v1/access/login": [throttled(1), throttled(540), throttled(60), throttled()],
+    });
+    renderWith(<LoginScreen onSignedIn={vi.fn()} />);
+    await typePassword();
+    // Two attempts of one account at the same instant: a moment, not a quarter of an hour.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "محاولات كثيرة في اللحظة نفسها. انتظر لحظة ثم حاول مجددًا",
+    );
+    await userEvent.type(screen.getByLabelText("كلمة المرور"), "{Enter}");
+    expect(await screen.findByText("محاولات فاشلة كثيرة. حاول مجددًا بعد 9 دقائق")).toBeVisible();
+    await userEvent.type(screen.getByLabelText("كلمة المرور"), "{Enter}");
+    expect(await screen.findByText("محاولات فاشلة كثيرة. حاول مجددًا بعد دقيقة")).toBeVisible();
+    // An answer that does not say: a whole window.
+    await userEvent.type(screen.getByLabelText("كلمة المرور"), "{Enter}");
+    expect(await screen.findByText("محاولات فاشلة كثيرة. حاول مجددًا بعد 15 دقيقة")).toBeVisible();
+  });
+
   it("offers the recovery link and says when the password was just reset", () => {
     renderWith(
       <LoginScreen

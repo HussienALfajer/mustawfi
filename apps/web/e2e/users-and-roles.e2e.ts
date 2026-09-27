@@ -121,7 +121,11 @@ test("keyboard only: a section cashier scoped to a new department, and a copied 
   await expect(navigation.getByRole("link", { name: "المنتجات" })).toBeVisible();
   await expect(navigation.getByRole("group", { name: "الإدارة" })).toHaveCount(0);
   await expect(navigation.getByRole("link", { name: "المستخدمون" })).toHaveCount(0);
+  // By its address, the screen's place says the role does not allow it (QA slice 24).
   await page.goto("/admin/users");
-  await expect(page.getByRole("alert")).toHaveText("لا يسمح لك دورك بعرض المستخدمين.");
+  await expect(
+    page.getByRole("heading", { level: 2, name: "لا يسمح لك دورك بفتح «المستخدمون»" }),
+  ).toBeVisible();
+  await expect(page.getByRole("grid", { name: "المستخدمون" })).toHaveCount(0);
   await expectAccessible(page);
 });

@@ -52,7 +52,6 @@ import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/cor
 import { type LocalDb, useLocalDb } from "@mustawfi/local-db";
 import { ProductsScreen } from "@mustawfi/inventory/client";
 import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
-import { INVOICE_CREATE_PERMISSION } from "@mustawfi/sales/shared";
 import {
   type NavGroup,
   SIDE_NAVIGATION_WIDTH,
@@ -93,6 +92,8 @@ import { useTranslation } from "react-i18next";
 import { bundleVerifier } from "./bundle-verifier.ts";
 import { SHELL_NAMESPACE } from "./messages.ts";
 import { PrinterScreen, ReceiptActions, StoreReceiptPreview } from "./printing.tsx";
+import { ScreenNotAllowed } from "./screen-not-allowed.tsx";
+import { guardedPage, mayOpen, type NavPath, SCREENS, startScreen } from "./screens.ts";
 
 export interface RouterContext {
   readonly queryClient: QueryClient;
@@ -110,6 +111,11 @@ declare module "@tanstack/react-router" {
     readonly title?: `pages.${string}`;
     /** List and settings screens fill the content area; older screens sit in a padded column. */
     readonly fill?: boolean;
+    /**
+     * The navigation's screen this page is, when its role permission guards it
+     * (`SCREENS`): without it the page shows `ScreenNotAllowed` instead.
+     */
+    readonly screen?: NavPath;
   }
 }
 
@@ -144,7 +150,7 @@ function NotFound() {
   return (
     <div className="flex flex-col gap-3 p-6">
       <p className="text-text">{t("notFound")}</p>
-      <Link to="/products" className={TEXT_LINK}>
+      <Link to="/" className={TEXT_LINK}>
         {t("home")}
       </Link>
     </div>
@@ -208,7 +214,8 @@ function LoginPage() {
           // On a registered device of the user's store, they are now the one signed in on it.
           void beginDeviceSession(db, session, clock).then(() => {
             queryClient.removeQueries({ queryKey: signedInQueryKey });
-            return navigate({ to: "/products" });
+            // The start: the products, or the first screen the user's role opens.
+            return navigate({ to: "/" });
           });
         }}
       />
@@ -225,7 +232,7 @@ async function signedOutOnly({ context }: { readonly context: RouterContext }) {
     // Out of reach: signing in says so itself.
     if (!(error instanceof ApiUnreachable)) throw error;
   }
-  if (signedIn !== null) redirect({ to: "/products", throw: true });
+  if (signedIn !== null) redirect({ to: "/", throw: true });
 }
 
 /** A path inside the app to return to, never another origin. */
@@ -332,20 +339,6 @@ const galleryRoute = createRoute({
   component: lazyRouteComponent(() => import("./gallery.tsx"), "GalleryPage"),
 });
 
-type NavPath =
-  | "/pos"
-  | "/invoices"
-  | "/products"
-  | "/admin/profile"
-  | "/admin/departments"
-  | "/admin/users"
-  | "/admin/roles"
-  | "/admin/devices"
-  | "/admin/license"
-  | "/admin/audit"
-  | "/device"
-  | "/printer";
-
 function navLink(to: NavPath) {
   return function NavLink({
     className,
@@ -364,55 +357,38 @@ function navLink(to: NavPath) {
 
 /**
  * The side navigation's groups. An entry appears only when the user's role holds the
- * permission its screen needs (`core-foundation` slice 5); a group left empty is not shown.
+ * permission its screen needs (`SCREENS`, `core-foundation` slice 5); a group left
+ * empty is not shown.
  */
 function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
   const { t } = useTranslation(SHELL_NAMESPACE);
-  const item = (id: string, to: NavPath, icon: ReactNode, permission?: string) =>
-    permission === undefined || permissions.has(permission)
-      ? [{ id, label: t(`nav.${id}`), icon, link: navLink(to) }]
-      : [];
+  const item = (id: string, to: NavPath, icon: ReactNode) =>
+    mayOpen(to, permissions) ? [{ id, label: t(`nav.${id}`), icon, link: navLink(to) }] : [];
   const groups: NavGroup[] = [
     {
       id: "sales",
       label: t("nav.group.sales"),
       items: [
-        // Held in some department: a sale outside them asks a supervisor (rule 18).
-        ...item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />, INVOICE_CREATE_PERMISSION),
-        ...item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />, "sales.invoices.view"),
+        ...item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />),
+        ...item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />),
       ],
     },
     {
       id: "inventory",
       label: t("nav.group.inventory"),
-      items: item("products", "/products", <Package {...ICON_PROPS} />, "inventory.products.view"),
+      items: item("products", "/products", <Package {...ICON_PROPS} />),
     },
     {
       id: "administration",
       label: t("nav.group.administration"),
       items: [
-        ...item(
-          "profile",
-          "/admin/profile",
-          <Store {...ICON_PROPS} />,
-          "organization.profile.edit",
-        ),
-        ...item(
-          "departments",
-          "/admin/departments",
-          <Layers {...ICON_PROPS} />,
-          "organization.departments.manage",
-        ),
-        ...item("users", "/admin/users", <Users {...ICON_PROPS} />, "access.users.view"),
-        ...item("roles", "/admin/roles", <ShieldCheck {...ICON_PROPS} />, "access.users.view"),
-        ...item("devices", "/admin/devices", <Laptop {...ICON_PROPS} />, "access.devices.manage"),
-        ...item(
-          "license",
-          "/admin/license",
-          <BadgeCheck {...ICON_PROPS} />,
-          "organization.license.view",
-        ),
-        ...item("audit", "/admin/audit", <ScrollText {...ICON_PROPS} />, "audit.view"),
+        ...item("profile", "/admin/profile", <Store {...ICON_PROPS} />),
+        ...item("departments", "/admin/departments", <Layers {...ICON_PROPS} />),
+        ...item("users", "/admin/users", <Users {...ICON_PROPS} />),
+        ...item("roles", "/admin/roles", <ShieldCheck {...ICON_PROPS} />),
+        ...item("devices", "/admin/devices", <Laptop {...ICON_PROPS} />),
+        ...item("license", "/admin/license", <BadgeCheck {...ICON_PROPS} />),
+        ...item("audit", "/admin/audit", <ScrollText {...ICON_PROPS} />),
       ],
     },
     {
@@ -431,7 +407,11 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
 function usePage() {
   const matches = useMatches();
   const page = [...matches].reverse().find((match) => match.staticData.title !== undefined);
-  return { title: page?.staticData.title, fill: page?.staticData.fill === true };
+  return {
+    title: page?.staticData.title,
+    fill: page?.staticData.fill === true,
+    screen: page?.staticData.screen,
+  };
 }
 
 /** Who is signed in on this client (`SignedIn`); `undefined` while it loads. */
@@ -445,7 +425,7 @@ function useSignedIn(): SignedIn | null | undefined {
  * the line as plain text.
  */
 function useAuditLink(): AuditLink | undefined {
-  const canRead = useSignedIn()?.grant.permissions.includes("audit.view") === true;
+  const canRead = mayOpen("/admin/audit", new Set(useSignedIn()?.grant.permissions ?? []));
   return useMemo(
     () =>
       canRead
@@ -573,6 +553,7 @@ function AppShell() {
   // What the user holds somewhere, from the grant the device resolves as the server does.
   const permissions = useMemo(() => new Set(signedIn?.grant.permissions ?? []), [signedIn]);
   const groups = useNavigationGroups(permissions);
+  const start = startScreen(permissions);
   const page = usePage();
   const notice = useLicenseNotice();
   const audit = useDeviceLicenseAudit();
@@ -638,7 +619,7 @@ function AppShell() {
               <LicenseIndicator
                 notice={notice}
                 isOwner={isOwner}
-                {...(permissions.has("organization.license.view")
+                {...(mayOpen("/admin/license", permissions)
                   ? {
                       link: (content: ReactNode) => (
                         <Link
@@ -668,7 +649,12 @@ function AppShell() {
           </div>
         </header>
         <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto">
-          {page.fill ? (
+          {page.screen !== undefined && !mayOpen(page.screen, permissions) ? (
+            <ScreenNotAllowed
+              title={SCREENS[page.screen].title}
+              start={{ to: start, title: SCREENS[start].title }}
+            />
+          ) : page.fill ? (
             <Outlet />
           ) : (
             <div className="w-full max-w-6xl p-6">
@@ -721,7 +707,7 @@ const suspendedRoute = createRoute({
       if (isSuspension(error)) return;
       throw error;
     }
-    redirect({ to: session === null ? "/login" : "/products", throw: true });
+    redirect({ to: session === null ? "/login" : "/", throw: true });
   },
   component: function SuspendedPage() {
     // On a registered device the one action ends its session too, back to the PIN screen.
@@ -730,11 +716,13 @@ const suspendedRoute = createRoute({
   },
 });
 
+/** The start: the products, or the first screen the user's role opens (`startScreen`). */
 const indexRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/",
-  beforeLoad: () => {
-    redirect({ to: "/products", throw: true });
+  beforeLoad: async ({ context }) => {
+    const signedIn = await signedInOf(context);
+    redirect({ to: startScreen(new Set(signedIn?.grant.permissions ?? [])), throw: true });
   },
 });
 
@@ -746,7 +734,7 @@ function ProductsPage() {
 const productsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/products",
-  staticData: { title: "pages.products" },
+  staticData: guardedPage("/products"),
   component: ProductsPage,
 });
 
@@ -794,7 +782,7 @@ const posRoute = createRoute({
 const invoicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/invoices",
-  staticData: { title: "pages.invoices" },
+  staticData: guardedPage("/invoices"),
   component: InvoicesScreen,
 });
 
@@ -815,7 +803,7 @@ function DepartmentsPage() {
 const departmentsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/departments",
-  staticData: { title: "pages.departments", fill: true },
+  staticData: { ...guardedPage("/admin/departments"), fill: true },
   validateSearch: departmentFiltersSchema,
   component: DepartmentsPage,
 });
@@ -840,7 +828,7 @@ function UsersPage() {
 const usersRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/users",
-  staticData: { title: "pages.users", fill: true },
+  staticData: { ...guardedPage("/admin/users"), fill: true },
   validateSearch: userFiltersSchema,
   component: UsersPage,
 });
@@ -862,7 +850,7 @@ function RolesPage() {
 const rolesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/roles",
-  staticData: { title: "pages.roles", fill: true },
+  staticData: { ...guardedPage("/admin/roles"), fill: true },
   validateSearch: roleFiltersSchema,
   component: RolesPage,
 });
@@ -892,7 +880,7 @@ function DevicesPage() {
 const devicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/devices",
-  staticData: { title: "pages.devices", fill: true },
+  staticData: { ...guardedPage("/admin/devices"), fill: true },
   validateSearch: deviceFiltersSchema,
   component: DevicesPage,
 });
@@ -913,7 +901,7 @@ function AuditLogPage() {
 const auditLogRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/audit",
-  staticData: { title: "pages.audit", fill: true },
+  staticData: { ...guardedPage("/admin/audit"), fill: true },
   validateSearch: auditLogFiltersSchema,
   component: AuditLogPage,
 });
@@ -939,31 +927,19 @@ function StoreProfilePage() {
 const storeProfileRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/profile",
-  staticData: { title: "pages.profile", fill: true },
+  staticData: { ...guardedPage("/admin/profile"), fill: true },
   component: StoreProfilePage,
 });
 
-/** Where each license limit is managed, and the permission that screen needs. */
+/** Where each license limit is managed; the link shows to users who may open that screen. */
 const LIMIT_SCREENS: Record<
   LicenseLimitName,
-  { readonly to: NavPath; readonly permission: string; readonly label: `licenseLinks.${string}` }
+  { readonly to: NavPath; readonly label: `licenseLinks.${string}` }
 > = {
-  users: { to: "/admin/users", permission: "access.users.view", label: "licenseLinks.users" },
-  departments: {
-    to: "/admin/departments",
-    permission: "organization.departments.manage",
-    label: "licenseLinks.departments",
-  },
-  mainPosDevices: {
-    to: "/admin/devices",
-    permission: "access.devices.manage",
-    label: "licenseLinks.devices",
-  },
-  companionDevices: {
-    to: "/admin/devices",
-    permission: "access.devices.manage",
-    label: "licenseLinks.devices",
-  },
+  users: { to: "/admin/users", label: "licenseLinks.users" },
+  departments: { to: "/admin/departments", label: "licenseLinks.departments" },
+  mainPosDevices: { to: "/admin/devices", label: "licenseLinks.devices" },
+  companionDevices: { to: "/admin/devices", label: "licenseLinks.devices" },
 };
 
 function LicensePage() {
@@ -973,7 +949,7 @@ function LicensePage() {
     <LicenseScreen
       limitLink={(limit) => {
         const screen = LIMIT_SCREENS[limit];
-        return permissions.has(screen.permission) ? (
+        return mayOpen(screen.to, permissions) ? (
           <Link to={screen.to} className={TEXT_LINK}>
             {t(screen.label)}
           </Link>
@@ -987,7 +963,7 @@ function LicensePage() {
 const licenseRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/admin/license",
-  staticData: { title: "pages.license", fill: true },
+  staticData: { ...guardedPage("/admin/license"), fill: true },
   component: LicensePage,
 });
 

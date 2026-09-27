@@ -157,13 +157,14 @@ export async function authenticateSession(
 /**
  * Ends `session` now, as its own user signing out, audited `access.session.revoked` with the
  * reason the client gave: `signedOut` unless it locked, switched user, or found the session idle
- * at start-up (`core-foundation` slice 20).
+ * at start-up (`core-foundation` slice 20) — or `currentSecretFailures`, when the user's own
+ * account was offered one wrong current secret too many in it (QA slice 24).
  */
 export async function revokeSession(
   tenants: TenantDatabase,
   session: Session,
   dependencies: AccessDependencies,
-  reason: SignOutReason = "signedOut",
+  reason: SignOutReason | "currentSecretFailures" = "signedOut",
 ): Promise<void> {
   const now = dependencies.clock.now();
   const userId = session.user.id;

@@ -222,6 +222,24 @@ describe("cross-origin calls (CORS)", () => {
       headers: { origin: "http://tauri.localhost" },
     });
     expect(call.headers["access-control-allow-origin"]).toBe("http://tauri.localhost");
+    // A throttled sign-in's wait is readable across origins (QA slice 24).
+    expect(call.headers["access-control-expose-headers"]).toBe("retry-after");
+  });
+
+  it("lets the Windows app use every method the routes use: it edits users and the profile too (QA slice 24)", async () => {
+    for (const method of ["PUT", "PATCH", "DELETE"]) {
+      const preflight = await app.inject({
+        method: "OPTIONS",
+        url: "/api/v1/fixture/widgets",
+        headers: {
+          origin: "http://tauri.localhost",
+          "access-control-request-method": method,
+          "access-control-request-headers": "authorization,content-type",
+        },
+      });
+      expect(preflight.statusCode).toBe(204);
+      expect(preflight.headers["access-control-allow-methods"]?.split(/,\s*/)).toContain(method);
+    }
   });
 
   it("gives any other origin no CORS headers", async () => {

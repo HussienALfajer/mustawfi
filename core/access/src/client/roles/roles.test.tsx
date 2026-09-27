@@ -296,6 +296,20 @@ describe("RolesScreen", () => {
     expect(await within(panel).findByRole("alert")).toHaveTextContent(/يحمل هذا الدور مستخدمون/);
   });
 
+  it("says the store is read-only when the license stops an archive", async () => {
+    fakeApi([OWNER, CASHIER], {
+      [`POST /api/v1/access/roles/${CASHIER.id}/archive`]: problem(403, "tenancy.license.readOnly"),
+    });
+    renderScreen({ selected: CASHIER.id });
+    const panel = await screen.findByRole("complementary", { name: "كاشير القسم" });
+    await userEvent.click(within(panel).getByRole("button", { name: /أرشفة الدور/ }));
+    const dialog = screen.getByRole("alertdialog", { name: /أرشفة الدور «كاشير القسم»/ });
+    await userEvent.click(within(dialog).getByRole("button", { name: "أرشفة" }));
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(
+      "المتجر للقراءة فقط لأن الترخيص لم يُجدَّد، فلا يُحفظ أي تغيير",
+    );
+  });
+
   it("restores an archived role from its panel with no confirmation", async () => {
     const calls = fakeApi([OWNER, CASHIER, OLD], {
       [`POST /api/v1/access/roles/${OLD.id}/restore`]: () =>

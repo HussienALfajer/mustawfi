@@ -13,6 +13,13 @@ export const LOGIN_FAILURE_LIMIT = 5;
 export const ADDRESS_FAILURE_LIMIT = 30;
 
 /**
+ * Wrong current secrets (PIN or password) offered in one session to change the user's own
+ * account: the fifth ends the session, so whoever holds a session left open cannot guess the
+ * user's PIN from it (QA slice 24, user decision).
+ */
+export const CURRENT_SECRET_FAILURE_LIMIT = 5;
+
+/**
  * What the per-address limit counts a source address as. An IPv6 client usually holds a whole
  * /64 and can pick any address in it, so IPv6 addresses count per /64; an IPv4 address mapped
  * into IPv6 (`::ffff:192.0.2.1`) counts as itself.

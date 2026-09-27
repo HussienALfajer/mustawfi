@@ -52,6 +52,9 @@ test("keyboard only: «My account» changes the PIN and password and turns on 2F
   page,
   request,
 }, testInfo) => {
+  // Three sign-ins, a support reset through the CLI, a dozen Argon2id checks, and screenshots in
+  // both themes: close to the default 30 s alone, past it once under the full run (QA slice 22).
+  test.setTimeout(60_000);
   await addSecondOwner(request);
   await signIn(page, FIRST_PASSWORD, LOGIN);
   await expect(page).toHaveURL(/\/products$/);

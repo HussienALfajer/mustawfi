@@ -14,6 +14,12 @@ import {
 import { z } from "zod";
 import { problemErrorHandler, problemNotFoundHandler } from "./problem-details.ts";
 
+/**
+ * The methods the native shells may call across origins: every one a route uses, since the Windows
+ * app edits users, roles, and the store profile too (QA slice 24; the route table test checks it).
+ */
+export const CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+
 export const OPENAPI_PATH = "/api/v1/openapi.json";
 
 export interface ServerOptions<Context> {
@@ -82,8 +88,10 @@ export async function buildServer<Context>(
     origin: (origin, callback) => {
       callback(null, origin !== undefined && clientOrigins.has(origin));
     },
-    methods: ["GET", "POST"],
+    methods: [...CORS_METHODS],
     allowedHeaders: ["authorization", "content-type", DEVICE_CREDENTIAL_HEADER],
+    // How long a throttled sign-in waits (rule 21).
+    exposedHeaders: ["retry-after"],
     credentials: false,
     maxAge: 600,
   });

@@ -648,8 +648,9 @@ describe("PINs and passwords", () => {
     ]);
   });
 
-  it("lets a user change their own password with the current one", async () => {
+  it("lets a user change their own password with the current one, which ends their other sessions", async () => {
     const store = await newStore();
+    const elsewhere = await signInAs(server, store.tenant, "ahmad", OWNER_PASSWORD);
     expectProblem(
       await call(store.owner, "PUT", "/me/password", {
         currentPassword: "not my password",
@@ -668,6 +669,78 @@ describe("PINs and passwords", () => {
     ).toBe(204);
     await signInAs(server, store.tenant, "ahmad", "another long password");
     expect(await auditOf(store.tenant.tenantId, "access.user.passwordChanged")).toHaveLength(1);
+    // Whoever learnt the old password is out; the session it was changed from stays (QA slice 24).
+    expect(await sessionStatus(elsewhere)).toBe(401);
+    expect(await sessionStatus(store.owner)).toBe(200);
+    expect(await auditOf(store.tenant.tenantId, "access.session.revoked")).toEqual([
+      expect.objectContaining({
+        created_by: store.tenant.ownerId,
+        after: { userId: store.tenant.ownerId, reason: "passwordChanged" },
+      }),
+    ]);
+  });
+
+  it("ends a session at its fifth wrong current PIN or password (QA slice 24)", async () => {
+    const store = await newStore();
+    const other = await signInAs(server, store.tenant, "ahmad", OWNER_PASSWORD);
+    const wrong = [
+      ["PUT", "/me/pin", { currentPassword: "wrong password 1", pin: "2580" }],
+      ["PUT", "/me/password", { currentPassword: "wrong password 2", password: "a long password" }],
+      ["POST", "/me/two-factor/enrolment", { currentPassword: "wrong password 3" }],
+      ["PUT", "/me/pin", { currentPassword: "wrong password 4", pin: "2580" }],
+    ] as const;
+    for (const [method, url, body] of wrong) {
+      expectProblem(
+        await call(store.owner, method, url, body),
+        403,
+        accessProblemCodes.currentSecretWrong,
+      );
+    }
+    expect(await sessionStatus(store.owner)).toBe(200);
+    expectProblem(
+      await call(store.owner, "PUT", "/me/pin", {
+        currentPassword: "wrong password 5",
+        pin: "2580",
+      }),
+      401,
+      accessProblemCodes.sessionRequired,
+    );
+    expect(await sessionStatus(store.owner)).toBe(401);
+    // Only that session: the user signs in again, and another session of theirs stays.
+    expect(await sessionStatus(other)).toBe(200);
+    expect(await auditOf(store.tenant.tenantId, "access.session.revoked")).toEqual([
+      expect.objectContaining({
+        created_by: store.tenant.ownerId,
+        after: { userId: store.tenant.ownerId, reason: "currentSecretFailures" },
+      }),
+    ]);
+    // Guesses sent together cannot pass the fifth together: those in flight count (429).
+    const flood = await signInAs(server, store.tenant, "ahmad", OWNER_PASSWORD);
+    const answers = await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        call(flood, "PUT", "/me/pin", {
+          currentPassword: `parallel guess ${String(i)}`,
+          pin: "2580",
+        }),
+      ),
+    );
+    // At most four answered «wrong»: the fifth ended the session (401), the rest waited (429).
+    const refusedAsWrong = answers.filter((answer) => answer.statusCode === 403).length;
+    expect(refusedAsWrong).toBeLessThanOrEqual(4);
+    expect(await sessionStatus(flood)).toBe(401);
+    expect(answers.every((answer) => [401, 403, 429].includes(answer.statusCode))).toBe(true);
+    // Five were checked at most: those that came while five were in flight waited, unchecked.
+    expect(answers.some((answer) => answer.statusCode === 429)).toBe(true);
+    // A right secret after a wrong one does not count, nor do refusals of anything else.
+    expectProblem(
+      await call(other, "PUT", "/me/pin", { currentPassword: "wrong again", pin: "2580" }),
+      403,
+      accessProblemCodes.currentSecretWrong,
+    );
+    expect(
+      (await call(other, "PUT", "/me/pin", { currentPassword: OWNER_PASSWORD, pin: "2580" }))
+        .statusCode,
+    ).toBe(204);
   });
 
   it("stores only Argon2id hashes: the database refuses anything else", async () => {
@@ -1135,6 +1208,66 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
       403,
       accessProblemCodes.beyondOwnGrant,
     );
+  });
+
+  it("sets the PIN, password, or login only of users whose role is within the manager's (QA slice 24)", async () => {
+    const { store, deputy } = await withManager();
+    // The accountant's role holds `audit.view` and more, which the deputy lacks: with a PIN or a
+    // password of their choosing the deputy could sign in as the accountant.
+    const accountant = await roleNamed(store, "المحاسب");
+    const broader = (
+      await postUser(store.owner, { name: "المحاسبة", roleId: accountant.id, login: "acc" })
+    ).json<UserView>();
+    const pinless = (
+      await postUser(store.owner, { name: "محاسب بلا دخول", roleId: accountant.id })
+    ).json<UserView>();
+    expectProblem(
+      await call(deputy, "PUT", `/users/${broader.id}/pin`, { pin: "2580" }),
+      403,
+      accessProblemCodes.broaderRole,
+    );
+    expectProblem(
+      await call(deputy, "PUT", `/users/${broader.id}/password`, {
+        password: "a long new password",
+      }),
+      403,
+      accessProblemCodes.broaderRole,
+    );
+    expectProblem(
+      await call(deputy, "PATCH", `/users/${pinless.id}`, { login: "taken.over" }),
+      403,
+      accessProblemCodes.broaderRole,
+    );
+    const touched = (rows: { entity_id: string | null }[]) =>
+      rows.filter((row) => row.entity_id === broader.id || row.entity_id === pinless.id);
+    expect(touched(await auditOf(store.tenant.tenantId, "access.user.pinSet"))).toEqual([]);
+    expect(touched(await auditOf(store.tenant.tenantId, "access.user.passwordSet"))).toEqual([]);
+    expect(touched(await auditOf(store.tenant.tenantId, "access.user.changed"))).toEqual([]);
+    // A user within the deputy's role is theirs to manage; the name of a broader one too.
+    const small = (
+      await call(deputy, "POST", "/roles", {
+        name: "عرض المنتجات",
+        permissions: ["inventory.products.view"],
+      })
+    ).json<RoleView>();
+    const worker = (await postUser(deputy, { name: "عامل", roleId: small.id })).json<UserView>();
+    expect((await call(deputy, "PUT", `/users/${worker.id}/pin`, { pin: "2580" })).statusCode).toBe(
+      200,
+    );
+    expect(
+      (await call(deputy, "PATCH", `/users/${worker.id}`, { login: "worker" })).statusCode,
+    ).toBe(200);
+    expect(
+      (await call(deputy, "PUT", `/users/${worker.id}/password`, { password: "a long password" }))
+        .statusCode,
+    ).toBe(200);
+    expect(
+      (await call(deputy, "PATCH", `/users/${broader.id}`, { name: "المحاسبة سلمى" })).statusCode,
+    ).toBe(200);
+    // An owner sets anyone's.
+    expect(
+      (await call(store.owner, "PUT", `/users/${broader.id}/pin`, { pin: "2580" })).statusCode,
+    ).toBe(200);
   });
 
   it("does not let a non-owner change their own role or departments", async () => {

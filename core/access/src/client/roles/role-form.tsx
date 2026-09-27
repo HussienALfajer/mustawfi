@@ -1,6 +1,7 @@
 import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
 import { limitValueSchema, nameKey } from "@mustawfi/core-config/shared";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import {
   Badge,
   Button,
@@ -56,6 +57,8 @@ export function roleProblem(error: unknown): string {
       return "notFound";
     case accessProblemCodes.beyondOwnGrant:
       return "beyondOwnGrant";
+    case tenancyProblemCodes.licenseReadOnly:
+      return "readOnly";
     case accessProblemCodes.permissionDenied:
       return "permissionDenied";
     default:

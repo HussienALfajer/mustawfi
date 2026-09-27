@@ -1,3 +1,4 @@
+import { ProblemError } from "@mustawfi/core-config/server";
 import { type PermissionCatalogue, problemDetailsSchema } from "@mustawfi/core-config/shared";
 import {
   currentLicenseStatus,
@@ -9,6 +10,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
+  accessProblemCodes,
   catalogueView,
   accountViewSchema,
   changeOwnPasswordRequestSchema,
@@ -58,7 +60,7 @@ import {
   reportDeviceWiped,
   revokeDevice,
 } from "./devices.ts";
-import { type LoggedIn, logIn, logInWithPin, type SignInSource } from "./login.ts";
+import { type LoggedIn, logIn, logInWithPin, type SignInSource, signInThrottled } from "./login.ts";
 import { resetPasswordWithCode } from "./reset-codes.ts";
 import { archiveRole, copyRole, editRole, listRoleItems, restoreRole } from "./roles.ts";
 import { deviceOf, type RouteAccess, type RouteConfig, sessionOf } from "./route-access.ts";
@@ -69,9 +71,10 @@ import {
   isSameOrigin,
   revokeSession,
   type Session,
+  SESSION_LIFETIME_MS,
   sessionCookie,
 } from "./sessions.ts";
-import { signInThrottles } from "./throttle.ts";
+import { CURRENT_SECRET_FAILURE_LIMIT, FailureCounter, signInThrottles } from "./throttle.ts";
 import { accountOf, confirmTwoFactor, disableTwoFactor, startTwoFactor } from "./two-factor.ts";
 import {
   addUser,
@@ -167,6 +170,43 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
   const app = scope.withTypeProvider<ZodTypeProvider>();
   // Per source address, and per unknown store code and login: this process's memory (rule 21).
   const signIn = { ...context, throttles: signInThrottles() };
+  // Wrong current secrets per session, in this process's memory like the addresses: one session
+  // lasts at most its lifetime, and the fifth ends it.
+  const proofs = new FailureCounter(CURRENT_SECRET_FAILURE_LIMIT, SESSION_LIFETIME_MS);
+
+  /**
+   * Runs a change of the signed-in user's own account that a current PIN or password proves
+   * (`403 access.user.currentSecretWrong` when wrong). The fifth wrong one in a session ends the
+   * session, audited `access.session.revoked` for `currentSecretFailures`, and is answered
+   * 401 `access.session.required`: the user signs in again (QA slice 24, user decision). Proofs
+   * still in flight count, so parallel guesses cannot pass the fifth together (429).
+   */
+  async function provedBy<T>(session: Session, change: () => Promise<T>): Promise<T> {
+    const now = context.clock.now();
+    if (proofs.busy(session.sessionId, now)) {
+      throw signInThrottled(new Date(now.getTime() + 1000), now);
+    }
+    const attempt = proofs.begin(session.sessionId, now);
+    let result: T;
+    try {
+      result = await change();
+    } catch (error) {
+      if (!(
+        error instanceof ProblemError && error.code === accessProblemCodes.currentSecretWrong
+      )) {
+        attempt.release();
+        throw error;
+      }
+      attempt.fail();
+      if (proofs.throttledUntil(session.sessionId, now) === undefined) throw error;
+      await revokeSession(context.tenants, session, context, "currentSecretFailures");
+      throw new ProblemError(accessProblemCodes.sessionRequired, 401, {
+        title: "Too many wrong current PINs or passwords: sign in again",
+      });
+    }
+    attempt.release();
+    return result;
+  }
 
   app.post(
     "/login",
@@ -623,7 +663,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request) =>
       asManager(sessionOf(request), (tx, manager) =>
-        setUserPin(tx, manager, request.params.id, request.body.pin, context),
+        setUserPin(
+          tx,
+          manager,
+          request.params.id,
+          request.body.pin,
+          context.permissionCatalogue,
+          context,
+        ),
       ),
   );
 
@@ -640,7 +687,14 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request) =>
       asManager(sessionOf(request), (tx, manager) =>
-        setUserPassword(tx, manager, request.params.id, request.body.password, context),
+        setUserPassword(
+          tx,
+          manager,
+          request.params.id,
+          request.body.password,
+          context.permissionCatalogue,
+          context,
+        ),
       ),
   );
 
@@ -689,8 +743,11 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       },
     },
     async (request, reply) => {
-      const enrolment = await asManager(sessionOf(request), (tx, actor) =>
-        startTwoFactor(tx, actor, request.body.currentPassword, context),
+      const session = sessionOf(request);
+      const enrolment = await provedBy(session, () =>
+        asManager(session, (tx, actor) =>
+          startTwoFactor(tx, actor, request.body.currentPassword, context),
+        ),
       );
       return reply.status(201).send(enrolment);
     },
@@ -723,8 +780,9 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
       },
     },
     async (request, reply) => {
-      await asManager(sessionOf(request), (tx, actor) =>
-        disableTwoFactor(tx, actor, request.body, context),
+      const session = sessionOf(request);
+      await provedBy(session, () =>
+        asManager(session, (tx, actor) => disableTwoFactor(tx, actor, request.body, context)),
       );
       return reply.status(204).send(null);
     },
@@ -738,8 +796,9 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request, reply) => {
       const { pin, ...current } = request.body;
-      await asManager(sessionOf(request), (tx, actor) =>
-        changeOwnPin(tx, actor, current, pin, context),
+      const session = sessionOf(request);
+      await provedBy(session, () =>
+        asManager(session, (tx, actor) => changeOwnPin(tx, actor, current, pin, context)),
       );
       return reply.status(204).send(null);
     },
@@ -757,8 +816,17 @@ export function accessRoutes(scope: FastifyInstance, context: AccessContext): vo
     },
     async (request, reply) => {
       const { password, ...current } = request.body;
-      await asManager(sessionOf(request), (tx, actor) =>
-        changeOwnPassword(tx, actor, current, password, context),
+      const session = sessionOf(request);
+      await provedBy(session, () =>
+        asManager(session, (tx, actor) =>
+          changeOwnPassword(
+            tx,
+            { ...actor, sessionId: session.sessionId },
+            current,
+            password,
+            context,
+          ),
+        ),
       );
       return reply.status(204).send(null);
     },

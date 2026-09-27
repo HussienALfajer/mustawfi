@@ -1,8 +1,4 @@
-import type { APIRequestContext, Page } from "@playwright/test";
-import type { LicenseTermsInput } from "@mustawfi/tools-license";
-import { issueTestLicense, testLicensePublicKeys } from "@mustawfi/tools-license/testing";
-import { e2eStore } from "./environment.ts";
-import { runCli } from "./server-cli.ts";
+import type { Page } from "@playwright/test";
 import {
   addProduct,
   attachScreens,
@@ -11,6 +7,7 @@ import {
   signInAgainOnDevice,
   signOut,
 } from "./steps.ts";
+import { addCashier, CASHIER, createStore, installLicense, OWNER } from "./stores.ts";
 import { expect, expectAccessible, test } from "./test.ts";
 
 /**
@@ -22,68 +19,7 @@ import { expect, expectAccessible, test } from "./test.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const PASSWORD = "correct horse battery staple";
-const CASHIER = { login: "cashier", password: "cashier horse battery staple", name: "ليلى" };
-
-interface JourneyStore {
-  readonly storeCode: string;
-  readonly tenantId: string;
-}
-
-type Terms = Pick<LicenseTermsInput, "notBefore" | "expiresAt" | "graceDays" | "readOnlyDays">;
-
-let stores = 0;
-
-async function createStore(terms: Terms): Promise<JourneyStore> {
-  stores += 1;
-  const license = await issueTestLicense({ ...terms, limits: { companionDevices: 5, users: 10 } });
-  const created = await runCli(
-    "src/cli/create-tenant.ts",
-    [
-      ...["--name", `متجر الترخيص ${String(stores)}`, "--base-currency", "SYP"],
-      ...["--owner-name", "هالة", "--owner-login", "owner", "--license", license.jws],
-    ],
-    { DATABASE_URL: e2eStore().databaseUrl, LICENSE_PUBLIC_KEYS: await testLicensePublicKeys() },
-    `${PASSWORD}\n`,
-  );
-  const { storeCode } = JSON.parse(created) as { storeCode: string };
-  return { storeCode, tenantId: license.claims.tenant };
-}
-
-/** Installs a newer license for the store, as Vertex staff do with the `license:install` CLI. */
-async function installLicense(store: JourneyStore, terms: Terms): Promise<void> {
-  const license = await issueTestLicense({ ...terms, tenant: store.tenantId });
-  await runCli(
-    "src/cli/install-license.ts",
-    ["--store", store.storeCode, "--license", license.jws],
-    { DATABASE_URL: e2eStore().databaseUrl, LICENSE_PUBLIC_KEYS: await testLicensePublicKeys() },
-  );
-}
-
-/** Adds a section cashier (no owner) through the API, as the owner. */
-async function addCashier(request: APIRequestContext, store: JourneyStore): Promise<void> {
-  const signedIn = await request.post("/api/v1/access/login", {
-    data: { storeCode: store.storeCode, login: "owner", password: PASSWORD },
-  });
-  expect(signedIn.status()).toBe(200);
-  const { token } = (await signedIn.json()) as { token: string };
-  const headers = { authorization: `Bearer ${token}` };
-  const roles = (await (await request.get("/api/v1/access/roles", { headers })).json()) as {
-    items: { id: string; template: string | null }[];
-  };
-  const created = await request.post("/api/v1/access/users", {
-    headers,
-    data: {
-      name: CASHIER.name,
-      login: CASHIER.login,
-      password: CASHIER.password,
-      roleId: roles.items.find((role) => role.template === "sectionCashier")?.id,
-      departmentScope: "all",
-      pin: "4826",
-    },
-  });
-  expect(created.status()).toBe(201);
-}
+const PASSWORD = OWNER.password;
 
 const notice = (page: Page) => page.getByRole("banner").getByTestId("license-notice");
 
@@ -271,5 +207,31 @@ test("a suspended store lets only owners in, and tells the others why", async ({
   // The owner comes in, and sees the store is suspended.
   await signIn(page, PASSWORD, "owner", store.storeCode);
   await expect(notice(page)).toHaveText("المتجر موقوف");
+  await expectAccessible(page);
+});
+
+test("read-only on the server: an administration save says the store is read-only (QA slice 24)", async ({
+  page,
+}) => {
+  const now = Date.now();
+  const store = await createStore({
+    notBefore: new Date(now - 60 * DAY),
+    expiresAt: new Date(now - 10 * DAY),
+    graceDays: 7,
+    readOnlyDays: 30,
+  });
+  // An unregistered browser shows the server's state: read-only for everyone.
+  await signIn(page, PASSWORD, "owner", store.storeCode);
+  await expect(notice(page)).toHaveText("المتجر للقراءة فقط");
+  await page.goto("/admin/departments?selected=new");
+  const panel = page.getByRole("complementary", { name: "قسم جديد" });
+  await expect(panel.getByLabel(/اسم القسم/)).toBeFocused();
+  await page.keyboard.type("الصيانة");
+  await page.keyboard.press("Enter");
+  // Not «the server refused, try again»: why, and what brings saving back.
+  await expect(panel.getByRole("alert")).toHaveText(
+    "المتجر للقراءة فقط لأن الترخيص لم يُجدَّد، فلا يُحفظ أي تغيير. يعود الحفظ فور تجديد الترخيص",
+  );
+  await expect(panel.getByLabel(/اسم القسم/)).toHaveValue("الصيانة");
   await expectAccessible(page);
 });

@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
 import { hostProblemCodes } from "@mustawfi/core-config/shared";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { isPhoneCountry, parsePhone, PHONE_COUNTRIES, type PhoneCountry } from "@mustawfi/kernel";
 import {
   Button,
@@ -160,6 +161,8 @@ function refusalProblem(error: unknown): string {
   if (error instanceof ApiUnreachable) return "unreachable";
   if (!(error instanceof ApiProblem)) return "refused";
   switch (error.code) {
+    case tenancyProblemCodes.licenseReadOnly:
+      return "readOnly";
     case accessProblemCodes.permissionDenied:
       return "permissionDenied";
     case organizationProblemCodes.logoTooLarge:
