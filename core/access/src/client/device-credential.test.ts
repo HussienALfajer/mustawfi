@@ -2,13 +2,15 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configureApi, holdDeviceCredential } from "@mustawfi/core-config/client";
+import { apiRequest, configureApi, holdDeviceCredential } from "@mustawfi/core-config/client";
+import { DEVICE_CREDENTIAL_HEADER } from "@mustawfi/core-config/shared";
 import { memorySecureStore, type SecureStore } from "@mustawfi/keystore";
 import { manualClock } from "@mustawfi/kernel";
 import { type LocalDb, migrateLocalDb } from "@mustawfi/local-db";
 import { type NativeLocalDb, openNativeLocalDb } from "@mustawfi/local-db/native";
 import { buildNativeHost, startNativeHost } from "@mustawfi/local-db/native-host";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   accessLocalMigrations,
   DeviceCredentialMissing,
@@ -196,6 +198,50 @@ describe("the device credential moves to the OS secure store (ADR-0022)", () => 
     expect(await db.query("SELECT credential FROM access_device")).toEqual([{ credential: null }]);
     expect(filesHold("registered", CREDENTIAL)).toBe(false);
     expect(await localDeviceCredential(db, store)).toBe(CREDENTIAL);
+    await db.close();
+  });
+
+  it("holds the credential as soon as the server answers, before the local writes (QA slice 25)", async () => {
+    const { db } = await open("registered-held");
+    await migrateLocalDb(db, MIGRATIONS);
+    const sent: (string | null)[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      sent.push(new Headers(init.headers).get(DEVICE_CREDENTIAL_HEADER));
+      return Promise.resolve(
+        Response.json({
+          deviceId: DEVICE,
+          tenantId: TENANT,
+          name: "الصندوق",
+          prefix: "K7",
+          credential: CREDENTIAL,
+          baseCurrency: "SYP",
+        }),
+      );
+    });
+    // The screen asks the server something while the device keeps its credential; the session
+    // it carries is bound to the device by now, so the request must carry the credential too.
+    const inner = memorySecureStore();
+    const store: SecureStore = {
+      ...inner,
+      set: async (name, value) => {
+        await apiRequest("/api/v1/access/session", { schema: z.unknown() });
+        await inner.set(name, value);
+      },
+    };
+    await registerThisDevice(
+      db,
+      {
+        type: "mainPos",
+        platform: "windows",
+        storeCode: "AB2CD3",
+        registrationCode: "R1",
+        name: "الصندوق",
+      },
+      clock,
+      store,
+    );
+    // The registration itself, then the request made meanwhile.
+    expect(sent).toEqual([null, CREDENTIAL]);
     await db.close();
   });
 

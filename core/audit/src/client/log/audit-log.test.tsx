@@ -80,12 +80,27 @@ const FACETS: AuditFacets = {
   actions: ["access.pin.failed", "organization.department.renamed"],
 };
 
-/** A fake API: the facets, and the log's pages by their `after` (the first page by `first`). */
-function fakeApi(pages: Record<string, AuditPage>) {
+/**
+ * A fake API: the facets, the log's pages by their `after` (the first page by `first`), and
+ * single entries by id (404 for others).
+ */
+function fakeApi(pages: Record<string, AuditPage>, single: readonly AuditEntryView[] = []) {
   const urls: string[] = [];
   vi.stubGlobal("fetch", (url: string) => {
     urls.push(url);
     if (url.startsWith("/api/v1/audit/facets")) return Promise.resolve(Response.json(FACETS));
+    const one = /^\/api\/v1\/audit\/entries\/([^/?]+)$/.exec(url)?.[1];
+    if (one !== undefined) {
+      const found = single.find((item) => item.id === one);
+      return Promise.resolve(
+        found === undefined
+          ? Response.json(
+              { type: "about:blank", title: "none", status: 404, code: "audit.entry.notFound" },
+              { status: 404 },
+            )
+          : Response.json(found),
+      );
+    }
     const after = new URL(url, "http://localhost").searchParams.get("after") ?? "first";
     return Promise.resolve(Response.json(pages[after] ?? { items: [], next: null }));
   });
@@ -274,6 +289,32 @@ describe("AuditLogScreen", () => {
     expect(name).toHaveTextContent("الإكسسوارات");
     expect(name).toHaveTextContent("الملحقات");
     expect(name).toHaveAttribute("data-changed", "true");
+  });
+
+  it("reopens from the URL an entry beyond the loaded pages, asking for it alone (QA slice 25)", async () => {
+    const urls = fakeApi(
+      {
+        first: { items: [RENAMED], next: RENAMED.id },
+        [RENAMED.id]: { items: [PIN_FAILED], next: null },
+      },
+      [RENAMED, PIN_FAILED],
+    );
+    renderScreen({ selected: PIN_FAILED.id });
+    const panel = await screen.findByRole("complementary", { name: "رمز PIN خاطئ على الجهاز" });
+    expect(panel).toHaveTextContent("ليلى");
+    expect(urls).toContain(`/api/v1/audit/entries/${PIN_FAILED.id}`);
+    // Not the second page: the entry alone.
+    expect(urls.some((url) => url.includes(`after=${RENAMED.id}`))).toBe(false);
+  });
+
+  it("asks for no entry alone when a loaded page holds it, nor for an id that is none", async () => {
+    const urls = fakeApi({ first: { items: [RENAMED], next: RENAMED.id } }, [RENAMED]);
+    renderScreen({ selected: RENAMED.id });
+    await screen.findByRole("complementary", { name: "تغيير اسم قسم" });
+    cleanup();
+    renderScreen({ selected: "not-an-id" });
+    await screen.findByRole("grid", { name: "سجل التدقيق" });
+    expect(urls.filter((url) => /\/entries\/[^?]/.test(url))).toEqual([]);
   });
 
   it("shows a device event's device time and the server's receipt", async () => {

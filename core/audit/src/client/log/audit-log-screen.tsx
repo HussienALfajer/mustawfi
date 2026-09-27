@@ -16,7 +16,13 @@ import { z } from "zod";
 import { auditActionSchema, type AuditEntryView, type AuditFacets } from "../../shared/index.ts";
 import { auditLabelKey, auditVariantLabelKey } from "../labels.ts";
 import { AUDIT_NAMESPACE } from "../messages.ts";
-import { auditEntriesQueryOptions, auditFacetsQueryOptions } from "./queries.ts";
+import {
+  auditEntriesQueryOptions,
+  auditEntryQueryOptions,
+  auditFacetsQueryOptions,
+} from "./queries.ts";
+
+const uuidSchema = z.uuid();
 
 /** What the audit log shows, kept in the URL so a filtered log can be reopened (flow 10). */
 export const auditLogFiltersSchema = z.object({
@@ -101,7 +107,17 @@ export function AuditLogScreen({ filters, onFiltersChange }: AuditLogScreenProps
   const tableRef = useRef<HTMLTableElement>(null);
 
   const rows = entries.data?.pages.flatMap((page) => page.items) ?? [];
-  const selected = rows.find((entry) => entry.id === filters.selected);
+  const loaded = rows.find((entry) => entry.id === filters.selected);
+  // An entry the loaded pages do not hold — opened after «تحميل المزيد», then reloaded or
+  // shared — is read on its own, so the URL reopens its panel (QA slice 25).
+  const selectedId = uuidSchema.safeParse(filters.selected).data;
+  const lookup = useQuery({
+    ...auditEntryQueryOptions(selectedId ?? ""),
+    enabled: selectedId !== undefined && entries.data !== undefined && loaded === undefined,
+  });
+  const selected =
+    loaded ??
+    (lookup.data !== undefined && lookup.data.id === selectedId ? lookup.data : undefined);
   const closePanel = () => {
     const closing = filters.selected;
     onFiltersChange({ ...filters, selected: undefined });

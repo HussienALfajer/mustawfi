@@ -85,9 +85,11 @@ test("keyboard only: register this browser from the devices screen, then revoke 
   await expect(page.getByRole("button", { name: "متابعة" })).toBeFocused();
   await page.keyboard.press("Enter");
 
-  // Back to registering this browser: its registration and its data are gone.
-  await expect(page).toHaveURL(/\/device$/);
-  await expect(page.getByLabel("رمز التسجيل")).toBeVisible();
+  // Signed out, as the dialog said: the session that registered this browser was bound to it
+  // and ended with the revoke (rule 22, QA slice 25); its registration and data are gone.
+  await expect(page).toHaveURL(/\/login$/);
+  await signIn(page);
+  await expect(page).toHaveURL(/\/products$/);
 
   // The owner sees it revoked, with the reason, and its wipe reported.
   await tabTo(page, navigation.getByRole("link", { name: "الأجهزة" }), 40);

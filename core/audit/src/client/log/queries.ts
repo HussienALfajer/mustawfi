@@ -1,6 +1,6 @@
 import { apiRequest } from "@mustawfi/core-config/client";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
-import { auditFacetsSchema, auditPageSchema } from "../../shared/index.ts";
+import { auditEntryViewSchema, auditFacetsSchema, auditPageSchema } from "../../shared/index.ts";
 
 const BASE = "/api/v1/audit";
 
@@ -37,6 +37,20 @@ export function auditEntriesQueryOptions(query: AuditLogQuery) {
       return apiRequest(`${BASE}/entries${suffix}`, { schema: auditPageSchema, signal });
     },
     getNextPageParam: (page) => page.next,
+  });
+}
+
+/**
+ * One entry by its id, for the side panel when the loaded pages do not hold it (online only).
+ */
+export function auditEntryQueryOptions(id: string) {
+  return queryOptions({
+    queryKey: ["audit", "entry", id] as const,
+    queryFn: ({ signal }) =>
+      apiRequest(`${BASE}/entries/${encodeURIComponent(id)}`, {
+        schema: auditEntryViewSchema,
+        signal,
+      }),
   });
 }
 

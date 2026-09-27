@@ -27,7 +27,7 @@ import { auditAs, type RoleActor } from "./actor.ts";
 import type { AccessDependencies } from "./dependencies.ts";
 import { namedLastChanges } from "./last-change.ts";
 import { devices, registrationCodes, sessions, users } from "./schema.ts";
-import { bearerToken } from "./sessions.ts";
+import { bearerToken, bindSessionToDevice } from "./sessions.ts";
 import { issueBearer, issueOneTimeCode, readBearer, oneTimeCodeHash } from "./secrets.ts";
 
 /** A registration code works for fifteen minutes (ADR-0022: short-lived). */
@@ -85,6 +85,11 @@ export interface NewDevice {
   /** What it runs on; a client built before slice 20 says nothing, and its type tells it. */
   readonly platform?: DevicePlatform | undefined;
   readonly name: string;
+  /**
+   * The session the registering request carried (`presentedSessionToken`), if any: a live,
+   * unbound session of this store is bound to the new device (rule 22, QA slice 25).
+   */
+  readonly sessionToken?: string | undefined;
 }
 
 export interface RegisteredDevice {
@@ -114,6 +119,8 @@ export function registrationFailed(): ProblemError {
  * among the free ones, and a fresh credential. A refusal throws and rolls everything back,
  * the code's use included. While the license is read-only or suspended, registration is a
  * refused write (403 `tenancy.license.readOnly`, rule 5), again only after the code is checked.
+ * The session the request carried is bound to the device, so revoking the device ends it: the
+ * owner who registered a device that is later lost is not left signed in on it (QA slice 25).
  */
 export async function registerDevice(
   tx: TenantTransaction,
@@ -193,6 +200,14 @@ export async function registerDevice(
     entity: { type: "access.device", id: deviceId },
     after: { name, type, platform, prefix, registrationCodeId: code.id },
   });
+  if (device.sessionToken !== undefined) {
+    await bindSessionToDevice(
+      tx,
+      device.sessionToken,
+      { tenantId: device.tenantId, deviceId },
+      now,
+    );
+  }
   const tenant = await currentTenant(tx);
   if (tenant === undefined) throw new Error("a device registered outside its tenant");
   return {

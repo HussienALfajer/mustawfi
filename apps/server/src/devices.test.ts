@@ -476,6 +476,94 @@ describe("revoking a device (rule 23)", () => {
     expect((await push(till, [sale(store, till)])).statusCode).toBe(200);
   });
 
+  it("binds the session that registers a device to it, so the revoke ends it too (QA slice 25)", async () => {
+    const store = await newStore("متجر التسجيل");
+    const other = await newStore("متجر غريب");
+    const HOST = "mustawfi.test";
+    const cookieOf = (token: string) => ({ cookie: `mustawfi_session=${token}` });
+    const code = async () =>
+      (
+        await server.inject({
+          method: "POST",
+          url: "/api/v1/access/registration-codes",
+          headers: bearer(store.token),
+        })
+      ).json<{ code: string }>().code;
+    const registerWith = async (headers: Record<string, string>, name: string) => {
+      const response = await server.inject({
+        method: "POST",
+        url: "/api/v1/access/devices",
+        headers,
+        payload: {
+          storeCode: store.tenant.storeCode,
+          registrationCode: await code(),
+          // Main POS: the license allows twenty in these stores, and two companions.
+          type: "mainPos",
+          name,
+        },
+      });
+      expect(response.statusCode).toBe(201);
+      return response.json<{ deviceId: string; credential: string }>();
+    };
+    const sessionStatus = async (headers: Record<string, string>) =>
+      (await server.inject({ method: "GET", url: "/api/v1/access/session", headers })).statusCode;
+
+    // The Windows app registers with its bearer session, a browser with its cookie.
+    const appSession = await signInAs(server, store.tenant, "ahmad", PASSWORD);
+    const app = await registerWith(bearer(appSession), "تطبيق");
+    const browserSession = await signInAs(server, store.tenant, "ahmad", PASSWORD);
+    const browser = await registerWith(
+      { ...cookieOf(browserSession), host: HOST, origin: `https://${HOST}` },
+      "متصفح",
+    );
+    // A cookie from another origin, and another store's session, are ignored, not refused.
+    const crossOrigin = await signInAs(server, store.tenant, "ahmad", PASSWORD);
+    await registerWith(
+      { ...cookieOf(crossOrigin), host: HOST, origin: "https://evil.test" },
+      "من أصل آخر",
+    );
+    await registerWith(bearer(other.token), "متجر آخر");
+
+    // Bound: accepted only beside the device's credential.
+    expect(await sessionStatus(bearer(appSession))).toBe(401);
+    expect(
+      await sessionStatus({ ...bearer(appSession), [DEVICE_CREDENTIAL_HEADER]: app.credential }),
+    ).toBe(200);
+    expect(
+      await sessionStatus({
+        ...cookieOf(browserSession),
+        [DEVICE_CREDENTIAL_HEADER]: browser.credential,
+      }),
+    ).toBe(200);
+    expect(await sessionStatus(cookieOf(browserSession))).toBe(401);
+    // Not bound: the cross-origin cookie's session, the other store's, and the one that issued
+    // the codes.
+    expect(await sessionStatus(bearer(crossOrigin))).toBe(200);
+    expect(await sessionStatus(bearer(other.token))).toBe(200);
+    expect(await sessionStatus(bearer(store.token))).toBe(200);
+
+    // Revoking the browser ends the owner's session that registered it; the app's stays.
+    expect((await revoke(store, browser.deviceId, "فُقد الجهاز")).statusCode).toBe(200);
+    expect(
+      await sessionStatus({
+        ...cookieOf(browserSession),
+        [DEVICE_CREDENTIAL_HEADER]: browser.credential,
+      }),
+    ).toBe(401);
+    expect(
+      await sessionStatus({ ...bearer(appSession), [DEVICE_CREDENTIAL_HEADER]: app.credential }),
+    ).toBe(200);
+    expect(await auditOf(store.tenant.tenantId, "access.session.revoked")).toEqual([
+      expect.objectContaining({
+        after: {
+          userId: store.tenant.ownerId,
+          deviceId: browser.deviceId,
+          reason: "deviceRevoked",
+        },
+      }),
+    ]);
+  });
+
   it("refuses a session bound to a revoked device even if its revoke missed that session", async () => {
     const store = await newStore("متجر الجلسة");
     const till = await newDevice(store);
@@ -678,6 +766,50 @@ describe("the devices table", () => {
         "42501",
       );
       await refused("delete from core_access.devices where id = $1", [active.deviceId], "42501");
+    } finally {
+      await app.end();
+    }
+  });
+
+  it("binds a session to a device once, and changes nothing else of it (QA slice 25)", async () => {
+    const store = await newStore("متجر الربط");
+    const till = await newDevice(store);
+    const second = await newDevice(store, "الثاني");
+    await signInAs(server, store.tenant, "ahmad", PASSWORD);
+    const { rows } = await superuser.query<{ id: string }>(
+      "select id from core_access.sessions where tenant_id = $1 order by created_at desc limit 1",
+      [store.tenant.tenantId],
+    );
+    const sessionId = rows[0]?.id;
+    const app = await database.connect("app");
+    try {
+      await app.query("select set_config('app.tenant_id', $1, false)", [store.tenant.tenantId]);
+      const refused = async (statement: string, params: unknown[], state: string) => {
+        await expect(app.query(statement, params)).rejects.toSatisfy(
+          (error: unknown) => sqlState(error) === state,
+        );
+      };
+      await app.query("update core_access.sessions set device_id = $2 where id = $1", [
+        sessionId,
+        till.deviceId,
+      ]);
+      // Moved to another device, or unbound.
+      await refused(
+        "update core_access.sessions set device_id = $2 where id = $1",
+        [sessionId, second.deviceId],
+        "23514",
+      );
+      await refused(
+        "update core_access.sessions set device_id = null where id = $1",
+        [sessionId],
+        "23514",
+      );
+      // Its user, token, or lifetime never change.
+      await refused(
+        "update core_access.sessions set expires_at = expires_at + interval '1 year' where id = $1",
+        [sessionId],
+        "42501",
+      );
     } finally {
       await app.end();
     }

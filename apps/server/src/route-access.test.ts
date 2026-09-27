@@ -87,6 +87,7 @@ describe("route authorization (core-foundation rule 17)", () => {
       "GET /api/v1/health → public",
       "GET /api/v1/openapi.json → public",
       "GET /api/v1/audit/entries → audit.view",
+      "GET /api/v1/audit/entries/:id → audit.view",
       "GET /api/v1/audit/facets → audit.view",
       "POST /api/v1/access/login → public",
       "POST /api/v1/access/pin-login → public",
