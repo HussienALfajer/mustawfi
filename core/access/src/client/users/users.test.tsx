@@ -326,6 +326,7 @@ describe("UsersScreen", () => {
     await userEvent.type(within(panel).getByLabelText(/الرمز السري الأول/), "2580");
     await userEvent.click(within(panel).getByRole("button", { name: /إضافة/ }));
     expect(await within(panel).findByRole("alert")).toHaveTextContent(/حد المستخدمين في باقتك/);
+    expect(within(panel).getByText("+963 945 739 573")).toBeInTheDocument();
     expect(within(panel).getByLabelText(/^الاسم/)).toHaveValue("ليلى");
     // The New button stays: the limit is explained on the action, not hidden.
     expect(screen.getByRole("button", { name: /مستخدم جديد/ })).toBeInTheDocument();

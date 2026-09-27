@@ -1,6 +1,7 @@
 export { documentCodeSchema } from "./document-code.ts";
 export { DEVICE_CREDENTIAL_HEADER } from "./http.ts";
 export { collapseSpaces, isVisibleName, nameKey, recordNameSchema } from "./names.ts";
+export { VERTEX_SUPPORT_WHATSAPP } from "./support.ts";
 export {
   type DeclaredLimit,
   type DeclaredPermission,

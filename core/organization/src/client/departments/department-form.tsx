@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
-import { nameKey } from "@mustawfi/core-config/shared";
+import { nameKey, VERTEX_SUPPORT_WHATSAPP } from "@mustawfi/core-config/shared";
 import { accessProblemCodes } from "@mustawfi/core-access/shared";
 import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
@@ -10,6 +10,7 @@ import {
   ConfirmDialog,
   Kbd,
   SidePanel,
+  SupportContact,
   TextInput,
   useShortcut,
   useToast,
@@ -289,9 +290,13 @@ export function DepartmentPanel({
           </p>
         ) : null}
         {failure === undefined ? null : (
-          <p role="alert" className="text-text-negative">
-            {t(`departments.problem.${failure}`)}
-          </p>
+          <div className="flex flex-col gap-2">
+            <p role="alert" className="text-text-negative">
+              {t(`departments.problem.${failure}`)}
+            </p>
+            {/* A larger plan comes from Vertex (M6 decision). */}
+            {failure === "limit" ? <SupportContact whatsapp={VERTEX_SUPPORT_WHATSAPP} /> : null}
+          </div>
         )}
         {department === null ? null : (
           <LastChangeLine

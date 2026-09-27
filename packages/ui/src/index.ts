@@ -129,6 +129,7 @@ export {
   phoneValue,
 } from "./components/phone-field.tsx";
 export { COPY_FEEDBACK_MS, CopyButton, type CopyButtonProps } from "./components/copy-button.tsx";
+export { SupportContact, type SupportContactProps } from "./components/support-contact.tsx";
 export {
   type DatePreset,
   DatePicker,
