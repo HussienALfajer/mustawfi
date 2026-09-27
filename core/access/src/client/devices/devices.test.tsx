@@ -332,6 +332,24 @@ describe("DevicesScreen", () => {
     expect(writeText).toHaveBeenLastCalledWith("K7M3Q9");
   });
 
+  it("says the store is read-only when the license stops a registration code", async () => {
+    fakeApi([TILL], {
+      "POST /api/v1/access/registration-codes": () =>
+        Response.json(
+          { type: "about:blank", title: "no", status: 403, code: "tenancy.license.readOnly" },
+          { status: 403 },
+        ),
+    });
+    renderScreen();
+    await screen.findByRole("grid", { name: "الأجهزة" });
+    await userEvent.keyboard("n");
+    const panel = await screen.findByRole("complementary", { name: "إضافة جهاز" });
+    await userEvent.click(within(panel).getByRole("button", { name: "إصدار رمز تسجيل" }));
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(
+      "المتجر للقراءة فقط لأن الترخيص لم يُجدَّد، فلا يُحفظ أي تغيير",
+    );
+  });
+
   it("revokes a device only with a reason, then shows it revoked", async () => {
     const list = [TILL, PHONE];
     const calls = fakeApi(list, {

@@ -213,6 +213,22 @@ describe("StoreProfileScreen", () => {
     expect(name).toHaveValue("اسم جديد");
   });
 
+  it("says the store is read-only when the license stops a save (QA slice 24)", async () => {
+    fakeApi(() =>
+      Response.json(
+        { type: "about:blank", title: "no", status: 403, code: "tenancy.license.readOnly" },
+        { status: 403 },
+      ),
+    );
+    renderScreen();
+    const name = await screen.findByLabelText("اسم المتجر (مطلوب)");
+    await userEvent.type(name, " الجديد");
+    await userEvent.click(screen.getByRole("button", { name: /حفظ/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "المتجر للقراءة فقط لأن الترخيص لم يُجدَّد، فلا يُحفظ أي تغيير",
+    );
+  });
+
   it("saves a phone typed with its own country code in E.164, and says a wrong one on its field", async () => {
     const calls = fakeApi((_, body) => Response.json({ ...PROFILE, ...(body as object) }));
     renderScreen();

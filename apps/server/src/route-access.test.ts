@@ -6,6 +6,7 @@ import { cryptoRandom, manualClock, uuidV7Generator } from "@mustawfi/kernel";
 import { createTestDatabase, type TestDatabase } from "@mustawfi/testing";
 import type { FastifyInstance, InjectOptions } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CORS_METHODS } from "./app.ts";
 import { applyMigrations } from "./db/migrate.ts";
 import { migrationSets } from "./db/migration-sets.ts";
 import { buildHostServer } from "./host-server.ts";
@@ -165,6 +166,15 @@ describe("route authorization (core-foundation rule 17)", () => {
       const response = await server.inject(request(route, await tokenWith([])));
       expect([401, 403], `${route.method} ${route.url}`).not.toContain(response.statusCode);
     }
+  });
+
+  it("uses only methods the Windows app may call across origins (QA slice 24)", () => {
+    const allowed = new Set<string>(CORS_METHODS);
+    expect(
+      routes
+        .filter((route) => !allowed.has(route.method))
+        .map((route) => `${route.method} ${route.url}`),
+    ).toEqual([]);
   });
 
   it("answers 401 on every non-public route without a credential", async () => {

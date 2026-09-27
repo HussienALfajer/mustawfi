@@ -332,6 +332,21 @@ describe("UsersScreen", () => {
     expect(screen.getByRole("button", { name: /مستخدم جديد/ })).toBeInTheDocument();
   });
 
+  it("says the store is read-only when the license stops a deactivation", async () => {
+    fakeApi([SAMER, OMAR], {
+      [`POST /api/v1/access/users/${OMAR.id}/deactivate`]: problem(403, "tenancy.license.readOnly"),
+    });
+    renderScreen({ initial: { selected: OMAR.id } });
+    const panel = await screen.findByRole("complementary", { name: "عمر" });
+    await userEvent.click(within(panel).getByRole("button", { name: /إيقاف المستخدم/ }));
+    const dialog = screen.getByRole("alertdialog", { name: /إيقاف «عمر»/ });
+    await userEvent.type(within(dialog).getByLabelText(/سبب الإيقاف/), "ترك العمل");
+    await userEvent.click(within(dialog).getByRole("button", { name: "إيقاف" }));
+    expect(
+      await screen.findByText(/المتجر للقراءة فقط لأن الترخيص لم يُجدَّد/),
+    ).toBeInTheDocument();
+  });
+
   it("deactivates only with a reason, which goes to the server", async () => {
     const list = [SAMER, OMAR];
     const calls = fakeApi(list, {

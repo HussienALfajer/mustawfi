@@ -1,5 +1,6 @@
 import { type AuditLink, LastChangeLine } from "@mustawfi/core-audit/client";
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import {
   Button,
   ConfirmDialog,
@@ -37,6 +38,8 @@ function problemKey(error: unknown): string {
         return "notFound";
       case accessProblemCodes.permissionDenied:
         return "denied";
+      case tenancyProblemCodes.licenseReadOnly:
+        return "readOnly";
     }
   }
   return "refused";

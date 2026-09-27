@@ -91,6 +91,10 @@ export function userProblem(error: unknown): string {
       return "alreadyDeactivated";
     case accessProblemCodes.userActive:
       return "alreadyActive";
+    case accessProblemCodes.broaderRole:
+      return "broaderRole";
+    case tenancyProblemCodes.licenseReadOnly:
+      return "readOnly";
     case accessProblemCodes.permissionDenied:
       return "permissionDenied";
     default:

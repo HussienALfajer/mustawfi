@@ -195,12 +195,11 @@ describe("password sign-in rate limit per store and login (rule 21)", () => {
     for (let i = 0; i < 5; i += 1) {
       expectProblem(await attempt(WRONG), 401, accessProblemCodes.loginFailed);
     }
-    const throttled = expectProblem(
-      await attempt(PASSWORD),
-      429,
-      accessProblemCodes.loginThrottled,
-    );
+    const refusal = await attempt(PASSWORD);
+    const throttled = expectProblem(refusal, 429, accessProblemCodes.loginThrottled);
     expect(throttled.detail).toContain(new Date(clock.now().getTime() + WINDOW).toISOString());
+    // How long to wait, so the client says it (QA slice 24): the whole window here.
+    expect(refusal.headers["retry-after"]).toBe(String(WINDOW / 1000));
     for (let i = 0; i < 3; i += 1) {
       expectProblem(await attempt(WRONG), 429, accessProblemCodes.loginThrottled);
     }
@@ -236,7 +235,10 @@ describe("password sign-in rate limit per store and login (rule 21)", () => {
     ).toBe(200);
 
     clock.advance(WINDOW - 1);
-    expectProblem(await attempt(PASSWORD), 429, accessProblemCodes.loginThrottled);
+    const last = await attempt(PASSWORD);
+    expectProblem(last, 429, accessProblemCodes.loginThrottled);
+    // A wait under a second is still a second: never 0, which would mean «try now».
+    expect(last.headers["retry-after"]).toBe("1");
     clock.advance(1);
     expect((await attempt(PASSWORD)).statusCode).toBe(200);
   });
@@ -253,6 +255,10 @@ describe("password sign-in rate limit per store and login (rule 21)", () => {
     );
     expect(answers.every((answer) => [401, 429].includes(answer.statusCode))).toBe(true);
     expect(answers.filter((answer) => answer.statusCode === 401).length).toBeLessThanOrEqual(5);
+    // Those held back while the others were checked wait a moment, or the window once reached.
+    for (const answer of answers.filter((each) => each.statusCode === 429)) {
+      expect(["1", String(WINDOW / 1000)]).toContain(answer.headers["retry-after"]);
+    }
     const { rows } = await superuser.query(
       "select 1 from core_access.login_attempts where tenant_id = $1",
       [tenant.tenantId],

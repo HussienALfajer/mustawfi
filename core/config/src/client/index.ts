@@ -42,12 +42,21 @@ export class ApiProblem extends Error {
   override name = "ApiProblem";
   readonly code: string;
   readonly status: number;
+  /** The answer's `Retry-After` in seconds, when it gave one (a throttled sign-in's). */
+  readonly retryAfterSeconds: number | undefined;
 
-  constructor(code: string, status: number) {
+  constructor(code: string, status: number, retryAfterSeconds?: number) {
     super(`${String(status)} ${code}`);
     this.code = code;
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** A `Retry-After` header's whole seconds; an HTTP date or anything else is not read. */
+function retryAfterOf(response: Response): number | undefined {
+  const value = response.headers.get("retry-after")?.trim();
+  return value !== undefined && /^\d{1,9}$/.test(value) ? Number.parseInt(value, 10) : undefined;
 }
 
 /** The request never got an answer: offline, or the server is down. */
@@ -245,6 +254,7 @@ async function refuse(response: Response): Promise<never> {
   throw new ApiProblem(
     problem.success ? problem.data.code : hostProblemCodes.internal,
     response.status,
+    retryAfterOf(response),
   );
 }
 

@@ -8,7 +8,7 @@ import {
 } from "@mustawfi/core-tenancy/server";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { IdGenerator } from "@mustawfi/kernel";
-import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
   accessProblemCodes,
   type DepartmentScope,
@@ -333,6 +333,30 @@ function checkManages(manager: Manager, target: { readonly role: RoleRow }): voi
   if (target.role.isOwner && !manager.isOwner) throw ownersOnly();
 }
 
+/**
+ * A non-owner sets the PIN, password, or login of a user whose role holds nothing beyond their
+ * own: with it they could sign in as that user and act with more than they hold (QA slice 24,
+ * user decision, as for the roles they grant). 403 `access.user.broaderRole` names what is out
+ * of reach.
+ */
+async function checkSignsInAsNoMore(
+  tx: TenantTransaction,
+  manager: Manager,
+  target: { readonly role: RoleRow },
+  catalogue: PermissionCatalogue,
+): Promise<void> {
+  if (manager.isOwner) return;
+  try {
+    checkGrantable(manager, await holdingsOf(tx, target.role, catalogue));
+  } catch (error) {
+    if (!(error instanceof ProblemError)) throw error;
+    throw new ProblemError(accessProblemCodes.broaderRole, 403, {
+      title: "The user's role holds more than yours: an owner sets their PIN, password, or login",
+      ...(error.detail === undefined ? {} : { detail: error.detail }),
+    });
+  }
+}
+
 /** Refuses a change that leaves no active owner (rule 14); run under `lockTenant`. */
 async function checkAnotherOwner(tx: TenantTransaction, userId: string): Promise<void> {
   const owners = await tx
@@ -487,7 +511,8 @@ export interface ChangeUser {
  * (rule 14); taking it from the last active owner is refused (409 `access.user.lastOwner`).
  * Moving a user to the owner role gives them every department. A non-owner gives only a role
  * within what they hold (403 `access.role.beyondOwnGrant`) and does not change their own role
- * or scope (403 `access.user.ownAccessChange`).
+ * or scope (403 `access.user.ownAccessChange`), nor another's login when that user's role holds
+ * more than theirs (403 `access.user.broaderRole`).
  */
 export async function changeUser(
   tx: TenantTransaction,
@@ -536,6 +561,10 @@ export async function changeUser(
 
   const login = change.login === undefined ? target.user.login : change.login;
   if (login === null && target.user.passwordHash !== null) throw loginRequired();
+  if (login !== target.user.login && id !== manager.userId) {
+    // The role the user has after this change: the one they would sign in with.
+    await checkSignsInAsNoMore(tx, manager, { role }, catalogue);
+  }
   const name = change.name ?? target.user.name;
   try {
     await tx
@@ -661,20 +690,30 @@ export async function reactivateUser(
 }
 
 /**
- * Ends every open session of `userId`, each audited `access.session.revoked` with `reason`, the
- * change that ended it (`core-foundation` slice 20).
+ * Ends every open session of `userId` but `except`, each audited `access.session.revoked` with
+ * `reason`, the change that ended it (`core-foundation` slice 20).
  */
 export async function revokeUserSessions(
   tx: TenantTransaction,
   actor: RoleActor,
   userId: string,
   dependencies: AccessDependencies,
-  reason: Extract<SessionEndReason, "userDeactivated" | "passwordSet" | "supportReset">,
+  reason: Extract<
+    SessionEndReason,
+    "userDeactivated" | "passwordSet" | "supportReset" | "passwordChanged"
+  >,
+  except?: string,
 ): Promise<void> {
   const revoked = await tx
     .update(sessions)
     .set({ revokedAt: actor.at, revokedBy: actor.userId })
-    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)))
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        isNull(sessions.revokedAt),
+        except === undefined ? undefined : ne(sessions.id, except),
+      ),
+    )
     .returning({ id: sessions.id });
   for (const session of revoked) {
     await auditAs(tx, actor, dependencies, {
@@ -691,19 +730,23 @@ async function setStatus(tx: TenantTransaction, id: string, status: UserStatus):
 
 /**
  * Sets or resets another user's PIN (rule 19), audited `access.user.pinSet`. Owners' PINs are
- * set by owners only; one's own goes through `changeOwnPin` (409 `access.user.useOwnAccount`).
+ * set by owners only, and a non-owner sets only the PIN of a user whose role is within their own
+ * (403 `access.user.broaderRole`); one's own goes through `changeOwnPin` (409
+ * `access.user.useOwnAccount`).
  */
 export async function setUserPin(
   tx: TenantTransaction,
   manager: Manager,
   id: string,
   pin: string,
+  catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
   if (id === manager.userId) throw useOwnAccount();
   const pinVerifier = await hashPin(pin);
   const target = await lockedUser(tx, id);
   checkManages(manager, target);
+  await checkSignsInAsNoMore(tx, manager, target, catalogue);
   await tx.update(users).set({ pinVerifier, pinChangedAt: manager.at }).where(eq(users.id, id));
   await auditAs(tx, manager, dependencies, {
     action: "access.user.pinSet",
@@ -717,19 +760,22 @@ export async function setUserPin(
 /**
  * Sets or resets another user's password, audited `access.user.passwordSet`; the user's
  * sessions end with it; one's own goes through `changeOwnPassword`. The user needs a login (422
- * `access.user.loginRequired`). Owners' passwords are set by owners only.
+ * `access.user.loginRequired`). Owners' passwords are set by owners only, and a non-owner sets
+ * only the password of a user whose role is within their own (403 `access.user.broaderRole`).
  */
 export async function setUserPassword(
   tx: TenantTransaction,
   manager: Manager,
   id: string,
   password: string,
+  catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<UserView> {
   if (id === manager.userId) throw useOwnAccount();
   const passwordHash = await hashPassword(password);
   const target = await lockedUser(tx, id);
   checkManages(manager, target);
+  await checkSignsInAsNoMore(tx, manager, target, catalogue);
   if (target.user.login === null) throw loginRequired();
   await tx.update(users).set({ passwordHash }).where(eq(users.id, id));
   await auditAs(tx, manager, dependencies, {
@@ -823,12 +869,14 @@ export async function changeOwnPin(
 
 /**
  * The signed-in user changes their own password (flow 11), proved with the current password,
- * or with their PIN while they have none; audited `access.user.passwordChanged`. A user
- * without a login cannot have one (422 `access.user.loginRequired`).
+ * or with their PIN while they have none; audited `access.user.passwordChanged`. Their other
+ * sessions end with it — whoever learnt the old password is out — and `sessionId`, the one it
+ * is changed from, stays (QA slice 24, user decision). A user without a login cannot have one
+ * (422 `access.user.loginRequired`).
  */
 export async function changeOwnPassword(
   tx: TenantTransaction,
-  actor: RoleActor,
+  actor: RoleActor & { readonly sessionId: string },
   current: CurrentSecrets,
   password: string,
   dependencies: AccessDependencies,
@@ -847,4 +895,5 @@ export async function changeOwnPassword(
     before: { hasPassword: user.passwordHash !== null },
     after: { hasPassword: true },
   });
+  await revokeUserSessions(tx, actor, user.id, dependencies, "passwordChanged", actor.sessionId);
 }

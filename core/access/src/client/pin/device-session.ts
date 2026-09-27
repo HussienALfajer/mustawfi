@@ -301,7 +301,12 @@ export type PinSignInOutcome =
   /** Signed in: with the server's session when it answered, else checked on the device. */
   | { readonly outcome: "signedIn"; readonly server: CurrentSession | null }
   /** The server answered with a refusal (wrong PIN, throttled, suspended, revoked…). */
-  | { readonly outcome: "refused"; readonly code: string }
+  | {
+      readonly outcome: "refused";
+      readonly code: string;
+      /** A throttled sign-in's wait, from the answer's `Retry-After` (rule 21). */
+      readonly retryAfterSeconds?: number | undefined;
+    }
   /** The server is out of reach, and this device has no bundle to check the PIN against. */
   | { readonly outcome: "noBundle" }
   /** Asked for the server alone (rule 25), and it is out of reach. */
@@ -375,7 +380,9 @@ export async function signInWithPin(
       });
       return { outcome: "signedIn", server };
     } catch (error) {
-      if (error instanceof ApiProblem) return { outcome: "refused", code: error.code };
+      if (error instanceof ApiProblem) {
+        return { outcome: "refused", code: error.code, retryAfterSeconds: error.retryAfterSeconds };
+      }
       if (!(error instanceof ApiUnreachable)) throw error;
       if (input.serverOnly === true) return { outcome: "unreachable" };
     }

@@ -91,11 +91,15 @@ function secondFactorInvalid(): ProblemError {
   });
 }
 
-/** 429 `access.login.throttled` (rule 21). */
-export function signInThrottled(until: Date): ProblemError {
+/**
+ * 429 `access.login.throttled` (rule 21), with `Retry-After`: the seconds from `now` until
+ * `until`, so the client says how long to wait — a moment when the check was only busy.
+ */
+export function signInThrottled(until: Date, now: Date): ProblemError {
   return new ProblemError(accessProblemCodes.loginThrottled, 429, {
     title: "Too many failed sign-ins: wait before trying again",
     detail: `try again after ${until.toISOString()}`,
+    retryAfterSeconds: Math.max(1, Math.ceil((until.getTime() - now.getTime()) / 1000)),
   });
 }
 
@@ -182,7 +186,7 @@ async function unlessBusy<T>(now: Date, fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (error) {
     if (error instanceof AttemptsBusy)
-      throw signInThrottled(new Date(now.getTime() + BUSY_WAIT_MS));
+      throw signInThrottled(new Date(now.getTime() + BUSY_WAIT_MS), now);
     throw error;
   }
 }
@@ -261,7 +265,7 @@ export async function refuseThrottledAddress(
   const until = addresses.throttledUntil(address, now);
   if (until === undefined) {
     if (addresses.busy(address, now)) {
-      throw signInThrottled(new Date(now.getTime() + BUSY_WAIT_MS));
+      throw signInThrottled(new Date(now.getTime() + BUSY_WAIT_MS), now);
     }
     return;
   }
@@ -280,7 +284,7 @@ export async function refuseThrottledAddress(
       });
     });
   }
-  throw signInThrottled(until);
+  throw signInThrottled(until, now);
 }
 
 /**
@@ -461,9 +465,9 @@ export async function logIn(
       const { unknownStores } = dependencies.throttles;
       const key = `${typedStoreCode(input.storeCode)}\n${login}`;
       const until = unknownStores.throttledUntil(key, now);
-      if (until !== undefined) throw signInThrottled(until);
+      if (until !== undefined) throw signInThrottled(until, now);
       if (unknownStores.busy(key, now)) {
-        throw signInThrottled(new Date(now.getTime() + BUSY_WAIT_MS));
+        throw signInThrottled(new Date(now.getTime() + BUSY_WAIT_MS), now);
       }
       const counted = unknownStores.begin(key, now);
       try {
@@ -575,7 +579,7 @@ export async function logIn(
           : ({ failed: true } as const);
       }),
     );
-    if ("throttled" in checked) throw signInThrottled(checked.throttled);
+    if ("throttled" in checked) throw signInThrottled(checked.throttled, now);
     if ("failed" in checked) throw loginFailed();
     if ("secondFactorRequired" in checked) throw secondFactorRequired();
     if ("secondFactorFailed" in checked) throw secondFactorInvalid();
@@ -685,7 +689,7 @@ export async function logInWithPin(
         return { failed: true } as const;
       }),
     );
-    if ("throttled" in checked) throw signInThrottled(checked.throttled);
+    if ("throttled" in checked) throw signInThrottled(checked.throttled, now);
     if ("failed" in checked) throw loginFailed();
     return checked.user;
   });

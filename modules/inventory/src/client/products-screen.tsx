@@ -1,4 +1,5 @@
 import { ApiProblem, ApiUnreachable } from "@mustawfi/core-config/client";
+import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import { Money as KernelMoney } from "@mustawfi/kernel";
 import {
   Button,
@@ -106,7 +107,10 @@ function NewProductSection() {
       ? undefined
       : mutation.error instanceof ApiUnreachable
         ? "newProduct.unreachable"
-        : "newProduct.refused";
+        : mutation.error instanceof ApiProblem &&
+            mutation.error.code === tenancyProblemCodes.licenseReadOnly
+          ? "newProduct.readOnly"
+          : "newProduct.refused";
 
   return (
     <section aria-labelledby="new-product-title" className="flex flex-col gap-density-gap">

@@ -11,6 +11,7 @@ import { accessProblemCodes } from "../shared/index.ts";
 import { ACCESS_NAMESPACE } from "./messages.ts";
 import { type CurrentSession, sessionQueryKey, signIn } from "./session.ts";
 import { storeCodeFieldSchema } from "./store-code-field.ts";
+import { throttleWaitMinutes } from "./throttle.ts";
 
 /** Field problems are message keys under `login.`; the server checks everything else. */
 const signInFormSchema = z.object({
@@ -58,7 +59,11 @@ function Failure({ error }: { readonly error: unknown }) {
       role="alert"
       className="rounded-sm bg-negative-tint px-pad-inline py-pad-block text-text-negative"
     >
-      {t(failureKey(error))}
+      {t(failureKey(error), {
+        minutes: throttleWaitMinutes(
+          error instanceof ApiProblem ? error.retryAfterSeconds : undefined,
+        ),
+      })}
     </p>
   );
 }

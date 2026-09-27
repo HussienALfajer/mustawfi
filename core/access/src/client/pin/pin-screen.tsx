@@ -16,6 +16,7 @@ import {
   unlockOnDevice,
 } from "./device-session.ts";
 import { type PinTile, pinScreenQueryOptions } from "./queries.ts";
+import { throttleWaitMinutes } from "../throttle.ts";
 
 /** At most six digits (rule 19); anything else typed is dropped. */
 function digitsOf(typed: string): string {
@@ -303,7 +304,11 @@ export function PinScreen({
       case "locked":
         return { message: t("pin.locked", { name }), unlock: true };
       case "refused":
-        return { message: t(refusalKey(outcome.code)) };
+        return {
+          message: t(refusalKey(outcome.code), {
+            minutes: throttleWaitMinutes(outcome.retryAfterSeconds),
+          }),
+        };
       case "noBundle":
         return { message: t("pin.noBundleOffline") };
       case "unreachable":

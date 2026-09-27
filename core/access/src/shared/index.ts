@@ -109,6 +109,8 @@ export const SESSION_END_REASONS = [
   "passwordSet",
   "supportReset",
   "deviceRevoked",
+  "passwordChanged",
+  "currentSecretFailures",
 ] as const;
 
 export type SessionEndReason = (typeof SESSION_END_REASONS)[number];
@@ -647,6 +649,11 @@ export const accessProblemCodes = {
   useOwnAccount: "access.user.useOwnAccount",
   /** No one deactivates their own account; another manager does (QA slice 22). */
   selfDeactivation: "access.user.selfDeactivation",
+  /**
+   * A non-owner setting the PIN, password, or login of a user whose role holds more than their
+   * own: they could sign in as that user (QA slice 24, user decision).
+   */
+  broaderRole: "access.user.broaderRole",
 } as const;
 
 /** A permission catalogue as the API and the bundle carry it: ids, modules, scope, kinds. */

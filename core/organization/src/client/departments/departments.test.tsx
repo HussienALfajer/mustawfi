@@ -205,6 +205,24 @@ describe("DepartmentsScreen", () => {
     expect(within(again).getByLabelText(/اسم القسم/)).toHaveValue("الإكسسوارات");
   });
 
+  it("says the store is read-only when the license stops a rename, and keeps what was typed", async () => {
+    fakeApi([STORE, REPAIRS], {
+      [`PATCH /api/v1/organization/departments/${REPAIRS.id}`]: problem(
+        403,
+        "tenancy.license.readOnly",
+      ),
+    });
+    renderScreen({ selected: REPAIRS.id });
+    const panel = await screen.findByRole("complementary", { name: "الصيانة" });
+    const name = within(panel).getByLabelText(/اسم القسم/);
+    await userEvent.clear(name);
+    await userEvent.type(name, "الصيانة والبرمجة{Enter}");
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(
+      "المتجر للقراءة فقط لأن الترخيص لم يُجدَّد، فلا يُحفظ أي تغيير",
+    );
+    expect(name).toHaveValue("الصيانة والبرمجة");
+  });
+
   it("archives only after one confirmation, and never offers it for the default department", async () => {
     const calls = fakeApi([STORE, REPAIRS], {
       [`POST /api/v1/organization/departments/${REPAIRS.id}/archive`]: () =>

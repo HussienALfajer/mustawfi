@@ -25,6 +25,9 @@ export function problemErrorHandler(
 ): FastifyReply {
   const instance = request.url;
   if (error instanceof ProblemError) {
+    if (error.retryAfterSeconds !== undefined) {
+      void reply.header("retry-after", String(error.retryAfterSeconds));
+    }
     return send(reply, {
       type: "about:blank",
       title: error.title,
