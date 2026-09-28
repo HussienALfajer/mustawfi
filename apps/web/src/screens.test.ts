@@ -1,5 +1,6 @@
 import { accessModule } from "@mustawfi/core-access/server";
 import { auditModule } from "@mustawfi/core-audit/server";
+import { currencyModule } from "@mustawfi/core-currency/server";
 import { organizationModule } from "@mustawfi/core-organization/server";
 import { inventoryModule } from "@mustawfi/inventory/server";
 import { salesModule } from "@mustawfi/sales/server";
@@ -8,9 +9,14 @@ import { shellMessages } from "./messages.ts";
 import { mayOpen, type NavPath, SCREENS, startScreen } from "./screens.ts";
 
 const DECLARED = new Set(
-  [accessModule, auditModule, organizationModule, inventoryModule, salesModule].flatMap((module) =>
-    (module.permissions ?? []).map((permission) => permission.id),
-  ),
+  [
+    accessModule,
+    auditModule,
+    currencyModule,
+    organizationModule,
+    inventoryModule,
+    salesModule,
+  ].flatMap((module) => (module.permissions ?? []).map((permission) => permission.id)),
 );
 
 /** What the templates' roles hold (`core-foundation` *Permissions*). */
@@ -19,6 +25,7 @@ const ACCOUNTANT = new Set([
   "access.users.view",
   "access.users.unlock",
   "audit.view",
+  "currency.rate.set",
   "inventory.products.view",
   "inventory.products.manage",
   "sales.invoices.view",
@@ -41,6 +48,7 @@ describe("the navigation's screens", () => {
     expect(open(SECTION_CASHIER)).toEqual(["/pos", "/products", "/device", "/printer"]);
     expect(open(ACCOUNTANT)).toEqual([
       "/invoices",
+      "/rates",
       "/products",
       "/admin/users",
       "/admin/roles",
@@ -57,6 +65,7 @@ describe("the navigation's screens", () => {
       "/admin/profile",
     );
     expect(startScreen(new Set(["sales.invoice.create"]))).toBe("/pos");
+    expect(startScreen(new Set(["currency.rate.set"]))).toBe("/rates");
     expect(startScreen(new Set())).toBe("/device");
   });
 });

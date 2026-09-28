@@ -1,8 +1,7 @@
 import { lastChanges } from "@mustawfi/core-audit/server";
 import type { LastChange } from "@mustawfi/core-audit/shared";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
-import { inArray } from "drizzle-orm";
-import { users } from "./schema.ts";
+import { userNames } from "./names.ts";
 
 /**
  * The last change of each of `ids` (records of `entityType`) among `actions`, with the name of
@@ -18,17 +17,7 @@ export async function namedLastChanges(
 ): Promise<Map<string, LastChange>> {
   const found = await lastChanges(tx, entityType, ids, actions);
   const userIds = [...new Set([...found.values()].flatMap((change) => change.userId ?? []))];
-  const names =
-    userIds.length === 0
-      ? new Map<string, string>()
-      : new Map(
-          (
-            await tx
-              .select({ id: users.id, name: users.name })
-              .from(users)
-              .where(inArray(users.id, userIds))
-          ).map((user) => [user.id, user.name]),
-        );
+  const names = await userNames(tx, userIds);
   const result = new Map<string, LastChange>();
   for (const [id, change] of found) {
     result.set(id, {

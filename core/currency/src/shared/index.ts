@@ -44,6 +44,18 @@ export {
   TENANT_CURRENCY_ENTITY,
   tenantCurrencySchema,
 } from "./rates.ts";
+export {
+  CURRENCY_SETTINGS_PERMISSION,
+  type CurrencySettingsOverview,
+  currencySettingsOverviewSchema,
+  type NamedExchangeRate,
+  namedExchangeRateSchema,
+  RATE_HISTORY_LIMIT,
+  type RatesOverview,
+  ratesOverviewSchema,
+  type SaveCurrencySettingsRequest,
+  saveCurrencySettingsRequestSchema,
+} from "./settings.ts";
 
 /** A tenant's currency with its catalog fields, as screens and devices read it. */
 export interface TenantCurrencyView {

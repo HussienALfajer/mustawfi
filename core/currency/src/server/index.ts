@@ -24,6 +24,12 @@ export {
   setExchangeRate,
 } from "./rates.ts";
 export type { CurrencyContext } from "./routes.ts";
+export {
+  currencySettingsOverview,
+  ratesOverview,
+  saveCurrencySettings,
+  type SaveCurrencySettingsInput,
+} from "./settings.ts";
 
 /** The sync operations `core.currency` handles; the host dispatches pushes to them. */
 export const currencySyncOperations: readonly SyncOperationDefinition[] = [rateSetOperation];

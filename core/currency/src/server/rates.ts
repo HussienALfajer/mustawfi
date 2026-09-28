@@ -130,12 +130,16 @@ export async function currentExchangeRate(
   return row === undefined ? undefined : rateView(row);
 }
 
-/** Every rate of the tenant, the latest first (by `effectiveAt`, then id). */
-export async function listExchangeRates(tx: TenantTransaction): Promise<ExchangeRateView[]> {
-  const rows = await tx
+/** The tenant's rates, the latest first (by `effectiveAt`, then id); `limit` of them when given. */
+export async function listExchangeRates(
+  tx: TenantTransaction,
+  limit?: number,
+): Promise<ExchangeRateView[]> {
+  const query = tx
     .select()
     .from(exchangeRates)
     .orderBy(...latestFirst);
+  const rows = limit === undefined ? await query : await query.limit(limit);
   return rows.map(rateView);
 }
 
