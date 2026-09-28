@@ -1,6 +1,6 @@
 # Core foundation (`core-foundation`)
 
-- Status: In progress
+- Status: Done (2026-09-28)
 - Modules covered: `core.tenancy`, `core.access`, `core.organization`, `core.audit` — plus the configuration-bundle mechanism in `core.config` and operation flags and bundle delivery in `core.sync` (ADR-0030)
 - Spec agreed with the user on: 2026-09-25
 
@@ -80,6 +80,7 @@ Every table has `tenant_id` and `branch_id` with forced RLS, except as noted.
 - `roles`: id, `name`, `template` (`owner` | `accountant` | `sectionCashier` | `repairTechnician` | `topUpOperator` | null for a copy), `is_owner`, `archived_at`. The owner role is one fixed row per tenant.
 - `role_permissions`: (`role_id`, `permission`).
 - `role_limits`: (`role_id`, `limit`, `value` decimal string).
+- `role_template_grants`: (`role_id`, `kind` permission or limit, `grant_id`) — the template grants a role has received, so an editor's removal stays removed (slice 6).
 - `users` gains: `role_id`, `department_scope` (`all` | `listed`), `status` (`active` | `deactivated`), `pin_verifier` (Argon2id PHC), `pin_changed_at`, `password_hash` becomes nullable, `totp_secret` (encrypted with a server key), `totp_enabled_at`. `is_owner` is replaced by the role.
 - `user_departments`: (`user_id`, `department_id`) when the scope is `listed`.
 - `recovery_codes`: user, code hash, `used_at`.
@@ -89,7 +90,10 @@ Every table has `tenant_id` and `branch_id` with forced RLS, except as noted.
 - `login_attempts`: failed attempts per login (password and online PIN), for rate limiting (pruned by age; not audit data). The per-source-address limit is **not** a table: an address may name no tenant (an unknown store code), and every table in a module schema is tenant-owned (ADR-0017). It is counted in the server process's memory, which is enough for V1's single server process; it resets on restart, and the per-login limit still holds.
 
 **`core_sync`**
-- `operation_flags`: (`op_id`, `code`) — operation-level flags that apply to any document type: `deviceRevoked`, `licenseReadOnly`, `permissionMissing`, `overrideNotAuthorized`, `numberGap`. Append-only.
+- `operation_flags`: (`op_id`, `code`) — operation-level flags that apply to any document type: `deviceRevoked`, `licenseReadOnly`, `permissionMissing`, `overrideNotAuthorized`, `numberGap`, with a `detail` (jsonb) describing the finding. Append-only.
+- `bundle_versions`: per device, the configuration bundle version and the digest of its parts, raised when a part changes (slice 11).
+
+**`sales`** (at its interface): `invoices` gains `department_id` (foreign key to `core_tenancy.departments`, slice 4) and `overrides` (jsonb array of the supervisor overrides the sale carries, slice 16).
 
 **`core_audit`**
 - `entries` gains `recorded_at` (server receipt time; `created_at` stays the time of the event, device time for device events) and `source` (`server` | `device`).
@@ -106,7 +110,7 @@ The CLI overrides any limit per tenant (`--limit users=8`). Entitlements are rec
 
 **Configuration bundle** (not a table): a JWS manifest `{ version, issuedAt, deviceId, licenseRef, parts: { name → sha256 } }` and the parts. Parts in this unit: `license` (the JWS), `access` (users allowed on the device — every active user of the tenant in V1 — with name, role, department scope, and PIN verifier; roles with permissions and limits; lockout state reset marker), `organization` (departments and the store profile without the logo; the logo is fetched separately and checked against its hash).
 
-**Device local tables** (SQLite, per module): `core.config` — `config_bundle` (manifest, parts, verified at); `core.tenancy` — `clock_guard` (high-water mark, last server contact), `license_day_state` (business date, evaluated state); `core.access` — `pin_lockouts` (user, failures, locked at), `local_sessions` (user, method, opened at, last activity).
+**Device local tables** (SQLite, per module, as built): `core.config` — `config_bundle` (manifest, parts, verified at), `config_bundle_refusal` (the last refused bundle's reason and version); `core.tenancy` — `tenancy_clock_guard` (high-water mark, last server time and the local time it was taken at, behind since), `tenancy_license_day` (business date, evaluated state, offline exceeded), `tenancy_license_audit` (license and clock events already audited, once per occurrence); `core.access` — `access_pin_lockouts` (user, failures, locked at, the verifier's `pin_changed_at`), `access_local_session` (user, method, opened at, server session), `access_session_activity` (last input), and the store code kept at registration on `access_device` (slice 26); `core.organization` — `organization_departments`, `organization_store_profile`, `organization_store_logo` (pulled rows and the fetched logo).
 
 ## Business rules and invariants
 
@@ -731,6 +735,7 @@ Screens ship with the feature they serve, so every milestone ends with something
 
 - **Commercial defaults of the license CLI** — until the admin console holds plans: grace 7 days, read-only 30 days, maximum offline 10 days (v1-scope), companion devices 2 in every plan (v1-scope says "a small free allowance" without a number). The CLI takes overrides per tenant.
 - **Which department a sale belongs to** when a user's scope has several departments, or a cart mixes departments — `sales` decides; until then rule 32.
+- **Closed at the unit's close (2026-09-28)** — the Argon2id parameters, the library choices, and the manual checks deferred to the close (below) are answered; kept for their history.
 - **Argon2id parameters for PIN verifiers** checked on low-end devices (verification should stay under about 300 ms on the reference hardware) and the WASM or native implementation on the client — chosen and measured in slice 15, recorded in its notes. Slice 6 creates verifiers with `@node-rs/argon2`'s defaults; the PHC string carries its parameters, so a change in slice 15 does not break stored verifiers (they are rehashed at the next PIN change). *Slice 15: `hash-wasm` (WebAssembly) chosen; the defaults take 35–80 ms on the development machine. Still to measure on the low-end reference hardware (a Windows 10 till): a factor of four still keeps a check under 300 ms.* *2026-09-28: the user measured it on the reference till and reports it passed.*
 - **Library choices** (`jose` for Ed25519 JWS on server and clients, `otpauth` for TOTP, an Argon2id implementation for the client, `@axe-core/playwright`) are checked against their current releases in the slice that adds them, as for every dependency; Ed25519 in WebCrypto is verified in WebView2 and the browser in slice 11. *Slice 11: Chromium verified by Playwright; WebView2 153 is past Chromium 137, where Ed25519 shipped; the Windows app run stays with slice 15.* *Slice 15: `hash-wasm` 4.12.0 for Argon2id on the client; the Windows app run is the manual check waiting for the user.*
 - **A server restored from a backup** hands devices bundle versions lower than theirs, which they refuse as `stale` (they keep the previous bundle, and slice 13 would make them read-only). The restore procedure (`ops`) may need to raise every `bundle_versions.version` past what devices hold, or devices may need to accept a lower version from a newer `issuedAt`. Raised in slice 11. *Slice 13: such a `stale` refusal now makes the device read-only (`bundleRefused`) until a newer version arrives — the question is now pressing for `ops`.*
@@ -760,6 +765,7 @@ Screens ship with the feature they serve, so every milestone ends with something
 - 2026-09-25 — Slice 1 done (license issue, install, lifecycle function).
 - 2026-09-25 — Slice 2 done (departments and store profile, server).
 - 2026-09-25 — Slice 3 done (frame with side navigation, screen patterns from the approved preview, departments and store profile screens, component gallery, axe in every journey).
+- 2026-09-26 — Slice 4 done (document codes declared by modules, the shared number format, `core_sync.operation_flags` with `numberGap`, the default department on invoices and journal lines, receipt template with the store name). *Entry added at the unit's close; the slice table recorded it.*
 - 2026-09-26 — Slice 5 done (declared permissions and limits, seeded roles, route guard, `permissionMissing` at ingest).
 - 2026-09-26 — Slice 6 done (user and role management on the server, PIN rules and verifiers, own PIN and password; open question settled: template roles pick up later template grants, removals stay removed).
 - 2026-09-26 — Slice 7 done (users and roles screens, permission matrix, Select and Checkbox controls).
@@ -773,6 +779,7 @@ Screens ship with the feature they serve, so every milestone ends with something
 - 2026-09-26 — Slice 14 done (device audit path: `AuditSink` and the outbox sink, `audit.entry.record` with `recorded_at` and `source`, license and clock events, the audit catalogue test).
 - 2026-09-26 — Slice 15 done (PIN screen, sign-in by PIN online and offline, lockout and supervisor unlock, auto-lock, switch user, reconnect for a server session); touch panel pattern approved; the manual check on the Windows app deferred to the unit's close (user decision).
 - 2026-09-27 — Slice 16 done (client grants from the bundle, supervisor override with device audit and `overrideNotAuthorized` at ingest, rule 32 on the POS).
+- 2026-09-27 — Slice 17 done (audit log: `GET /api/v1/audit/entries` with filters and keyset pages for owners and `audit.view`, the audit log screen with its side panel). *Entry added at the unit's close; the slice table recorded it.*
 - 2026-09-27 — Slice 18 done (device credential and session token in Windows Credential Manager, the move out of the local database, the ADR-0022 deviation closed); the manual check on the release build deferred to the unit's close.
 - 2026-09-27 — Slice 19 done (interaction-state tokens and one interaction language from the approved gallery preview; the invisible focus ring fixed; Toast, PasswordField, CopyButton, DatePicker, DateRangePicker replacing their ad-hoc uses; Enter, discard, toast, and archived-badge rules recorded and followed).
 - 2026-09-27 — Slice 20 done (restore of departments and roles, names unique among all rows compared normalized with the upgrade of existing rows, device rename and platform with the type in words and its limit, session end reasons labelled in the log, «last changed by … on …» on every details panel linked to the record's history).
@@ -786,3 +793,4 @@ Screens ship with the feature they serve, so every milestone ends with something
 - 2026-09-27 — Slice 25 done (QA 4: phases 10–12 — revoke of a device that sold offline, the audit log, and the Windows release build driven over WebView2's debugging port, the credential move from a pre-slice-18 build included; the session that registers a device is now bound to it, and an audit entry beyond the loaded pages reopens from the URL; the network-off start and the low-end till timing wait for the user).
 - 2026-09-27 — Slice 26 done (QA 5: the findings of slices 22–25 fixed or placed — limits said before trying, the audit panel in words, why a session ended, the store code a registered device knows, limit values by kind, the 400 in the OpenAPI, and copy across screens; the acceptance criteria walked with their evidence; the network-off start and the low-end till timing still wait for the user).
 - 2026-09-28 — After slice 26 (user decisions): a non-owner manager manages only users whose role is within their own, for every change; the Windows app's network-off start and the PIN timing on the low-end reference till passed.
+- 2026-09-28 — Unit closed (`/close-module`). Whole-unit conformance review: no code finding; the documents reconciled here (status, the changelog entries of slices 4 and 17, the entities and local tables as built, the answered open questions, ADR-0029's amendment, and the roadmap rows of `core-sync`, `sales`, and `ops` carrying what this unit hands them). Correctness review of `core/*`: one finding left for a fix slice — `editRole` checks only what a non-owner adds and `archiveRole` checks nothing of the actor, so a manager can narrow or archive a role broader than their own, around the rule decided after slice 26 (user decision: fixed after the close, not in it). Criterion 11's approval deviations (notice and summary patterns approved after their code, the touch panel left to the agent, the compact audit list without its own preview) are recorded in slice 26's notes for the user's acceptance. Handed on: `core-audit` or the next unit touching the log names the ids in snapshot fields.
