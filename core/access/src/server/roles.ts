@@ -10,6 +10,7 @@ import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import { and, asc, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   accessProblemCodes,
+  beyondGrant,
   type RoleHoldings,
   roleHoldings,
   type RoleListItem,
@@ -450,6 +451,22 @@ async function editableRole(tx: TenantTransaction, id: string): Promise<RoleRow>
   return row;
 }
 
+/**
+ * A non-owner edits or archives only a role whose holdings are within their own: changing one
+ * above them, in either direction, would act on the users who hold it (user decision after the
+ * `core-foundation` close review, as `checkManages` for users). 403 `access.role.broaderRole`,
+ * naming what is out of reach.
+ */
+function checkRoleWithin(manager: Manager, holdings: RoleHoldings): void {
+  const beyond = beyondGrant(manager, holdings);
+  if (beyond.length > 0) {
+    throw new ProblemError(accessProblemCodes.roleBroader, 403, {
+      title: "The role holds more than yours: an owner changes it",
+      detail: beyond.join(", "),
+    });
+  }
+}
+
 /** A role's name and holdings, as its audit entries record them. */
 const auditedRole = (name: string, holdings: RoleHoldings) => ({
   name,
@@ -481,7 +498,8 @@ export async function copyRole(
  * `access.role.changed` with both sides when something changed. A role seeded from a template
  * records every current template grant as offered, so a permission the editor removed is not
  * brought back by its template. Refused for the owner role (409 `access.role.ownerFixed`), an
- * archived role (409 `access.role.archived`), and a non-owner adding what they do not hold
+ * archived role (409 `access.role.archived`), a non-owner editing a role that holds more than
+ * their own (403 `access.role.broaderRole`), and a non-owner adding what they do not hold
  * (403 `access.role.beyondOwnGrant`).
  */
 export async function editRole(
@@ -495,6 +513,7 @@ export async function editRole(
   const holdings = checkedHoldings(change, catalogue);
   const row = await editableRole(tx, change.id);
   const before = await holdingsOf(tx, row, catalogue);
+  checkRoleWithin(actor, before);
   checkGrantable(actor, holdings, before);
   await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, row.id));
   await tx.delete(roleLimits).where(eq(roleLimits.roleId, row.id));
@@ -535,16 +554,18 @@ export async function editRole(
 /**
  * Archives an editable role (flow 7), audited `access.role.archived`. Refused while an active
  * user holds it (409 `access.role.inUse`); deactivated users keep it and need another role
- * before they are reactivated.
+ * before they are reactivated. A non-owner archives only a role within their own (403
+ * `access.role.broaderRole`).
  */
 export async function archiveRole(
   tx: TenantTransaction,
-  actor: RoleActor,
+  actor: Manager,
   id: string,
   catalogue: PermissionCatalogue,
   dependencies: AccessDependencies,
 ): Promise<RoleView> {
   const row = await editableRole(tx, id);
+  checkRoleWithin(actor, await holdingsOf(tx, row, catalogue));
   // Users take the role under the tenant lock; a user given this role concurrently commits
   // first or sees it archived (`activeRole` reads it `for share`).
   const active = (await activeUsersOf(tx, [row.id])).get(row.id) ?? 0;

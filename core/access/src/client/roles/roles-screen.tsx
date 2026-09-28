@@ -64,6 +64,11 @@ export function RolesScreen({ filters, onFiltersChange, auditLink }: RolesScreen
   const catalogue = useQuery(catalogueQueryOptions());
   const session = useQuery(sessionQueryOptions()).data;
   const canManage = session?.user.permissions.includes("access.roles.manage") === true;
+  const viewer = {
+    isOwner: session?.user.role.isOwner === true,
+    permissions: session?.user.permissions ?? [],
+    limits: session?.user.limits ?? {},
+  };
   const tableRef = useRef<HTMLTableElement>(null);
   const newButtonRef = useRef<HTMLButtonElement>(null);
   // A role added in the open panel keeps that panel (and its notice) once it has an id.
@@ -183,6 +188,7 @@ export function RolesScreen({ filters, onFiltersChange, auditLink }: RolesScreen
           auditLink={auditLink}
           catalogue={catalogue.data}
           canManage={canManage}
+          viewer={viewer}
           onClose={closePanel}
           onCopy={(role) => {
             select("new", role.id);

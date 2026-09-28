@@ -672,6 +672,11 @@ export const accessProblemCodes = {
    * own: they could sign in as that user (QA slice 24, user decision).
    */
   broaderRole: "access.user.broaderRole",
+  /**
+   * A non-owner editing or archiving a role that holds more than their own: it would narrow
+   * the users above them (user decision after the core-foundation close review).
+   */
+  roleBroader: "access.role.broaderRole",
 } as const;
 
 /** A permission catalogue as the API and the bundle carry it: ids, modules, scope, kinds. */

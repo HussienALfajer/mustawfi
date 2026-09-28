@@ -19,6 +19,8 @@ import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   accessProblemCodes,
+  beyondGrant,
+  type Grantor,
   type RoleListItem,
   roleNameSchema,
   type RoleView,
@@ -57,6 +59,8 @@ export function roleProblem(error: unknown): string {
       return "notFound";
     case accessProblemCodes.beyondOwnGrant:
       return "beyondOwnGrant";
+    case accessProblemCodes.roleBroader:
+      return "broaderRole";
     case tenancyProblemCodes.licenseReadOnly:
       return "readOnly";
     case accessProblemCodes.permissionDenied:
@@ -120,6 +124,8 @@ export interface RolePanelProps {
   readonly catalogue: PermissionCatalogueView;
   /** Whether the signed-in user holds `access.roles.manage`. */
   readonly canManage: boolean;
+  /** What the signed-in user holds: a non-owner changes no role that holds more. */
+  readonly viewer: Grantor;
   readonly onClose: () => void;
   readonly onSaved: (role: RoleView) => void;
   /** After a restore — of this role, or of the archived one a new name matched. */
@@ -133,7 +139,8 @@ export interface RolePanelProps {
 /**
  * A role in the side panel: its name and the permission matrix, grouped by the module that
  * declares each permission, with the limits under their module. The owner role and archived
- * roles are shown read-only; a role is copied into a new panel, then saved as a new role. An
+ * roles are shown read-only, and so is, to a non-owner, a role that holds more than their own
+ * (the server refuses its edit, archive, and restore); a role is copied into a new panel, then saved as a new role. An
  * archived role is restored with no confirmation, and typing an archived role's name for a new
  * one offers to restore that one instead (`core-foundation` slice 20). The panel ends with its
  * last change.
@@ -144,6 +151,7 @@ export function RolePanel({
   source,
   catalogue,
   canManage,
+  viewer,
   onClose,
   onSaved,
   onRestored,
@@ -170,7 +178,10 @@ export function RolePanel({
   // would refuse it (`access.role.inUse`); the panel already shows how many hold it.
   const [inUseSaid, setInUseSaid] = useState(false);
   const archived = role !== null && role.archivedAt !== null;
-  const readOnly = !canManage || archived || role?.isOwner === true;
+  // A role above the viewer: changing it would act on the users who hold it (user decision
+  // after the core-foundation close review); an owner changes it.
+  const broader = role !== null && !role.isOwner && beyondGrant(viewer, role).length > 0;
+  const readOnly = !canManage || archived || role?.isOwner === true || broader;
 
   const save = useMutation({
     mutationFn: (request: {
@@ -275,14 +286,16 @@ export function RolePanel({
       footer={
         !canManage ? undefined : archived ? (
           <>
-            <Button
-              isPending={restore.isPending}
-              onPress={() => {
-                restore.mutate(role.id);
-              }}
-            >
-              {t("roles.panel.restore")}
-            </Button>
+            {broader ? null : (
+              <Button
+                isPending={restore.isPending}
+                onPress={() => {
+                  restore.mutate(role.id);
+                }}
+              >
+                {t("roles.panel.restore")}
+              </Button>
+            )}
             <Button
               variant="secondary"
               onPress={() => {
@@ -294,7 +307,7 @@ export function RolePanel({
           </>
         ) : (
           <>
-            {role?.isOwner === true ? null : (
+            {role?.isOwner === true || broader ? null : (
               <Button aria-keyshortcuts="Control+S" isPending={save.isPending} onPress={submit}>
                 {t(role === null ? "roles.panel.add" : "roles.panel.save")}
                 <Kbd shortcut="Control+S" />
@@ -310,7 +323,7 @@ export function RolePanel({
                 {t("roles.panel.copy")}
               </Button>
             )}
-            {role === null || role.isOwner ? null : (
+            {role === null || role.isOwner || broader ? null : (
               <Button
                 variant="danger"
                 className="ms-auto"
@@ -388,6 +401,7 @@ export function RolePanel({
         ) : null}
         {archived ? <Note>{t("roles.panel.archivedNote")}</Note> : null}
         {!canManage ? <Note>{t("roles.panel.readOnlyNote")}</Note> : null}
+        {canManage && broader ? <Note>{t("roles.panel.broaderNote")}</Note> : null}
         <PermissionMatrix
           catalogue={catalogue}
           draft={draft}
