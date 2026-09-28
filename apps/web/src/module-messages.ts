@@ -1,5 +1,6 @@
 import { ACCESS_NAMESPACE, accessMessages } from "@mustawfi/core-access/client";
 import { AUDIT_NAMESPACE, auditMessages } from "@mustawfi/core-audit/client";
+import { CURRENCY_NAMESPACE, currencyMessages } from "@mustawfi/core-currency/client";
 import { LEDGER_NAMESPACE, ledgerMessages } from "@mustawfi/core-ledger/client";
 import { ORGANIZATION_NAMESPACE, organizationMessages } from "@mustawfi/core-organization/client";
 import { SYNC_NAMESPACE, syncMessages } from "@mustawfi/core-sync/client";
@@ -17,6 +18,7 @@ export const MODULE_MESSAGES: Readonly<Record<string, Messages>> = {
   [ACCESS_NAMESPACE]: accessMessages,
   [TENANCY_NAMESPACE]: tenancyMessages,
   [AUDIT_NAMESPACE]: auditMessages,
+  [CURRENCY_NAMESPACE]: currencyMessages,
   [LEDGER_NAMESPACE]: ledgerMessages,
   [ORGANIZATION_NAMESPACE]: organizationMessages,
   [INVENTORY_NAMESPACE]: inventoryMessages,

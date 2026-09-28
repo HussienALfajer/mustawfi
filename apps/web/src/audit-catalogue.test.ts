@@ -63,6 +63,7 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "access.user.reactivated" },
   { action: "access.user.roleChanged" },
   { action: "access.user.scopeChanged" },
+  { action: "currency.currencies.seeded" },
   { action: "inventory.product.created" },
   { action: "ledger.accounts.seeded" },
   { action: "organization.department.archived" },
@@ -198,6 +199,7 @@ const SNAPSHOT_FIELDS: Readonly<Record<string, readonly string[]>> = {
   inventory: ["name", "barcode", "price"],
   sales: ["number", "total", "flags"],
   ledger: ["accounts"],
+  currency: ["currencies", "changeCurrency", "rateChangeThresholdPercent"],
 };
 
 const arabic = (text: unknown) => typeof text === "string" && /[؀-ۿ]/.test(text);

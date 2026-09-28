@@ -47,6 +47,7 @@ describe("server modules", () => {
     expect(createServerRegistry().enabled.map((m) => m.id)).toEqual([
       "core.config",
       "core.tenancy",
+      "core.currency",
       "core.audit",
       "core.access",
       "core.ledger",

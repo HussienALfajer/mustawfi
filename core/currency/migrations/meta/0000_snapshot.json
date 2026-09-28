@@ -1,0 +1,374 @@
+{
+  "id": "d11fd260-3965-4b94-b24b-5262447bc1f3",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "core_currency.currency_settings": {
+      "name": "currency_settings",
+      "schema": "core_currency",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "change_currency": {
+          "name": "change_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rate_change_threshold_percent": {
+          "name": "rate_change_threshold_percent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "currency_settings_change_currency_fk": {
+          "name": "currency_settings_change_currency_fk",
+          "tableFrom": "currency_settings",
+          "tableTo": "tenant_currencies",
+          "schemaTo": "core_currency",
+          "columnsFrom": [
+            "tenant_id",
+            "change_currency"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "code"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "currency_settings_one_per_tenant": {
+          "name": "currency_settings_one_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "currency_settings_threshold": {
+          "name": "currency_settings_threshold",
+          "value": "\"core_currency\".\"currency_settings\".\"rate_change_threshold_percent\" between 1 and 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_currency.exchange_rates": {
+      "name": "exchange_rates",
+      "schema": "core_currency",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_currency": {
+          "name": "unit_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quote_currency": {
+          "name": "quote_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rate": {
+          "name": "rate",
+          "type": "numeric(20, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_at": {
+          "name": "effective_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "op_id": {
+          "name": "op_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "exchange_rates_current": {
+          "name": "exchange_rates_current",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "unit_currency",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "quote_currency",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "effective_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "exchange_rates_unit_currency_fk": {
+          "name": "exchange_rates_unit_currency_fk",
+          "tableFrom": "exchange_rates",
+          "tableTo": "tenant_currencies",
+          "schemaTo": "core_currency",
+          "columnsFrom": [
+            "tenant_id",
+            "unit_currency"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "code"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "exchange_rates_quote_currency_fk": {
+          "name": "exchange_rates_quote_currency_fk",
+          "tableFrom": "exchange_rates",
+          "tableTo": "tenant_currencies",
+          "schemaTo": "core_currency",
+          "columnsFrom": [
+            "tenant_id",
+            "quote_currency"
+          ],
+          "columnsTo": [
+            "tenant_id",
+            "code"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "exchange_rates_quote_direction": {
+          "name": "exchange_rates_quote_direction",
+          "value": "(\"core_currency\".\"exchange_rates\".\"unit_currency\", \"core_currency\".\"exchange_rates\".\"quote_currency\") in (('USD', 'SYP'), ('TRY', 'SYP'), ('USD', 'TRY'))"
+        },
+        "exchange_rates_rate_fits_devices": {
+          "name": "exchange_rates_rate_fits_devices",
+          "value": "\"core_currency\".\"exchange_rates\".\"rate\" > 0 and \"core_currency\".\"exchange_rates\".\"rate\" < 1000000000000"
+        },
+        "exchange_rates_device_op": {
+          "name": "exchange_rates_device_op",
+          "value": "(\"core_currency\".\"exchange_rates\".\"device_id\" is null) = (\"core_currency\".\"exchange_rates\".\"op_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "core_currency.tenant_currencies": {
+      "name": "tenant_currencies",
+      "schema": "core_currency",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "branch_id": {
+          "name": "branch_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cash_rounding_step": {
+          "name": "cash_rounding_step",
+          "type": "numeric(20, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tenant_currencies_code_per_tenant": {
+          "name": "tenant_currencies_code_per_tenant",
+          "nullsNotDistinct": false,
+          "columns": [
+            "tenant_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "tenant_currencies_code": {
+          "name": "tenant_currencies_code",
+          "value": "\"core_currency\".\"tenant_currencies\".\"code\" in ('SYP', 'USD', 'TRY')"
+        },
+        "tenant_currencies_cash_rounding_step": {
+          "name": "tenant_currencies_cash_rounding_step",
+          "value": "\"core_currency\".\"tenant_currencies\".\"cash_rounding_step\" > 0 and \"core_currency\".\"tenant_currencies\".\"cash_rounding_step\" <= 1000\n        and \"core_currency\".\"tenant_currencies\".\"cash_rounding_step\" = round(\"core_currency\".\"tenant_currencies\".\"cash_rounding_step\", 2)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {
+    "core_currency": "core_currency"
+  },
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

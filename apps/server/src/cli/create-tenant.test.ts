@@ -74,6 +74,8 @@ async function countRows(): Promise<Record<string, number>> {
     (select count(*)::int from core_tenancy.store_codes) as store_codes,
     (select count(*)::int from core_tenancy.licenses) as licenses,
     (select count(*)::int from core_ledger.accounts) as accounts,
+    (select count(*)::int from core_currency.tenant_currencies) as currencies,
+    (select count(*)::int from core_currency.currency_settings) as currency_settings,
     (select count(*)::int from core_audit.entries) as audit_entries`);
   return rows[0] ?? {};
 }
@@ -209,6 +211,42 @@ describe("tenant:create", () => {
       [created.tenantId],
     );
     expect(seeded.rows).toEqual([{ created_by: created.ownerId }]);
+
+    // Its currencies by its base (`core-money` rule 2), audited with the tenant.
+    const currencies = await superuser.query(
+      "select code, enabled, cash_rounding_step, branch_id, created_by from core_currency.tenant_currencies where tenant_id = $1 order by code",
+      [created.tenantId],
+    );
+    expect(currencies.rows).toEqual([
+      { code: "SYP", enabled: true, cash_rounding_step: "10.0000", ...standard },
+      { code: "TRY", enabled: false, cash_rounding_step: "1.0000", ...standard },
+      { code: "USD", enabled: true, cash_rounding_step: "0.0100", ...standard },
+    ]);
+    const currencySettings = await superuser.query(
+      "select change_currency, rate_change_threshold_percent from core_currency.currency_settings where tenant_id = $1",
+      [created.tenantId],
+    );
+    expect(currencySettings.rows).toEqual([
+      { change_currency: "SYP", rate_change_threshold_percent: 10 },
+    ]);
+    const currenciesSeeded = await superuser.query(
+      "select created_by, after from core_audit.entries where tenant_id = $1 and action = 'currency.currencies.seeded'",
+      [created.tenantId],
+    );
+    expect(currenciesSeeded.rows).toEqual([
+      {
+        created_by: created.ownerId,
+        after: {
+          currencies: [
+            { code: "SYP", enabled: true, cashRoundingStep: "10.00" },
+            { code: "USD", enabled: true, cashRoundingStep: "0.01" },
+            { code: "TRY", enabled: false, cashRoundingStep: "1.00" },
+          ],
+          changeCurrency: "SYP",
+          rateChangeThresholdPercent: 10,
+        },
+      },
+    ]);
   });
 
   it("gives each tenant its own rows, visible only in its own context", async () => {
@@ -230,6 +268,8 @@ describe("tenant:create", () => {
   it.each([
     ["a lower-case currency", args({ "base-currency": "syp" }), `${PASSWORD}\n`],
     ["a currency that is not three letters", args({ "base-currency": "SY" }), `${PASSWORD}\n`],
+    ["a currency outside the catalog", args({ "base-currency": "EUR" }), `${PASSWORD}\n`],
+    ["the Turkish lira as the base", args({ "base-currency": "TRY" }), `${PASSWORD}\n`],
     ["an empty tenant name", args({ name: "  " }), `${PASSWORD}\n`],
     ["an invalid login", args({ "owner-login": "a b" }), `${PASSWORD}\n`],
     ["a short password", args(), "short\n"],

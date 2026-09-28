@@ -2,26 +2,35 @@ import { Decimal, type RoundingMode } from "./decimal.ts";
 
 /**
  * A currency as the ledger uses it: its ISO 4217 code and its minor units. Minor units come
- * from `core.currency` data, never from code (ADR-0018).
+ * from `core.currency`'s catalog, never from other code (ADR-0018). A catalog currency also
+ * carries its place in the strength order that fixes how a rate is quoted (ADR-0031): 1 is the
+ * strongest.
  */
 export class Currency {
   readonly code: string;
   readonly minorUnits: number;
+  /** Rank in the catalog's strength order (1 = strongest); absent outside the catalog. */
+  readonly strengthRank: number | undefined;
 
-  private constructor(code: string, minorUnits: number) {
+  private constructor(code: string, minorUnits: number, strengthRank: number | undefined) {
     this.code = code;
     this.minorUnits = minorUnits;
+    this.strengthRank = strengthRank;
   }
 
-  static of(code: string, minorUnits: number): Currency {
+  static of(code: string, minorUnits: number, strengthRank?: number): Currency {
     if (!/^[A-Z]{3}$/.test(code)) throw new RangeError(`Not an ISO 4217 code: "${code}"`);
     if (!Number.isSafeInteger(minorUnits) || minorUnits < 0 || minorUnits > 4) {
       // Ledger amounts are numeric(20,4): at most four minor-unit digits fit.
       throw new RangeError(`Minor units must be an integer from 0 to 4, got ${String(minorUnits)}`);
     }
-    return new Currency(code, minorUnits);
+    if (strengthRank !== undefined && (!Number.isSafeInteger(strengthRank) || strengthRank < 1)) {
+      throw new RangeError(`A strength rank is a positive integer, got ${String(strengthRank)}`);
+    }
+    return new Currency(code, minorUnits, strengthRank);
   }
 
+  /** The same code and minor units; the strength rank is a quoting rule, not an identity. */
   equals(other: Currency): boolean {
     return this.code === other.code && this.minorUnits === other.minorUnits;
   }

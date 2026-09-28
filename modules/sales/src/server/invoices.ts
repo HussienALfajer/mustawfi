@@ -1,4 +1,5 @@
 import { recordAudit } from "@mustawfi/core-audit/server";
+import { findCatalogCurrency } from "@mustawfi/core-currency/shared";
 import { postJournalEntry, systemAccounts } from "@mustawfi/core-ledger/server";
 import { trackDocumentNumber } from "@mustawfi/core-organization/server";
 import { parseDocumentNumber } from "@mustawfi/core-organization/shared";
@@ -15,7 +16,7 @@ import {
   type TenantTransaction,
 } from "@mustawfi/core-tenancy/server";
 import { knownProducts, moveStock } from "@mustawfi/inventory/server";
-import { Currency, Decimal, Money } from "@mustawfi/kernel";
+import { Decimal, Money } from "@mustawfi/kernel";
 import { z } from "zod";
 import {
   INVOICE_CREATE_PERMISSION,
@@ -29,12 +30,6 @@ import { invoiceFlags, invoiceLines, invoices } from "./schema.ts";
 
 /** The document type journal entries and stock movements name an invoice by. */
 export const INVOICE_SOURCE_TYPE = "sales.invoice";
-
-/**
- * ISO 4217 minor units of the currencies the skeleton sells in, until `core.currency` owns
- * currency data (ADR-0007); a base currency missing here cannot be sold in.
- */
-const MINOR_UNITS: Readonly<Record<string, number>> = { SYP: 2, USD: 2 };
 
 /** The unique constraints another operation's invoice can collide with. */
 const DUPLICATE_CONSTRAINTS = new Set([
@@ -89,10 +84,11 @@ async function postInvoiceV1(
   }
   const tenant = await currentTenant(tx);
   if (tenant === undefined) throw new Error("an operation outside a tenant");
-  const minorUnits = MINOR_UNITS[invoice.currency];
+  // Minor units come from the currency catalog (ADR-0018); a code outside it cannot be sold in.
+  const currency = findCatalogCurrency(invoice.currency);
   if (
     invoice.currency !== tenant.baseCurrency ||
-    minorUnits === undefined ||
+    currency === undefined ||
     !Decimal.of(invoice.exchangeRate).equals(Decimal.ONE)
   ) {
     throw reject(
@@ -100,7 +96,6 @@ async function postInvoiceV1(
       `sold in ${invoice.currency} at ${invoice.exchangeRate}; the store sells in ${tenant.baseCurrency} at 1`,
     );
   }
-  const currency = Currency.of(invoice.currency, minorUnits);
   const total = Money.of(invoice.total, currency);
   if (!total.isAtMinorUnit()) {
     throw reject(

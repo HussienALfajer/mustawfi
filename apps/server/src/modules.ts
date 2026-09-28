@@ -18,6 +18,7 @@ import {
   type ModuleRegistry,
   type RequestActor,
 } from "@mustawfi/core-config/server";
+import { currencyModule } from "@mustawfi/core-currency/server";
 import { ledgerModule } from "@mustawfi/core-ledger/server";
 import { organizationBundlePart, organizationModule } from "@mustawfi/core-organization/server";
 import {
@@ -66,6 +67,7 @@ export interface HostContext {
 export const serverModules: readonly ModuleManifest<HostContext>[] = [
   configModule,
   tenancyModule,
+  currencyModule,
   auditModule,
   accessModule,
   ledgerModule,

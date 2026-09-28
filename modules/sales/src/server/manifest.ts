@@ -16,6 +16,7 @@ export const salesModule = defineModule<SalesContext>({
     "core.access",
     "core.audit",
     "core.config",
+    "core.currency",
     "core.ledger",
     "core.organization",
     "core.sync",

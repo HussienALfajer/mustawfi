@@ -8,6 +8,7 @@ import {
   seedRoles,
 } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
+import { appendExchangeRate, seedCurrencies } from "@mustawfi/core-currency/server";
 import { addDepartment, seedOrganization } from "@mustawfi/core-organization/server";
 import { postJournalEntry, seedAccounts, systemAccounts } from "@mustawfi/core-ledger/server";
 import {
@@ -22,6 +23,7 @@ import { createProduct } from "@mustawfi/inventory/server";
 import {
   cryptoRandom,
   Currency,
+  Decimal,
   Money,
   randomCode,
   systemClock,
@@ -214,6 +216,29 @@ const seeds: readonly Seed[] = [
           (id, tenant_id, branch_id, created_at, created_by, user_id, code_hash)
         values (${newId()}, ${tenant.tenantId}, ${tenant.branchId}, ${at}, ${tenant.userId},
           ${tenant.userId}, encode(sha256(convert_to(${tenant.tenantId}, 'UTF8')), 'hex'))`);
+    },
+  },
+  {
+    // A tenant's currencies and settings, as tenant creation seeds them, and a rate.
+    tables: [
+      "core_currency.tenant_currencies",
+      "core_currency.currency_settings",
+      "core_currency.exchange_rates",
+    ],
+    seed: async (tx, tenant) => {
+      const at = systemClock.now();
+      await seedCurrencies(tx, { ...tenant, at }, "SYP", newId);
+      await appendExchangeRate(tx, {
+        id: newId(),
+        tenantId: tenant.tenantId,
+        branchId: tenant.branchId,
+        unitCurrency: "USD",
+        quoteCurrency: "SYP",
+        rate: Decimal.of("13000"),
+        effectiveAt: at,
+        recordedAt: at,
+        setBy: tenant.userId,
+      });
     },
   },
   {

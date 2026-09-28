@@ -8,6 +8,7 @@ export const uiMessages = {
   currency: {
     SYP: "ل.س",
     USD: "$",
+    TRY: "ل.ت",
   },
   moneyInput: {
     currency: "العملة",

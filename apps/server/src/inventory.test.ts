@@ -58,7 +58,7 @@ beforeAll(async () => {
     },
   });
   const input = {
-    baseCurrency: "SYP",
+    baseCurrency: "SYP" as const,
     ownerName: "أحمد",
     ownerLogin: "ahmad",
     ownerPassword: PASSWORD,

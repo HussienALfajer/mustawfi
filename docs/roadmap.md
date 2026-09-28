@@ -56,7 +56,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | # | Spec unit | Modules covered | Status |
 |---|---|---|---|
 | 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit (`docs/product/modules/core-foundation.md`; ADR-0030) | Done (2026-09-28) |
-| 2 | `core-money` | core.currency, core.ledger (`docs/product/modules/core-money.md`; ADR-0031) | Spec ready |
+| 2 | `core-money` | core.currency, core.ledger (`docs/product/modules/core-money.md`; ADR-0031) | In progress |
 | 3 | `core-config` | core.config (registry, entitlements, settings, custom fields, templates) | Not started |
 | 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness, Android shell and its native SQLite adapter; inherits from `core-foundation`: a Windows app that lost its credential, a device restored from a database copy reusing `deviceSeq`s, sessions that registered a device before its slice 25 and stay unbound, the reason a session ended returned with its 401, per-device pull scope, the Android keystore) | Not started |
 | 5 | `inventory` | inventory | Not started |
