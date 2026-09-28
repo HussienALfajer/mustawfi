@@ -37,3 +37,4 @@ Every tenant-owned table is behind row-level security (ADR-0017): nothing is vis
 ## Amendments
 
 - 2026-09-27 (`core-foundation`, the user's decision after QA slice 22): an unregistered browser does not remember the store code — it is typed at every sign-in there, which the sign-in form's shape check (`storeCodeFieldSchema`) makes quick to get right. The Decision's «the client remembers the store code after the first sign-in» and the matching Consequence no longer hold for such a browser. Whether a registered device fills in the store it belongs to is left to `core-foundation` slice 26.
+- 2026-09-28 (`core-foundation` close): slice 26 decided it — a device keeps the store code from its registration and shows it read-only at password sign-in; devices registered before it keep asking. Sign-in rate limiting, which the Consequences call not built yet, was built in `core-foundation` slice 8 (ADR-0022).
