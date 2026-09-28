@@ -1,6 +1,6 @@
 # Core money (`core-money`)
 
-- Status: Spec ready
+- Status: In progress
 - Modules covered: `core.currency`, `core.ledger`
 - Spec agreed with the user on: 2026-09-28
 
@@ -58,7 +58,7 @@ Give the store real money handling and real books. The owner sets the dollar (an
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `currencies` (catalog, not tenant-owned) | `code` (`SYP`, `USD`, `TRY`), `minorUnits` (2), `strengthRank` (USD 1, TRY 2, SYP 3) | Seeded by migration; read-only for the app role. A new currency is a migration and a release. Arabic names and symbols are i18n keys (`ل.س`, `$`, `ل.ت`). |
+| `currencies` (catalog, not tenant-owned) | `code` (`SYP`, `USD`, `TRY`), `minorUnits` (2), `strengthRank` (USD 1, TRY 2, SYP 3) | Code (`CURRENCY_CATALOG`), mirrored by database checks (slice 1 deviation). A new currency is a migration and a release. Arabic names and symbols are i18n keys (`ل.س`, `$`, `ل.ت`). |
 | `tenantCurrencies` | `tenantId`, `branchId`, `code`, `enabled`, `cashRoundingStep` | One row per catalog currency per tenant, seeded at tenant creation. Defaults: SYP step 10, USD 0.01, TRY 1. Base SYP → SYP and USD enabled; base USD → USD and SYP enabled; TRY disabled. Pulled by devices with the catalog fields joined. |
 | `currencySettings` | `tenantId`, `branchId`, `changeCurrency` (default SYP), `rateChangeThresholdPercent` (default 10) | One row per tenant; pulled by devices. |
 | `exchangeRates` | `id` (UUIDv7), `tenantId`, `branchId`, `unitCurrency`, `quoteCurrency`, `rate` (`numeric(20,6)`, at most 12 whole digits), `effectiveAt`, `recordedAt`, `setBy`, `deviceId` (null when set online), `opId` (null when set online) | Append-only (database refuses update and delete). The pair is base and foreign in the quote direction of ADR-0031: SYP per USD, SYP per TRY (base SYP), TRY per USD (base USD). Pulled by devices. |
@@ -305,7 +305,7 @@ Limits: none. Every route and the `currency.rate.set` operation name their permi
 
 | # | Slice | Done when (3–5 checks) | Effort | Depends on | Status |
 |---|---|---|---|---|---|
-| 1 | Currency catalog, tenant currencies, rates domain | `core/currency` package exists and passes `check:boundaries`; catalog (SYP, USD, TRY), `tenantCurrencies`, `currencySettings` seeded at tenant creation by base (existing tenants by migration), RLS isolation tested · `exchangeRates` append-only at the database; current rate by latest `effectiveAt` then id, tested · kernel cross conversion rounds once and the quote direction refuses an inverted pair (property tests) · `MINOR_UNITS` in `sales` and the price-currency list in `inventory/client` read the catalog; `pnpm verify` passes | high | — | Not started |
+| 1 | Currency catalog, tenant currencies, rates domain | `core/currency` package exists and passes `check:boundaries`; catalog (SYP, USD, TRY), `tenantCurrencies`, `currencySettings` seeded at tenant creation by base (existing tenants by migration), RLS isolation tested · `exchangeRates` append-only at the database; current rate by latest `effectiveAt` then id, tested · kernel cross conversion rounds once and the quote direction refuses an inverted pair (property tests) · `MINOR_UNITS` in `sales` and the price-currency list in `inventory/client` read the catalog; `pnpm verify` passes | high | — | Done (2026-09-28; catalog in code, no backfill — see notes) |
 | 2 | Setting rates online and offline | `POST /api/v1/currency/rates` with `currency.rate.set`, bounds 400, pair 422, confirmation 422, audited · sync operation `currency.rate.set` accepted, idempotent, flagged `permissionMissing` without the permission · rates and currency rows pulled through the change log; local tables appended at the end of `LOCAL_MIGRATIONS`; the device's current rate updates at once when set locally and after pull · sync-simulation: two offline devices converge on the latest `effectiveAt` | high | 1 | Not started |
 | 3 | Currency screens and the stale-rate banner | Rates screen (current, set, confirmation over the threshold with an example, history) works offline and on a phone width · currency settings screen (enable with a first rate, steps, change currency, threshold) for `currency.settings.manage`, rules 2–5 enforced by the route · stale-rate banner on POS and home per rule 12 · all text through i18n keys; component tests | medium | 2 | Not started |
 | 4 | Chart of accounts tree | Migration to the tree; retail template seeded at tenant creation; skeleton accounts re-coded to 1101/4101/5901 with their lines kept · template test: every system key once, codes prefix-consistent, kinds by top group · routes to list, create, edit, archive, restore under rules 14–17 with `ledger.view` / `ledger.accounts.manage`, audited · the skeleton's sales posting and ledger tests pass | high | — | Not started |
@@ -319,7 +319,14 @@ Limits: none. Every route and the `currency.rate.set` operation name their permi
 
 ### Slice notes and deviations
 
-None yet.
+- **Slice 1 (2026-09-28)** — `core/currency` (`@mustawfi/core-currency`, module `core.currency`, `dependsOn` `core.config` and `core.tenancy` for now; `core.audit` and `core.sync` join when slice 2 uses them).
+  - **Deviation, chosen by the user:** the catalog is code, not a `core_currency.currencies` table. A table readable by the app role without `tenant_id` breaks ADR-0017's RLS catalog check, and every client needs the catalog offline anyway. `CURRENCY_CATALOG` (`core/currency/src/shared/catalog.ts`) holds the codes, minor units, and strength ranks; the database mirrors it with checks: `tenant_currencies_code`, `tenant_currencies_cash_rounding_step` (two minor units), and `exchange_rates_quote_direction` (the three quoted pairs). A new currency is a release plus a migration that widens those checks.
+  - **Deviation: no backfill of existing tenants.** A `core_currency` migration cannot read `core_tenancy.tenants` (boundary rule `own-schema-only`), and forced RLS blocks the owner's inserts. There is no production tenant yet (same as `core-foundation` slices 3–5). A database with tenants from before this slice has no currency rows; recreate it.
+  - Kernel: `Currency.of(code, minorUnits, strengthRank?)`. `ExchangeRate.of` refuses an inverted pair when both currencies carry a rank. `ExchangeRate.crossConvert(money, { from, to }, mode)` converts foreign ↔ foreign as one fraction with one rounding (property-tested within half a minor unit, and mirrored under negation).
+  - Tables: `tenant_currencies` (unique per tenant and code; column grants for `enabled`, `cash_rounding_step`, and `updated_*`), `currency_settings` (one per tenant; `change_currency` has a tenant-scoped foreign key to `tenant_currencies`; threshold from 1 to 100), and `exchange_rates`. For rates, `created_at` is the time the server recorded the rate and `created_by` is who set it. `device_id` and `op_id` are both null or both set. Both rate currencies have foreign keys to the tenant's currencies. The rate is checked to be positive and below 10¹². Rates are append-only through grants and triggers that refuse update, delete, and truncate by any role.
+  - Server interface: `seedCurrencies` (called by `createTenantWithOwner` and audited as `currency.currencies.seeded`), `listTenantCurrencies`, `readCurrencySettings`, `appendExchangeRate`, `currentExchangeRates` (`DISTINCT ON` the pair, latest `effective_at`, then id), and `listExchangeRates`. `appendExchangeRate` checks the quote direction only. Slice 2's route and operation check that the pair includes the base, that the currency is enabled, and that the user has the permission (rules 6 and 10).
+  - `createTenantWithOwner` takes `baseCurrencySchema` (SYP or USD). `core_tenancy.tenants.base_currency` keeps its format check only.
+  - `sales` reads minor units through `findCatalogCurrency`. `inventory/client`'s `PRICE_CURRENCIES` is the whole catalog, so TRY is offered for prices until slices 2–3 narrow the list to the tenant's enabled currencies (a TRY-priced item is unsellable at the POS, as a USD-priced one already is). The `ui` currency labels gain `TRY: ل.ت`.
 
 ## Open questions
 
@@ -330,3 +337,4 @@ None yet.
 ## Changelog
 
 - 2026-09-28 — Spec agreed. The user added the Turkish lira as a transaction currency (a recorded change to `v1-scope.md`) and chose: one rate changed at will, settable offline; SYP cash rounding to 10; change currency as a tenant setting; subjects on control accounts; lock date with owner reopening; weighted-average realized differences; no revaluation in V1; online-only accounting screens; stale rate warns, never blocks; 10% confirmation threshold; `currency.rate.set` for owner and accountant; USD without cash rounding, TRY to 1. ADR-0031 accepted by the user.
+- 2026-09-28 — Unit base commit: 247907b1f22ed858e6de05f51de0d935bb49d7cf. Slice 1 done. The user chose to keep the currency catalog in code rather than a shared table (ADR-0017). No backfill of tenants from before this slice.

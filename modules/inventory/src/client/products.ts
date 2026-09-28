@@ -1,4 +1,5 @@
 import { apiRequest } from "@mustawfi/core-config/client";
+import { catalogCurrencies, findCatalogCurrency } from "@mustawfi/core-currency/shared";
 import { Currency } from "@mustawfi/kernel";
 import { queryOptions } from "@tanstack/react-query";
 import {
@@ -10,14 +11,15 @@ import {
 } from "../shared/index.ts";
 
 /**
- * The currencies a price can be set in, until `core.currency` supplies them: the new Syrian
- * pound and the US dollar, both with two minor units (AGENTS.md, dollarization).
+ * The currencies a price can be set in: the currency catalog's, with their minor units
+ * (`core.currency`; AGENTS.md, dollarization). The tenant's enabled currencies narrow it once
+ * devices pull them (`core-money` slices 2–3).
  */
-export const PRICE_CURRENCIES: readonly Currency[] = [Currency.of("SYP", 2), Currency.of("USD", 2)];
+export const PRICE_CURRENCIES: readonly Currency[] = catalogCurrencies();
 
-/** A price's currency; one outside the list keeps its code with two minor units. */
+/** A price's currency; one outside the catalog keeps its code with two minor units. */
 export function priceCurrency(code: string): Currency {
-  return PRICE_CURRENCIES.find((currency) => currency.code === code) ?? Currency.of(code, 2);
+  return findCatalogCurrency(code) ?? Currency.of(code, 2);
 }
 
 export const productsQueryKey = ["inventory", "products"] as const;

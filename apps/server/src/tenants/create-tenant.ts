@@ -1,14 +1,11 @@
 import { loginSchema, passwordSchema, userNameSchema } from "@mustawfi/core-access/shared";
 import { createUser, hashPassword, seedRoles } from "@mustawfi/core-access/server";
 import { recordAudit } from "@mustawfi/core-audit/server";
+import { seedCurrencies } from "@mustawfi/core-currency/server";
+import { baseCurrencySchema } from "@mustawfi/core-currency/shared";
 import { seedAccounts } from "@mustawfi/core-ledger/server";
 import { seedOrganization } from "@mustawfi/core-organization/server";
-import {
-  currencyCodeSchema,
-  STORE_CODE_LENGTH,
-  tenantNameSchema,
-  verifyLicense,
-} from "@mustawfi/core-tenancy/shared";
+import { STORE_CODE_LENGTH, tenantNameSchema, verifyLicense } from "@mustawfi/core-tenancy/shared";
 import {
   createTenant,
   currentTenant,
@@ -22,7 +19,8 @@ import { installAuditedLicense, type LicenseDependencies } from "./install-licen
 
 export const createTenantInputSchema = z.object({
   name: tenantNameSchema,
-  baseCurrency: currencyCodeSchema,
+  /** SYP or USD, fixed for good (ADR-0007, `core-money` rule 1). */
+  baseCurrency: baseCurrencySchema,
   ownerName: userNameSchema,
   ownerLogin: loginSchema,
   ownerPassword: passwordSchema,
@@ -71,7 +69,7 @@ function isStoreCodeTaken(error: unknown): boolean {
 /**
  * Flow 1 of the walking skeleton, licensed (`core-foundation` rule 2): a tenant whose id is the
  * license's tenant claim, its installed license, its hidden default branch, its base currency,
- * its store code, its roles (the owner role and one per template, with the permissions the
+ * its currencies and currency settings (by the base), its store code, its roles (the owner role and one per template, with the permissions the
  * server's modules grant them), its owner, and its seeded accounts, in one `withTenant` transaction for the
  * new tenant — all or nothing, and audited in the same transaction. Runs as `mustawfi_app`
  * under RLS like every other write. A store code another tenant already holds is drawn again.
@@ -126,6 +124,27 @@ export async function createTenantWithOwner(
       createdBy,
     });
     await installAuditedLicense(tx, parsed.license, dependencies);
+    const currencies = await seedCurrencies(
+      tx,
+      { tenantId: created.tenantId, branchId: created.branchId, userId: createdBy, at: createdAt },
+      parsed.baseCurrency,
+      dependencies.newId,
+    );
+    await recordAudit(tx, {
+      ...audit,
+      id: dependencies.newId(),
+      userId: createdBy,
+      action: "currency.currencies.seeded",
+      after: {
+        currencies: currencies.currencies.map((c) => ({
+          code: c.code,
+          enabled: c.enabled,
+          cashRoundingStep: c.cashRoundingStep,
+        })),
+        changeCurrency: currencies.settings.changeCurrency,
+        rateChangeThresholdPercent: currencies.settings.rateChangeThresholdPercent,
+      },
+    });
     const { ownerRoleId } = await seedRoles(
       tx,
       { tenantId: created.tenantId, branchId: created.branchId, userId: createdBy, at: createdAt },
