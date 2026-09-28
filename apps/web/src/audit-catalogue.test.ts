@@ -64,6 +64,7 @@ const CATALOGUE: readonly { readonly action: string; readonly device?: true }[] 
   { action: "access.user.roleChanged" },
   { action: "access.user.scopeChanged" },
   { action: "currency.currencies.seeded" },
+  { action: "currency.rate.set" },
   { action: "inventory.product.created" },
   { action: "ledger.accounts.seeded" },
   { action: "organization.department.archived" },

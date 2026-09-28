@@ -47,11 +47,11 @@ describe("server modules", () => {
     expect(createServerRegistry().enabled.map((m) => m.id)).toEqual([
       "core.config",
       "core.tenancy",
-      "core.currency",
       "core.audit",
       "core.access",
-      "core.ledger",
       "core.sync",
+      "core.currency",
+      "core.ledger",
       "core.organization",
       "inventory",
       "sales",
@@ -65,10 +65,12 @@ describe("server modules", () => {
   it("dispatch each module's sync operations only while the module is enabled", () => {
     expect(hostSyncOperations(createServerRegistry()).types).toEqual([
       "audit.entry.record",
+      "currency.rate.set",
       "sales.invoice.post",
     ]);
     expect(hostSyncOperations(createServerRegistry(["sales"])).types).toEqual([
       "audit.entry.record",
+      "currency.rate.set",
     ]);
   });
 

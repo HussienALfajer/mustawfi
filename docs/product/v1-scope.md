@@ -27,7 +27,7 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 | `core.tenancy` | Tenant & license | Core | core.config | No |
 | `core.access` | Identity, permissions, devices | Core | core.config, core.tenancy, core.audit | No |
 | `core.organization` | Store profile, departments, numbering | Core | core.config, core.tenancy, core.access, core.audit, core.sync | No |
-| `core.currency` | Currencies & exchange rates | Core | core.config, core.tenancy, core.audit, core.sync | No |
+| `core.currency` | Currencies & exchange rates | Core | core.config, core.tenancy, core.access, core.audit, core.sync | No |
 | `core.ledger` | Accounting engine | Core | core.config, core.tenancy, core.currency, core.audit, core.sync, core.organization | No |
 | `core.audit` | Audit log | Core | core.config, core.tenancy | No |
 | `core.sync` | Offline storage & sync | Core | core.config, core.tenancy, core.access, core.audit² | No |

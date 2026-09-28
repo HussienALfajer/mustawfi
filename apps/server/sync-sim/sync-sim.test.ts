@@ -15,6 +15,10 @@
  * Devices also audit events through the device audit path (`core-foundation` rule 33): each
  * event a device queued is in the server's log exactly once, from that device.
  *
+ * The owner sets the dollar rate on devices, offline or not, and online (`core-money` rules
+ * 8–9): once synced, every device's current rate is the server's — the latest effective time,
+ * ties by id — however the network ordered the pushes.
+ *
  * Replay a failing run with its seed: `SYNC_SIM_SEEDS=1234 pnpm test:agent sync-sim`.
  * Longer runs: `SYNC_SIM_STEPS=2000`.
  */
@@ -38,6 +42,15 @@ import {
   configLocalMigrations,
   loadBundle,
 } from "@mustawfi/core-config/client";
+import {
+  currencyLocalMigrations,
+  currencyPullAppliers,
+  DeviceRateRefused,
+  listLocalCurrentRates,
+  type LocalExchangeRate,
+  setDeviceExchangeRate,
+} from "@mustawfi/core-currency/client";
+import type { ExchangeRateWire } from "@mustawfi/core-currency/shared";
 import { licenseBundlePart } from "@mustawfi/core-tenancy/client";
 import { testLicenseKeys } from "@mustawfi/tools-license/testing";
 import {
@@ -84,6 +97,7 @@ import {
   type DeviceSnapshot,
   type FaultRates,
   type LinkStats,
+  NO_FAULTS,
   runSimulation,
   type ServerSnapshot,
   type SimAction,
@@ -295,6 +309,7 @@ async function openDevice(
     ...tenancyLocalMigrations,
     ...salesOverrideLocalMigrations,
     ...storeLogoLocalMigrations,
+    ...currencyLocalMigrations,
   ];
   await migrateLocalDb(db, migrations);
   const { code } = await ownerRequest<{ code: string }>(
@@ -316,7 +331,7 @@ async function openDevice(
   const engine = createSyncEngine({
     db,
     migrations,
-    appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
+    appliers: [...organizationPullAppliers, ...inventoryPullAppliers, ...currencyPullAppliers],
     clock,
     transport: createApiSyncTransport({ fetch: link.fetch }),
     bundle: await bundleVerifier(),
@@ -450,6 +465,56 @@ async function auditProblems(store: Store, devices: readonly SimDevice[]): Promi
   return problems;
 }
 
+/** The dollar's current rate on the server (rule 8): the latest effective time, then id. */
+async function serverCurrentRate(store: Store): Promise<string | undefined> {
+  const { tenantId, ownerId } = store.tenant;
+  const rows = await tenants.withTenant({ tenantId, userId: ownerId }, (tx) =>
+    tx.execute<{ id: string }>(sql`
+      SELECT id FROM core_currency.exchange_rates
+      WHERE unit_currency = 'USD' AND quote_currency = 'SYP'
+      ORDER BY effective_at DESC, id DESC LIMIT 1`),
+  );
+  return rows.rows[0]?.id;
+}
+
+/** The dollar's current rate on a device, if it has one. */
+async function deviceCurrentRate(device: SimDevice): Promise<LocalExchangeRate | undefined> {
+  return (await listLocalCurrentRates(device.db)).find(
+    (rate) => rate.unitCurrency === "USD" && rate.quoteCurrency === "SYP",
+  );
+}
+
+/** A device, not wiped, whose current dollar rate is not the server's. */
+async function rateProblems(store: Store, devices: readonly SimDevice[]): Promise<string[]> {
+  const expected = await serverCurrentRate(store);
+  const problems: string[] = [];
+  for (const device of devices) {
+    if (device.engine.status().phase === "removed") continue;
+    const current = await deviceCurrentRate(device);
+    if (current?.id !== expected) {
+      problems.push(
+        `${device.name}'s current rate is ${current?.id ?? "none"}, the server's ${expected ?? "none"}`,
+      );
+    }
+  }
+  return problems;
+}
+
+/** The owner sets the dollar rate on a device, confirmed, as the rates screen would. */
+function setRateOn(device: SimDevice, store: Store, rate: string): Promise<LocalExchangeRate> {
+  return setDeviceExchangeRate(device.db, {
+    device: device.local,
+    userId: store.tenant.ownerId,
+    shiftId: SKELETON_DOCUMENT_DEFAULTS.shiftId,
+    unitCurrency: "USD",
+    quoteCurrency: "SYP",
+    rate,
+    confirmed: true,
+    clock: device.clock,
+    newId: device.newId,
+  });
+}
+
 /** The revoked device's rows left on it once it wiped: every count must be zero. */
 async function leftAfterWipe(device: SimDevice): Promise<string[]> {
   const left: string[] = [];
@@ -493,6 +558,8 @@ interface RunResult {
   readonly revoked: { readonly sales: number; readonly flagged: number };
   /** Events the devices audited through the device audit path. */
   readonly audited: number;
+  /** Rates set on devices and online. */
+  readonly rates: { readonly device: number; readonly online: number };
   readonly convergeRounds: number;
   readonly elapsedMs: number;
 }
@@ -534,6 +601,7 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
   if (revokedDevice === undefined) throw new Error("no devices");
   let revokedAt: string | undefined;
   let auditedEvents = 0;
+  const rates = { device: 0, online: 0 };
   async function revoke(): Promise<string> {
     if (revokedDevice === undefined) throw new Error("no devices");
     const view = await ownerRequest<DeviceView>(
@@ -616,6 +684,35 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
         );
         device.audited.push(event);
         return `${device.name} audited event ${String(event)}`;
+      },
+    },
+    {
+      name: "rate",
+      weight: 5,
+      async run(step) {
+        // The dollar moves; the owner sets it on a till, offline or not, or online.
+        const rate = `${String(step.int(11_000, 13_000))}.${String(step.int(0, 99))}`;
+        if (step.chance(0.25)) {
+          await ownerRequest<ExchangeRateWire>("/api/v1/currency/rates", store.token, {
+            unitCurrency: "USD",
+            quoteCurrency: "SYP",
+            rate,
+            confirmed: true,
+          });
+          rates.online += 1;
+          return `owner set the rate to ${rate} online`;
+        }
+        const device = step.pick(devices);
+        if ((await localDevice(device.db)) === undefined) return `${device.name} was wiped`;
+        try {
+          await setRateOn(device, store, rate);
+        } catch (error) {
+          // Before its first pull a device does not know the store's currencies.
+          if (error instanceof DeviceRateRefused) return `${device.name} refused: ${error.reason}`;
+          throw error;
+        }
+        rates.device += 1;
+        return `${device.name} set the rate to ${rate}`;
       },
     },
     {
@@ -725,6 +822,7 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
       )
     ).filter((problem) => problem !== undefined),
     ...(await auditProblems(store, devices)),
+    ...(await rateProblems(store, devices)),
   ];
   const elapsedMs = performance.now() - started;
   const outboxStates: Record<string, number> = {};
@@ -745,6 +843,7 @@ async function run(seed: number, devices: SimDevice[]): Promise<RunResult> {
     invoices: snapshots.reduce((sum, snapshot) => sum + snapshot.invoices.length, 0),
     revoked: { sales: revokedDevice.sales.length, flagged: expectedFlags.size },
     audited: auditedEvents,
+    rates,
     convergeRounds,
     elapsedMs,
   };
@@ -765,6 +864,7 @@ describe("the sync simulation harness", () => {
       // The run exercised what it claims: sales, and every kind of fault.
       expect(result.invoices, context).toBeGreaterThan(20);
       expect(result.audited, context).toBeGreaterThan(3);
+      expect(result.rates.device, context).toBeGreaterThan(3);
       for (const counter of [
         "offline",
         "droppedRequests",
@@ -780,9 +880,81 @@ describe("the sync simulation harness", () => {
       expect(result.outboxStates["duplicate"] ?? 0, context).toBeGreaterThan(0);
       expect(result.elapsedMs, `time budget — ${context}`).toBeLessThan(BUDGET_MS);
       console.info(
-        `sync-sim seed ${String(seed)}: ${String(STEPS)} steps, ${String(result.invoices)} invoices ${JSON.stringify(result.outboxStates)}, ${String(result.audited)} device audit events, revoked device ${JSON.stringify(result.revoked)}, converged in ${String(result.convergeRounds)} rounds, ${String(Math.round(result.elapsedMs))} ms; network ${JSON.stringify(result.network)}`,
+        `sync-sim seed ${String(seed)}: ${String(STEPS)} steps, ${String(result.invoices)} invoices ${JSON.stringify(result.outboxStates)}, ${String(result.audited)} device audit events, rates ${JSON.stringify(result.rates)}, revoked device ${JSON.stringify(result.revoked)}, converged in ${String(result.convergeRounds)} rounds, ${String(Math.round(result.elapsedMs))} ms; network ${JSON.stringify(result.network)}`,
       );
     },
     BUDGET_MS + 60_000,
   );
+});
+
+/**
+ * `core-money` *Edge cases*: two devices offline set the rate at 9:00 (125) and 9:05 (124),
+ * and reach the server in the reverse order — each used its own until then, and afterwards 124
+ * is current everywhere. A device offline since morning sets 126 at 10:00 while the owner sets
+ * 127 online at 11:00: 126 arrives as history, 127 stays current.
+ */
+describe("exchange rates set offline (core-money rules 8–9)", () => {
+  it("converge on every device to the latest effective time, whatever order they arrive in", async () => {
+    const devices: SimDevice[] = [];
+    try {
+      const store = await openStore(1000);
+      const random = simRandom(1000);
+      const network = createSimulatedNetwork({
+        baseUrl,
+        random: random.fork("network"),
+        fetch: realFetch,
+      });
+      const failures: string[] = [];
+      for (const name of ["D1", "D2"]) {
+        devices.push(
+          await openDevice(store, name, random.fork(name), network.link(name, NO_FAULTS), failures),
+        );
+      }
+      const [d1, d2] = devices as [SimDevice, SimDevice];
+      // Both synced once: they know the store's currencies, and their clocks the server's time.
+      for (const device of devices) await device.engine.syncNow();
+      d1.link.offline = true;
+      d2.link.offline = true;
+
+      // 9:00 (the server clock only moves forward: sessions and bundles hold it to that).
+      serverClock.advance(60 * 60_000);
+      const nine = await setRateOn(d1, store, "125");
+      serverClock.advance(5 * 60_000);
+      const nineFive = await setRateOn(d2, store, "124");
+      expect((await deviceCurrentRate(d1))?.rate).toBe("125");
+      expect((await deviceCurrentRate(d2))?.rate).toBe("124");
+
+      serverClock.advance(30 * 60_000);
+      d2.link.offline = false;
+      await d2.engine.syncNow();
+      d1.link.offline = false;
+      await d1.engine.syncNow();
+      await d2.engine.syncNow();
+      expect(await serverCurrentRate(store)).toBe(nineFive.id);
+      expect(await rateProblems(store, devices)).toEqual([]);
+      expect((await deviceCurrentRate(d1))?.rate).toBe("124");
+      expect(Date.parse(nine.effectiveAt)).toBeLessThan(Date.parse(nineFive.effectiveAt));
+
+      d1.link.offline = true;
+      // 10:00.
+      serverClock.advance(25 * 60_000);
+      const ten = await setRateOn(d1, store, "126");
+      serverClock.advance(60 * 60_000);
+      const eleven = await ownerRequest<ExchangeRateWire>("/api/v1/currency/rates", store.token, {
+        unitCurrency: "USD",
+        quoteCurrency: "SYP",
+        rate: "127",
+        confirmed: true,
+      });
+      expect((await deviceCurrentRate(d1))?.id).toBe(ten.id);
+      d1.link.offline = false;
+      for (const device of devices) await device.engine.syncNow();
+      expect(await serverCurrentRate(store)).toBe(eleven.id);
+      expect(await rateProblems(store, devices)).toEqual([]);
+      expect((await listLocalCurrentRates(d1.db))[0]?.rate).toBe("127");
+      expect(failures).toEqual([]);
+    } finally {
+      for (const device of devices) await device.db.close();
+    }
+  });
 });

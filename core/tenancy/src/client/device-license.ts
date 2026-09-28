@@ -251,6 +251,16 @@ async function observeClock(tx: LocalExecutor, clock: Clock): Promise<ClockReadi
 }
 
 /**
+ * The device's guarded time (ADR-0021), read in `tx`, the transaction that records what happens
+ * at it (an exchange rate set offline, `core-money` rule 9): the last server time plus the local
+ * time elapsed since, never earlier than the latest local time seen — so a clock moved back
+ * does not date anything back. Observing it raises the mark as any reading does.
+ */
+export async function deviceTime(tx: LocalExecutor, clock: Clock): Promise<Date> {
+  return new Date((await observeClock(tx, clock)).now);
+}
+
+/**
  * Takes a trusted server time (verified with the bundle key for this device): a server contact.
  * The device's time is the server's from now on, so the mark restarts from the local clock and a
  * clock moved back is forgiven — it gains nothing, since the license reads the server's time —

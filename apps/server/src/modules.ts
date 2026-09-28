@@ -18,7 +18,7 @@ import {
   type ModuleRegistry,
   type RequestActor,
 } from "@mustawfi/core-config/server";
-import { currencyModule } from "@mustawfi/core-currency/server";
+import { currencyModule, currencySyncOperations } from "@mustawfi/core-currency/server";
 import { ledgerModule } from "@mustawfi/core-ledger/server";
 import { organizationBundlePart, organizationModule } from "@mustawfi/core-organization/server";
 import {
@@ -79,6 +79,7 @@ export const serverModules: readonly ModuleManifest<HostContext>[] = [
 
 /** The sync operations each module handles, by module id. */
 export const moduleSyncOperations: Readonly<Record<string, readonly SyncOperationDefinition[]>> = {
+  "core.currency": currencySyncOperations,
   sales: salesSyncOperations,
 };
 

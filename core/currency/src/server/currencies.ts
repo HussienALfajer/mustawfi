@@ -1,11 +1,14 @@
+import { recordChange } from "@mustawfi/core-sync/server";
 import type { TenantTransaction } from "@mustawfi/core-tenancy/server";
 import { Decimal, type IdGenerator } from "@mustawfi/kernel";
 import {
   type BaseCurrencyCode,
   catalogCurrency,
   CURRENCY_CODES,
+  CURRENCY_SETTINGS_ENTITY,
   type CurrencySettingsView,
   currencyCodeSchema,
+  TENANT_CURRENCY_ENTITY,
   DEFAULT_CHANGE_CURRENCY,
   DEFAULT_RATE_CHANGE_THRESHOLD_PERCENT,
   defaultTenantCurrencies,
@@ -46,7 +49,8 @@ function currencyView(row: {
  * Writes a new tenant's currencies and currency settings by its base (`core-money` rules 2–5)
  * in `tx`, the transaction that creates the tenant: one row per catalog currency — the base and
  * the other of SYP and USD enabled, TRY disabled — with the default cash-rounding steps, change
- * in SYP, and a 10% rate-change threshold. Seeding twice fails on the per-tenant code (`23505`).
+ * in SYP, and a 10% rate-change threshold — each row appended to the change log devices pull
+ * from. Seeding twice fails on the per-tenant code (`23505`).
  */
 export async function seedCurrencies(
   tx: TenantTransaction,
@@ -62,16 +66,39 @@ export async function seedCurrencies(
     updatedAt: seed.at,
     updatedBy: seed.userId,
   };
-  const defaults = defaultTenantCurrencies(baseCurrency);
-  await tx
-    .insert(tenantCurrencies)
-    .values(defaults.map((currency) => ({ id: newId(), ...standard, ...currency })));
+  const rows = defaultTenantCurrencies(baseCurrency).map((currency) => ({
+    id: newId(),
+    ...standard,
+    ...currency,
+  }));
+  await tx.insert(tenantCurrencies).values(rows);
   const settings = {
     changeCurrency: DEFAULT_CHANGE_CURRENCY,
     rateChangeThresholdPercent: DEFAULT_RATE_CHANGE_THRESHOLD_PERCENT,
   };
-  await tx.insert(currencySettings).values({ id: newId(), ...standard, ...settings });
-  return { currencies: defaults.map(currencyView), settings };
+  const settingsId = newId();
+  await tx.insert(currencySettings).values({ id: settingsId, ...standard, ...settings });
+  // Devices convert and check rates offline from these (`core-money` *Offline and sync behavior*).
+  const change = {
+    tenantId: seed.tenantId,
+    branchId: seed.branchId,
+    createdAt: seed.at,
+    createdBy: seed.userId,
+  };
+  const currencies = rows.map((row) => ({ id: row.id, view: currencyView(row) }));
+  for (const { id, view } of currencies) {
+    await recordChange(
+      tx,
+      { ...change, entity: TENANT_CURRENCY_ENTITY, entityId: id, row: { ...view } },
+      { newId },
+    );
+  }
+  await recordChange(
+    tx,
+    { ...change, entity: CURRENCY_SETTINGS_ENTITY, entityId: settingsId, row: { ...settings } },
+    { newId },
+  );
+  return { currencies: currencies.map(({ view }) => view), settings };
 }
 
 /** The current tenant's currencies with their catalog fields, in catalog order. */
