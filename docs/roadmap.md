@@ -56,13 +56,13 @@ These are not agent tasks, but their findings feed the spec sessions:
 | # | Spec unit | Modules covered | Status |
 |---|---|---|---|
 | 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit (`docs/product/modules/core-foundation.md`; ADR-0030) | Done (2026-09-28) |
-| 2 | `core-money` | core.currency, core.ledger | Not started |
+| 2 | `core-money` | core.currency, core.ledger (`docs/product/modules/core-money.md`; ADR-0031) | Spec ready |
 | 3 | `core-config` | core.config (registry, entitlements, settings, custom fields, templates) | Not started |
 | 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness, Android shell and its native SQLite adapter; inherits from `core-foundation`: a Windows app that lost its credential, a device restored from a database copy reusing `deviceSeq`s, sessions that registered a device before its slice 25 and stay unbound, the reason a session ended returned with its 401, per-device pull scope, the Android keystore) | Not started |
 | 5 | `inventory` | inventory | Not started |
 | 6 | `treasury` | treasury | Not started |
 | 7 | `customers` | customers | Not started |
-| 8 | `sales` | sales (inherits walking-skeleton slice 15: receipt on a real printer and reference-hardware timing; inherits from `core-foundation`: the department of a mixed cart or of a cashier with several departments, replacing its rule 32) | Not started |
+| 8 | `sales` | sales (inherits walking-skeleton slice 15: receipt on a real printer and reference-hardware timing; inherits from `core-foundation`: the department of a mixed cart or of a cashier with several departments, replacing its rule 32; inherits from `core-money`: items priced in a foreign currency, the rate a cart uses when the rate changes, payment in several currencies with change in the change currency and the cash-rounding step, and storing the invoice's rate pair in ADR-0031's quote direction) | Not started |
 | 9 | `purchases` | purchases | Not started |
 | 10 | `reports` | reports, owner dashboard | Not started |
 | 11 | `core-services` | core.notifications, core.data | Not started |

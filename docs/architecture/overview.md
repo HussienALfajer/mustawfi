@@ -1,6 +1,6 @@
 # Architecture overview
 
-Status: Accepted · Technology choices recorded in ADR-0014 to ADR-0028 · Last reviewed: 2026-09-25
+Status: Accepted · Technology choices recorded in ADR-0014 to ADR-0031 · Last reviewed: 2026-09-25
 
 This document explains *how* the non-negotiables in `AGENTS.md` are realized. Each section links the ADR that holds the reasoning.
 
@@ -170,5 +170,6 @@ Each module is one workspace package with three public entries: `shared` (runs o
 | Admin console and portal | Separate API processes and database roles; admin frontend on the client stack | 0028 |
 | Tenant at sign-in | Store code resolved through a sealed directory; tenant-routed bearer tokens | 0029 |
 | Licenses and bundle | One license per tenant from a staff CLI until the control plane; bundle assembled from module parts; departments stored in `core.tenancy`; lifecycle per business day; revoked-device documents accepted and flagged | 0030 |
+| Multi-currency ledger | Subject dimension on control accounts, transaction amount and rate on lines, weighted-average carrying with automatic realized differences, append-only rates quoted weaker-per-stronger, a lock date | 0031 |
 
-Deferred with a reason: chart library (`reports` spec — no chart before then), portal page rendering (`customer-portal` spec), Android printer transport plugin (`sales` unit, against certified printers), the SYP cash-rounding step (`core-money` spec with the advisor accountant), the off-site backup provider (`ops` unit).
+Deferred with a reason: chart library (`reports` spec — no chart before then), portal page rendering (`customer-portal` spec), Android printer transport plugin (`sales` unit, against certified printers), the off-site backup provider (`ops` unit).

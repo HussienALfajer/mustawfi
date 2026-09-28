@@ -1,6 +1,6 @@
 # V1 scope
 
-Status: Accepted · Last reviewed: 2026-09-25
+Status: Accepted · Last reviewed: 2026-09-28
 
 This is the complete list of what V1 contains. Anything not listed here is out of V1 (see §9). Module specs (`docs/product/modules/`) refine this document; they don't contradict it without an explicit, recorded change.
 
@@ -27,8 +27,8 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 | `core.tenancy` | Tenant & license | Core | core.config | No |
 | `core.access` | Identity, permissions, devices | Core | core.config, core.tenancy, core.audit | No |
 | `core.organization` | Store profile, departments, numbering | Core | core.config, core.tenancy, core.access, core.audit, core.sync | No |
-| `core.currency` | Currencies & exchange rates | Core | — | No |
-| `core.ledger` | Accounting engine | Core | core.config, core.tenancy, core.currency | No |
+| `core.currency` | Currencies & exchange rates | Core | core.config, core.tenancy, core.audit, core.sync | No |
+| `core.ledger` | Accounting engine | Core | core.config, core.tenancy, core.currency, core.audit, core.sync, core.organization | No |
 | `core.audit` | Audit log | Core | core.config, core.tenancy | No |
 | `core.sync` | Offline storage & sync | Core | core.config, core.tenancy, core.access, core.audit² | No |
 | `core.config` | Module registry, entitlements, settings, custom fields, templates | Core | — (the root module; the host hands it the database) | No |
@@ -77,13 +77,14 @@ The non-negotiables in `AGENTS.md` apply to everything below. Architecture mecha
 
 **`core.currency` — currencies and rates**
 - Base currency chosen at tenant creation (new SYP or USD), immutable afterwards.
-- Daily exchange rate set by the owner, with history.
+- Transaction currencies: new SYP, USD, and the Turkish lira (TRY, common in northern Syria), each enabled per tenant (recorded change, `core-money` spec, 2026-09-28).
+- Exchange rate set by the owner whenever the market moves (also offline on a device), with history (ADR-0031).
 - Items priced in USD or SYP, converted at sale time.
 - Rounding rule to the smallest circulating denomination.
-- One invoice may be paid in several currencies; change is given in SYP.
+- One invoice may be paid in several currencies; change is given in the store's change currency (a setting, SYP by default).
 - Every document stores its currency and rate.
 - Customer and supplier accounts have their own currency (USD or SYP).
-- Realized FX differences are computed automatically.
+- Realized FX differences are computed automatically, at the weighted-average rate of each foreign balance (ADR-0031).
 
 **`core.ledger` — accounting engine**
 - Chart-of-accounts templates per sector, editable.
