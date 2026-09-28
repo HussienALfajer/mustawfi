@@ -168,6 +168,7 @@ describe("tenant:create", () => {
           "access.users.unlock",
           "access.users.view",
           "audit.view",
+          "currency.rate.set",
           "inventory.products.manage",
           "inventory.products.view",
           "sales.invoices.view",

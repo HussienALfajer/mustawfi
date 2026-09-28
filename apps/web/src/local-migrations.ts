@@ -5,6 +5,7 @@ import {
   pinLocalMigrations,
 } from "@mustawfi/core-access/client";
 import { configLocalMigrations } from "@mustawfi/core-config/client";
+import { currencyLocalMigrations } from "@mustawfi/core-currency/client";
 import {
   organizationLocalMigrations,
   storeLogoLocalMigrations,
@@ -33,4 +34,5 @@ export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   ...deviceCredentialLocalMigrations,
   ...storeLogoLocalMigrations,
   ...deviceStoreCodeLocalMigrations,
+  ...currencyLocalMigrations,
 ];

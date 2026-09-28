@@ -4,6 +4,7 @@ import {
   restoreDeviceSession,
 } from "@mustawfi/core-access/client";
 import { IDLE_LOCK_MS } from "@mustawfi/core-access/shared";
+import { currencyPullAppliers } from "@mustawfi/core-currency/client";
 import { organizationPullAppliers, storeLogoFollowUp } from "@mustawfi/core-organization/client";
 import { createSyncEngine, type SyncEngine } from "@mustawfi/core-sync/client";
 import { inventoryPullAppliers } from "@mustawfi/inventory/client";
@@ -79,7 +80,7 @@ export async function startLocalRuntime(
   const sync = createSyncEngine({
     db,
     migrations: LOCAL_MIGRATIONS,
-    appliers: [...organizationPullAppliers, ...inventoryPullAppliers],
+    appliers: [...organizationPullAppliers, ...inventoryPullAppliers, ...currencyPullAppliers],
     clock: systemClock,
     // The configuration bundle, fetched after each round and verified (`core-foundation` rule 11).
     bundle: bundleVerifier(),

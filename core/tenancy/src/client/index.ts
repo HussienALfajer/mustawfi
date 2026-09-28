@@ -6,6 +6,7 @@ export {
   CLOCK_TOLERANCE_MS,
   type DeviceLicense,
   deviceLicense,
+  deviceTime,
   type DeviceLicenseAudit,
   LICENSE_AUDIT_TABLE,
   LICENSE_DAY_TABLE,

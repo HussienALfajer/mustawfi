@@ -24,6 +24,26 @@ export {
   RATE_INTEGER_DIGITS,
   type TenantCurrencyDefault,
 } from "./catalog.ts";
+export {
+  CURRENCY_SETTINGS_ENTITY,
+  currencyProblemCodes,
+  currencySettingsSchema,
+  EXCHANGE_RATE_ENTITY,
+  exchangeRateSchema,
+  type ExchangeRateWire,
+  RATE_SET_OPERATION,
+  RATE_SET_PERMISSION,
+  rateChangeNeedsConfirmation,
+  rateChangePercent,
+  type RatePairProblem,
+  ratePairProblem,
+  type RateSetPayloadV1,
+  rateSetPayloadV1Schema,
+  type SetRateRequest,
+  setRateRequestSchema,
+  TENANT_CURRENCY_ENTITY,
+  tenantCurrencySchema,
+} from "./rates.ts";
 
 /** A tenant's currency with its catalog fields, as screens and devices read it. */
 export interface TenantCurrencyView {

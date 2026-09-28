@@ -124,6 +124,7 @@ describe("route authorization (core-foundation rule 17)", () => {
       "POST /api/v1/sync/push → deviceEvenRevoked",
       "GET /api/v1/sync/pull → device",
       "GET /api/v1/sync/bundle → device",
+      "POST /api/v1/currency/rates → currency.rate.set",
       "GET /api/v1/organization/departments → session",
       "POST /api/v1/organization/departments → organization.departments.manage",
       "PATCH /api/v1/organization/departments/:id → organization.departments.manage",
@@ -257,6 +258,7 @@ describe("declared permissions", () => {
       { id: "access.users.unlock", scoped: false, grants: ["accountant"] },
       { id: "access.users.view", scoped: false, grants: ["accountant"] },
       { id: "audit.view", scoped: false, grants: ["accountant"] },
+      { id: "currency.rate.set", scoped: false, grants: ["accountant"] },
       {
         id: "inventory.products.manage",
         scoped: false,
