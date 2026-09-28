@@ -1,11 +1,14 @@
+import { CURRENCY_SETTINGS_PERMISSION, RATE_SET_PERMISSION } from "@mustawfi/core-currency/shared";
 import { INVOICE_CREATE_PERMISSION } from "@mustawfi/sales/shared";
 
 /** The screens of the side navigation, in its order. */
 export type NavPath =
   | "/pos"
   | "/invoices"
+  | "/rates"
   | "/products"
   | "/admin/profile"
+  | "/admin/currencies"
   | "/admin/departments"
   | "/admin/users"
   | "/admin/roles"
@@ -33,8 +36,12 @@ export const SCREENS: Readonly<Record<NavPath, Screen>> = {
   // navigation does not offer it: a sale beyond the user's permission asks a supervisor (rule 18).
   "/pos": { title: "pages.pos", permission: INVOICE_CREATE_PERMISSION },
   "/invoices": { title: "pages.invoices", permission: "sales.invoices.view" },
+  // Setting the rate, from every form factor (`core-money` flow 1); the POS shows the stale-rate
+  // banner to everyone.
+  "/rates": { title: "pages.rates", permission: RATE_SET_PERMISSION },
   "/products": { title: "pages.products", permission: "inventory.products.view" },
   "/admin/profile": { title: "pages.profile", permission: "organization.profile.edit" },
+  "/admin/currencies": { title: "pages.currencies", permission: CURRENCY_SETTINGS_PERMISSION },
   "/admin/departments": {
     title: "pages.departments",
     permission: "organization.departments.manage",

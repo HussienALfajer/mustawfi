@@ -111,4 +111,5 @@ export {
   usersListingDepartment,
 } from "./users.ts";
 export { namedLastChanges } from "./last-change.ts";
+export { deviceNames, userNames } from "./names.ts";
 export { type CheckedOverrides, checkOverrides, type RefusedOverride } from "./overrides.ts";

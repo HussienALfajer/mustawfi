@@ -92,6 +92,14 @@ export const currencyProblemCodes = {
   rateInvalid: "currency.rate.invalid",
   /** Another operation already recorded a rate with this id. */
   rateDuplicate: "currency.rate.duplicate",
+  /** Currency settings that disable the base currency, which is always enabled (rule 2). */
+  baseDisabled: "currency.settings.baseDisabled",
+  /** Currency settings that leave the change currency disabled (rule 3). */
+  changeCurrencyInUse: "currency.changeCurrency.inUse",
+  /** A foreign currency enabled without a rate and without its first one (rule 2). */
+  firstRateRequired: "currency.settings.firstRateRequired",
+  /** A first rate for a currency that stays disabled or already has a rate. */
+  firstRateUnexpected: "currency.settings.firstRateUnexpected",
 } as const;
 
 /** Why a pair cannot take a new rate (rule 6), if it cannot. */

@@ -9,6 +9,7 @@ import {
   localDeviceQueryOptions,
   lockDevice,
   LoginScreen,
+  pinScreenQueryOptions,
   PasswordResetScreen,
   PinScreen,
   roleFiltersSchema,
@@ -45,13 +46,21 @@ import {
   suspendedFor,
 } from "@mustawfi/core-organization/client";
 import { type AuditLink, AuditLogScreen, auditLogFiltersSchema } from "@mustawfi/core-audit/client";
+import {
+  CurrencySettingsScreen,
+  DeviceRatesScreen,
+  OnlineRatesScreen,
+  StaleRateBanner,
+} from "@mustawfi/core-currency/client";
 import type { DeviceLicenseAudit } from "@mustawfi/core-tenancy/client";
+import { RATE_SET_PERMISSION } from "@mustawfi/core-currency/shared";
 import { tenancyProblemCodes } from "@mustawfi/core-tenancy/shared";
 import type { LicenseLimitName } from "@mustawfi/core-organization/shared";
 import { SyncStatusIndicator, useSyncEngine, useSyncStatus } from "@mustawfi/core-sync/client";
 import { type LocalDb, useLocalDb } from "@mustawfi/local-db";
 import { ProductsScreen } from "@mustawfi/inventory/client";
 import { InvoicesScreen, PosScreen } from "@mustawfi/sales/client";
+import { SKELETON_DOCUMENT_DEFAULTS } from "@mustawfi/sales/shared";
 import {
   type NavGroup,
   SIDE_NAVIGATION_WIDTH,
@@ -71,9 +80,12 @@ import {
   useBlocker,
   useMatches,
   useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
 import {
+  ArrowLeftRight,
   BadgeCheck,
+  Coins,
   Laptop,
   Layers,
   MonitorSmartphone,
@@ -381,6 +393,7 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
       items: [
         ...item("pos", "/pos", <ShoppingCart {...ICON_PROPS} />),
         ...item("invoices", "/invoices", <ReceiptText {...ICON_PROPS} />),
+        ...item("rates", "/rates", <ArrowLeftRight {...ICON_PROPS} />),
       ],
     },
     {
@@ -393,6 +406,7 @@ function useNavigationGroups(permissions: ReadonlySet<string>): NavGroup[] {
       label: t("nav.group.administration"),
       items: [
         ...item("profile", "/admin/profile", <Store {...ICON_PROPS} />),
+        ...item("currencies", "/admin/currencies", <Coins {...ICON_PROPS} />),
         ...item("departments", "/admin/departments", <Layers {...ICON_PROPS} />),
         ...item("users", "/admin/users", <Users {...ICON_PROPS} />),
         ...item("roles", "/admin/roles", <ShieldCheck {...ICON_PROPS} />),
@@ -547,6 +561,36 @@ function StoreSuspendedPage(props: {
   );
 }
 
+/** The link in a banner on a status tint: body text, underlined, never the accent colour. */
+const BANNER_LINK =
+  "cursor-pointer rounded-sm font-semibold underline underline-offset-4 outline-none hover:decoration-2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2";
+
+/**
+ * The stale-rate banner (`core-money` rule 12) on the POS and on the user's start screen, on a
+ * registered device, from its own database; with «set the rate» for those who may open the rates
+ * screen. It never blocks the sale.
+ */
+function RateBanner(props: { readonly start: NavPath; readonly permissions: ReadonlySet<string> }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const device = useQuery(localDeviceQueryOptions(useLocalDb())).data;
+  if (device === undefined || device === null) return null;
+  if (pathname !== "/pos" && pathname !== props.start) return null;
+  return (
+    <StaleRateBanner
+      device={device}
+      setRate={
+        mayOpen("/rates", props.permissions)
+          ? (label) => (
+              <Link to="/rates" className={BANNER_LINK}>
+                {label}
+              </Link>
+            )
+          : undefined
+      }
+    />
+  );
+}
+
 /**
  * The frame (`screen-patterns.md`, approved on the preview 2026-09-25): the grouped side
  * navigation on the start side, collapsible with `Ctrl+B`; a top bar with the page title, the
@@ -658,6 +702,7 @@ function AppShell() {
             />
           </div>
         </header>
+        {onDevice ? <RateBanner start={start} permissions={permissions} /> : null}
         <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col overflow-auto">
           {page.screen !== undefined && !mayOpen(page.screen, permissions) ? (
             <ScreenNotAllowed
@@ -787,6 +832,48 @@ const posRoute = createRoute({
   path: "/pos",
   staticData: { title: "pages.pos" },
   component: PosPage,
+});
+
+/**
+ * «Exchange rates» (`core-money` flow 1): on a registered device, from its own database and set
+ * there online or not, pushed at once; on any other client, from the server.
+ */
+function RatesPage() {
+  const db = useLocalDb();
+  const signedIn = useSignedIn();
+  const sync = useSyncEngine();
+  const device = useQuery(localDeviceQueryOptions(db)).data;
+  const onDevice = signedIn?.device != null;
+  // Who set a rate, by name: the users this device knows (PIN tiles) and whoever is signed in.
+  const tiles = useQuery({
+    ...pinScreenQueryOptions(db, bundleVerifier()),
+    enabled: onDevice,
+  }).data;
+  if (signedIn === undefined || signedIn === null || device === undefined) return null;
+  const canSet = signedIn.grant.permissions.includes(RATE_SET_PERMISSION);
+  if (!onDevice || device === null) return <OnlineRatesScreen canSet={canSet} />;
+  const names = new Map(tiles?.tiles.map((tile) => [tile.id, tile.name]) ?? []);
+  names.set(signedIn.user.id, signedIn.user.name);
+  return (
+    <DeviceRatesScreen
+      device={device}
+      userId={signedIn.user.id}
+      shiftId={SKELETON_DOCUMENT_DEFAULTS.shiftId}
+      canSet={canSet}
+      userName={(id) => names.get(id)}
+      onRateSet={() => {
+        // Online, the other devices hear of it at once; offline, the next sync sends it.
+        void sync.syncNow();
+      }}
+    />
+  );
+}
+
+const ratesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/rates",
+  staticData: guardedPage("/rates"),
+  component: RatesPage,
 });
 
 const invoicesRoute = createRoute({
@@ -941,6 +1028,31 @@ const storeProfileRoute = createRoute({
   component: StoreProfilePage,
 });
 
+function CurrencySettingsPage() {
+  const [dirty, setDirty] = useState(false);
+  const blocker = useBlocker({
+    shouldBlockFn: () => dirty,
+    enableBeforeUnload: () => dirty,
+    withResolver: true,
+  });
+  return (
+    <CurrencySettingsScreen
+      onDirtyChange={setDirty}
+      leave={
+        blocker.status === "blocked" ? { proceed: blocker.proceed, stay: blocker.reset } : undefined
+      }
+    />
+  );
+}
+
+/** «Currencies» (`core-money` flow 2), online, for holders of `currency.settings.manage`. */
+const currencySettingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/admin/currencies",
+  staticData: { ...guardedPage("/admin/currencies"), fill: true },
+  component: CurrencySettingsPage,
+});
+
 /** Where each license limit is managed; the link shows to users who may open that screen. */
 const LIMIT_SCREENS: Record<
   LicenseLimitName,
@@ -1021,12 +1133,14 @@ const routeTree = rootRoute.addChildren([
     posRoute,
     productsRoute,
     invoicesRoute,
+    ratesRoute,
     departmentsRoute,
     usersRoute,
     rolesRoute,
     devicesRoute,
     auditLogRoute,
     storeProfileRoute,
+    currencySettingsRoute,
     licenseRoute,
     deviceRoute,
     printerRoute,
