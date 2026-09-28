@@ -1,6 +1,6 @@
 # Roadmap
 
-Last updated: 2026-09-25
+Last updated: 2026-09-28
 
 Work is organized in **spec units**. A unit is one module, or a few tightly coupled core modules specified together. Each unit goes through the workflow in `docs/workflow/`: spec session → slices → close.
 
@@ -55,14 +55,14 @@ These are not agent tasks, but their findings feed the spec sessions:
 
 | # | Spec unit | Modules covered | Status |
 |---|---|---|---|
-| 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit (`docs/product/modules/core-foundation.md`; ADR-0030) | In progress |
+| 1 | `core-foundation` | core.tenancy, core.access, core.organization, core.audit (`docs/product/modules/core-foundation.md`; ADR-0030) | Done (2026-09-28) |
 | 2 | `core-money` | core.currency, core.ledger | Not started |
 | 3 | `core-config` | core.config (registry, entitlements, settings, custom fields, templates) | Not started |
-| 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness, Android shell and its native SQLite adapter) | Not started |
+| 4 | `core-sync` | core.sync (hardening beyond the skeleton, simulation harness, Android shell and its native SQLite adapter; inherits from `core-foundation`: a Windows app that lost its credential, a device restored from a database copy reusing `deviceSeq`s, sessions that registered a device before its slice 25 and stay unbound, the reason a session ended returned with its 401, per-device pull scope, the Android keystore) | Not started |
 | 5 | `inventory` | inventory | Not started |
 | 6 | `treasury` | treasury | Not started |
 | 7 | `customers` | customers | Not started |
-| 8 | `sales` | sales (inherits walking-skeleton slice 15: receipt on a real printer and reference-hardware timing) | Not started |
+| 8 | `sales` | sales (inherits walking-skeleton slice 15: receipt on a real printer and reference-hardware timing; inherits from `core-foundation`: the department of a mixed cart or of a cashier with several departments, replacing its rule 32) | Not started |
 | 9 | `purchases` | purchases | Not started |
 | 10 | `reports` | reports, owner dashboard | Not started |
 | 11 | `core-services` | core.notifications, core.data | Not started |
@@ -71,7 +71,7 @@ These are not agent tasks, but their findings feed the spec sessions:
 | 14 | `repairs` | repairs | Not started |
 | 15 | `recharge` | recharge | Not started |
 | 16 | `customer-portal` | customer-portal | Not started |
-| 17 | `ops` | Production deployment (server configuration checked before go-live, `TRUST_PROXY` set to the reverse proxy — the server warns in its log when it is missing; the TOTP key file `TOTP_KEYS_FILE` created with `access:totp-key` (root-only, with an offline copy) and its rotation procedure — a key leaves the file only once nothing sealed with it remains; the bundle key `BUNDLE_KEY_FILE` created with `bundle:keygen` (root-only, with an offline copy), the apps built with `VITE_BUNDLE_PUBLIC_KEYS` (current and next bundle keys) and `VITE_LICENSE_PUBLIC_KEYS` — a build without them trusts no bundle, and the bundle-key rotation procedure), off-site backups and restore drill, monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
+| 17 | `ops` | Production deployment (server configuration checked before go-live, `TRUST_PROXY` set to the reverse proxy — the server warns in its log when it is missing; the TOTP key file `TOTP_KEYS_FILE` created with `access:totp-key` (root-only, with an offline copy) and its rotation procedure — a key leaves the file only once nothing sealed with it remains; the bundle key `BUNDLE_KEY_FILE` created with `bundle:keygen` (root-only, with an offline copy), the apps built with `VITE_BUNDLE_PUBLIC_KEYS` (current and next bundle keys) and `VITE_LICENSE_PUBLIC_KEYS` — a build without them trusts no bundle, and the bundle-key rotation procedure), off-site backups and restore drill (a restored server must hand devices bundle versions above theirs — `core-foundation` open question), the TOTP key procedure (creation, offline copy, rotation), monitoring, operations runbook, pilot hosting move trigger (ADR-0027) | Not started |
 
 ## Phase C — Closed beta
 

@@ -43,6 +43,7 @@ These hold in every change. A change that needs to break one stops and asks the 
 - **Cash is local reality:** shifts, cash counts, handovers, and owner drawings are core features, not edge cases.
 - **Cash drawer:** it opens with a sale, once. A reprint never kicks it; any other opening is an audited event (non-negotiable 10).
 - **Pulled data outlives releases:** a new device pulls the change log from its start and devices re-check stored bundles, so a field added to a pulled entity or bundle part is optional or defaulted, and every value reaching a device fits its 64-bit scaled integer (ADR-0018 amendment).
+- **A non-owner acts only within their own role:** creating, editing, restoring, archiving, or assigning a role or a user is bounded by the actor's own grant (`beyondGrant`, `checkManages`); reviews caught a missing check four times in `core-foundation`.
 - **Local migrations are matched by position:** a new module's local migrations go at the end of `LOCAL_MIGRATIONS` (`apps/web/src/local-migrations.ts`), never in dependency order, or devices with an existing database refuse to start.
 
 ## How work is organized
