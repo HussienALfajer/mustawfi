@@ -71,7 +71,13 @@ const OLD = role("0190a000-0000-7000-8000-00000000b003", "مؤقت", {
   archivedAt: "2026-09-20T10:00:00.000Z",
 });
 
-function session(permissions: string[]): CurrentSession {
+function session(
+  permissions: string[],
+  viewer: { readonly isOwner: boolean; readonly limits: Record<string, string> } = {
+    isOwner: true,
+    limits: {},
+  },
+): CurrentSession {
   return {
     tenantId: "0190a000-0000-7000-8000-00000000f001",
     expiresAt: "2026-10-03T08:00:00.000Z",
@@ -85,11 +91,13 @@ function session(permissions: string[]): CurrentSession {
       id: "0190a000-0000-7000-8000-00000000c001",
       name: "سامر",
       login: "owner",
-      role: { id: OWNER.id, name: OWNER.name, isOwner: true },
+      role: viewer.isOwner
+        ? { id: OWNER.id, name: OWNER.name, isOwner: true }
+        : { id: "0190a000-0000-7000-8000-00000000b00d", name: "نائب", isOwner: false },
       departmentScope: "all",
       departments: [],
       permissions,
-      limits: {},
+      limits: viewer.limits,
     },
   };
 }
@@ -163,9 +171,10 @@ function Screen({ initial }: { readonly initial: Partial<RoleFilters> }) {
 function renderScreen(
   initial: Partial<RoleFilters> = {},
   permissions = ["access.users.view", "access.roles.manage"],
+  viewer?: Parameters<typeof session>[1],
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  queryClient.setQueryData(sessionQueryKey, session(permissions));
+  queryClient.setQueryData(sessionQueryKey, session(permissions, viewer));
   return render(
     <I18nextProvider i18n={i18n}>
       <ToastProvider>
@@ -362,6 +371,52 @@ describe("RolesScreen", () => {
     expect(calls.filter((call) => call.method === "POST").map((call) => call.url)).toEqual([
       `/api/v1/access/roles/${OLD.id}/restore`,
     ]);
+  });
+
+  it("shows a non-owner a role that holds more than their own read-only (close review)", async () => {
+    const auditor = role("0190a000-0000-7000-8000-00000000b004", "مراقب الفواتير", {
+      permissions: ["sales.invoices.view"],
+    });
+    const archivedAuditor = role("0190a000-0000-7000-8000-00000000b005", "مراقب قديم", {
+      permissions: ["sales.invoices.view"],
+      archivedAt: "2026-09-20T10:00:00.000Z",
+    });
+    const calls = fakeApi([OWNER, CASHIER, auditor, archivedAuditor]);
+    const deputy = ["access.users.view", "access.roles.manage", "sales.invoice.create"];
+    const limits = { "sales.discount.maxPercent": "5" };
+    renderScreen({ status: "all", selected: auditor.id }, deputy, { isOwner: false, limits });
+    const panel = await screen.findByRole("complementary", { name: "مراقب الفواتير" });
+    expect(panel).toHaveTextContent("هذا الدور فيه صلاحيات أو حدود ليست لديك، فيديره المالك");
+    expect(within(panel).getByRole("checkbox", { name: "عرض الفواتير" })).toHaveAttribute(
+      "aria-readonly",
+      "true",
+    );
+    expect(within(panel).queryByRole("button", { name: /حفظ|أرشفة/ })).toBeNull();
+    expect(within(panel).getByRole("button", { name: "نسخ الدور" })).toBeInTheDocument();
+    await userEvent.keyboard("{Control>}s{/Control}");
+    // An archived one is not restored either; the server refuses it (slice 20).
+    await userEvent.click(within(screen.getByRole("grid")).getByText("مراقب قديم"));
+    const archivedPanel = await screen.findByRole("complementary", { name: "مراقب قديم" });
+    expect(within(archivedPanel).queryByRole("button", { name: "استعادة الدور" })).toBeNull();
+    // A role within theirs — the same permissions, the same limit — they still edit.
+    await userEvent.click(within(screen.getByRole("grid")).getByText("كاشير القسم"));
+    const cashier = await screen.findByRole("complementary", { name: "كاشير القسم" });
+    expect(cashier).not.toHaveTextContent("فيديره المالك");
+    expect(within(cashier).getByRole("button", { name: /حفظ/ })).toBeInTheDocument();
+    expect(within(cashier).getByRole("button", { name: /أرشفة الدور/ })).toBeInTheDocument();
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+  });
+
+  it("says the refusal of a role that became broader than the manager's", async () => {
+    fakeApi([OWNER, CASHIER], {
+      [`PUT /api/v1/access/roles/${CASHIER.id}`]: problem(403, "access.role.broaderRole"),
+    });
+    renderScreen({ selected: CASHIER.id });
+    const panel = await screen.findByRole("complementary", { name: "كاشير القسم" });
+    await userEvent.keyboard("{Control>}s{/Control}");
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(
+      "هذا الدور فيه صلاحيات أو حدود ليست لديك، فلا تعدّله ولا تؤرشفه",
+    );
   });
 
   it("shows roles read-only to a role that may only view them", async () => {

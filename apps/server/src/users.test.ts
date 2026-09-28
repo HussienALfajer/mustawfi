@@ -1182,7 +1182,7 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
   }
 
   it("copies and edits roles only within the permissions the manager holds", async () => {
-    const { store, deputy } = await withManager();
+    const { deputy } = await withManager();
     expectProblem(
       await call(deputy, "POST", "/roles", { name: "مراقب", permissions: ["audit.view"] }),
       403,
@@ -1202,19 +1202,55 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
       403,
       accessProblemCodes.beyondOwnGrant,
     );
-    // What a role already holds may stay, and may be removed, even if the manager lacks it.
+    // A role within the manager's they rename and narrow.
+    const narrowed = await call(deputy, "PUT", `/roles/${role.id}`, {
+      name: "المخزن",
+      permissions: [],
+    });
+    expect(narrowed.statusCode, narrowed.body).toBe(200);
+  });
+
+  it("edits and archives no role that holds more than the manager (close review)", async () => {
+    const { store, deputy } = await withManager();
+    // The accountant's role holds `audit.view`, which the deputy lacks: removing it, or
+    // anything else, would narrow the users above the deputy.
     const accountant = await roleNamed(store, "المحاسب");
     expect(accountant.permissions).toContain("audit.view");
-    const renamed = await call(deputy, "PUT", `/roles/${accountant.id}`, {
-      name: "محاسب المتجر",
+    for (const permissions of [
+      accountant.permissions.filter((p) => p !== "audit.view"),
+      accountant.permissions,
+    ]) {
+      const refused = await call(deputy, "PUT", `/roles/${accountant.id}`, {
+        name: "محاسب المتجر",
+        permissions,
+      });
+      expectProblem(refused, 403, accessProblemCodes.roleBroader);
+      expect(refused.json<{ detail: string }>().detail).toContain("audit.view");
+    }
+    expectProblem(
+      await call(deputy, "POST", `/roles/${accountant.id}/archive`),
+      403,
+      accessProblemCodes.roleBroader,
+    );
+    expect(await roleNamed(store, "المحاسب")).toMatchObject({
       permissions: accountant.permissions,
+      archivedAt: null,
     });
-    expect(renamed.statusCode, renamed.body).toBe(200);
-    const trimmed = await call(deputy, "PUT", `/roles/${accountant.id}`, {
-      name: "محاسب المتجر",
-      permissions: accountant.permissions.filter((p) => p !== "audit.view"),
-    });
-    expect(trimmed.statusCode, trimmed.body).toBe(200);
+    const touched = (rows: { entity_id: string | null }[]) =>
+      rows.filter((row) => row.entity_id === accountant.id);
+    expect(touched(await auditOf(store.tenant.tenantId, "access.role.changed"))).toEqual([]);
+    expect(touched(await auditOf(store.tenant.tenantId, "access.role.archived"))).toEqual([]);
+    // A role within the deputy's they archive; an owner archives any.
+    const stock = (
+      await call(deputy, "POST", "/roles", {
+        name: "مخزن",
+        permissions: ["inventory.products.view"],
+      })
+    ).json<RoleView>();
+    expect((await call(deputy, "POST", `/roles/${stock.id}/archive`)).statusCode).toBe(200);
+    expect((await call(store.owner, "POST", `/roles/${accountant.id}/archive`)).statusCode).toBe(
+      200,
+    );
   });
 
   it("restores only a role within what the manager holds (slice 20)", async () => {
@@ -1451,12 +1487,16 @@ describe("a non-owner grants nothing beyond their own (slice 6 decision)", () =>
       code: accessProblemCodes.beyondOwnGrant,
     });
     expect((await edit(deputy, "10")).limits).toEqual({ "fixture.discount.max": "10" });
-    // An owner set it higher; the deputy may lower it, though not to above their own.
+    // An owner set it higher: the role is now above the deputy, who may not even lower it.
     await edit({ isOwner: true, limits: {} }, "20");
-    expect((await edit(deputy, "15")).limits).toEqual({ "fixture.discount.max": "15" });
-    await expect(edit({ isOwner: false, limits: {} }, "16")).rejects.toMatchObject({
-      code: accessProblemCodes.beyondOwnGrant,
+    await expect(edit(deputy, "5")).rejects.toMatchObject({
+      code: accessProblemCodes.roleBroader,
+      status: 403,
     });
+    expect((await edit({ isOwner: true, limits: {} }, "8")).limits).toEqual({
+      "fixture.discount.max": "8",
+    });
+    expect((await edit(deputy, "4")).limits).toEqual({ "fixture.discount.max": "4" });
   });
 });
 
