@@ -52,7 +52,20 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | دفتر الأستاذ | General ledger | `ledger` |
 | دليل الحسابات | Chart of accounts | `chartOfAccounts` |
 | حساب | Account | `account` |
-| حساب نظامي | System account (found by role: cash, sales revenue, rounding differences) | `systemAccount` (`cash`, `salesRevenue`, `roundingDifferences`) |
+| حساب نظامي | System account (found by its key; the retail template's keys are in `core-money.md`) | `systemAccount` (`cash`, `salesRevenue`, `roundingDifferences`, `fxDifference`, `openingBalances`, `retainedEarnings`, `receivables`, `payables`, …) |
+| حساب رئيسي | Group account (a tree node; takes no lines) | `groupAccount` (`isGroup`) |
+| حساب فرعي (ترحيل) | Posting account | `postingAccount` |
+| الطرف (حساب تحليلي) | Subject: a customer, supplier, or cash box on a line of a control account | `subject` (`subjectType`, `subjectId`) |
+| حساب يتتبع العملة | Currency-tracked account (balances kept per subject and currency) | `currencyTracked` |
+| الرصيد المحمول (بالسعر الدفتري) | Carried balance and its average rate | `carriedBalance` |
+| قيد يدوي | Manual journal entry (document code `JRN`) | `manualEntry` |
+| قيد افتتاحي | Opening entry | `openingEntry` |
+| كشف حساب (دفتر الأستاذ) | Account ledger | `accountLedger` |
+| تاريخ القفل | Lock date | `lockDate` |
+| إعادة فتح الفترة | Reopening (moving the lock date back) | `reopen` |
+| مُرحّل بعد القفل | Posted after lock (flag) | `postedAfterLock` |
+| بداية السنة المالية | Fiscal year start | `fiscalYearStartMonth` |
+| الأرباح المحتجزة | Retained earnings | `retainedEarnings` |
 | ميزان المراجعة | Trial balance | `trialBalance` |
 | ترحيل | Posting | `post` / `posting` |
 | قيد عكسي | Reversal | `reversal` |
@@ -78,6 +91,12 @@ The UI speaks Arabic; the code speaks English. Use these identifiers in code, AP
 | الليرة السورية الجديدة | New Syrian pound | `SYP` |
 | الليرة القديمة | Old Syrian pound (legacy, ÷100) | `legacySyp` |
 | دولار | US dollar | `USD` |
+| الليرة التركية | Turkish lira | `TRY` |
+| عملة الباقي | Change currency | `changeCurrency` |
+| عملة التسعير / العملة المسعَّرة | Quote currency / unit currency of a rate | `quoteCurrency` / `unitCurrency` |
+| عتبة تأكيد تغيّر السعر | Rate-change confirmation threshold | `rateChangeThresholdPercent` |
+| سعر قديم | Stale rate (set before the current business day) | `staleRate` |
+| مبلغ العملية | Transaction currency and amount of a journal line | `transactionCurrency` / `transactionAmount` |
 
 ## Treasury
 

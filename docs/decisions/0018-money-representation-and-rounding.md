@@ -43,7 +43,7 @@ A currency's minor units live in `core.currency` data, not in code.
 
 - Statements and trial balances add up as displayed; rounding differences are visible and auditable in their own account.
 - Every amount crossing a boundary (API, SQLite, UI) goes through kernel conversions; that is deliberate friction.
-- The cash-rounding step for the new SYP (5? 10? 50?) is a `core.currency` default decided in the `core-money` spec session with the advisor accountant.
+- The cash-rounding step for the new SYP (5? 10? 50?) is a `core.currency` default decided in the `core-money` spec session with the advisor accountant. Decided on 2026-09-28: 10, the smallest new note, pending the advisor's review (`core-money` open questions).
 
 ## Alternatives considered
 

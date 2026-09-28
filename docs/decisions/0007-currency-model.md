@@ -29,3 +29,7 @@ Syria redenominated its pound on 2026-01-01 (÷100); old notes lost legal tender
 
 - **SYP only** — contradicts how merchants actually price and lend.
 - **Changeable base currency** — rewrites history; unacceptable for an audit trail.
+
+## Amendments
+
+- 2026-09-28 (`core-money` spec, decided by the user): the Turkish lira (TRY) is a V1 transaction currency besides SYP and USD; the base currency stays SYP or USD. Change is given in a per-tenant change currency (SYP by default). The SYP cash-rounding step defaults to 10 (the smallest new note), USD has none, TRY rounds to 1. Mechanics in ADR-0031.
